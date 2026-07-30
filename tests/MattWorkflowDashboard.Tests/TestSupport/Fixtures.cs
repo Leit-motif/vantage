@@ -13,6 +13,8 @@ public static class Fixtures
         string? blockedBy = null,
         string? gitHub = null,
         string? stage = null,
+        string? labels = null,
+        string? assignee = null,
         bool bold = false)
     {
         var lines = new List<string> { $"# {title}", string.Empty };
@@ -30,6 +32,8 @@ public static class Fixtures
         Add("Stage", stage);
         Add("Blocked by", blockedBy);
         Add("GitHub", gitHub);
+        Add("Labels", labels);
+        Add("Assignee", assignee);
 
         lines.Add(string.Empty);
         lines.Add("Body text that the dashboard must treat purely as data.");
