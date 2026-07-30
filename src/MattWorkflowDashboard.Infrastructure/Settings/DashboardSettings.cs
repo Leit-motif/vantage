@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace MattWorkflowDashboard.Infrastructure.Settings;
 
 /// <summary>Registry intent for a discovered project. Hiding is not the same as forgetting.</summary>
@@ -135,6 +137,14 @@ public sealed class DashboardSettings
     public bool LaunchAtSignIn { get; set; }
 
     public UiSettings Ui { get; set; } = new();
+
+    /// <summary>
+    /// Set when a refresh has changed registry intent that is not on disk yet. It is not part of the
+    /// file: it describes this object. It outlives a single refresh so a pass that was cancelled or
+    /// a save that failed leaves the write to be retried rather than dropped.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasUnsavedRegistryChanges { get; set; }
 
     public ProjectRegistryEntry? FindProject(string canonicalPath) =>
         Projects.FirstOrDefault(p => string.Equals(p.Path, canonicalPath, StringComparison.OrdinalIgnoreCase));

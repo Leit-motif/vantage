@@ -10,22 +10,38 @@ namespace MattWorkflowDashboard.App.ViewModels;
 /// One registered project, with the intent the owner has expressed about it. Every change is
 /// saved as it is made: a registry choice that is not written is a choice the next restart loses.
 /// </summary>
-public sealed partial class ProjectRegistryRow(ProjectRegistryEntry entry, Action onChanged) : ObservableObject
+public sealed partial class ProjectRegistryRow : ObservableObject
 {
-    public ProjectRegistryEntry Entry { get; } = entry;
+    private readonly Action _onChanged;
+
+    /// <summary>
+    /// The pending remote as it was when this row was shown. A refresh behind an open Settings
+    /// window can move the entry on to a newer remote, and confirming must never adopt an origin
+    /// that was never on screen.
+    /// </summary>
+    private string? _shownPendingOrigin;
+
+    public ProjectRegistryRow(ProjectRegistryEntry entry, Action onChanged)
+    {
+        Entry = entry;
+        _onChanged = onChanged;
+        _shownPendingOrigin = entry.PendingOrigin;
+    }
+
+    public ProjectRegistryEntry Entry { get; }
 
     public string Path => Entry.Path;
 
     public string Origin => Entry.ConfirmedOrigin ?? "—";
 
     /// <summary>The remote waiting on confirmation, if the repository's origin has moved.</summary>
-    public string? PendingOrigin => Entry.PendingOrigin;
+    public string? PendingOrigin => _shownPendingOrigin;
 
-    public bool HasPendingRelink => Entry.PendingOrigin is not null;
+    public bool HasPendingRelink => _shownPendingOrigin is not null;
 
-    public string RelinkDescription => Entry.PendingOrigin is null
+    public string RelinkDescription => _shownPendingOrigin is null
         ? "The remote matches the confirmed association."
-        : $"The remote now reads {Entry.PendingOrigin}. Confirm to adopt it.";
+        : $"The remote now reads {_shownPendingOrigin}. Confirm to adopt it.";
 
     public ProjectRegistryState State
     {
@@ -52,26 +68,34 @@ public sealed partial class ProjectRegistryRow(ProjectRegistryEntry entry, Actio
     [RelayCommand]
     public void ConfirmRelink()
     {
-        if (Entry.PendingOrigin is null)
+        if (_shownPendingOrigin is null)
         {
             return;
         }
 
-        Entry.ConfirmedOrigin = Entry.PendingOrigin;
-        Entry.PendingOrigin = null;
+        Entry.ConfirmedOrigin = _shownPendingOrigin;
+
+        // If the remote has already moved past what was shown, that newer remote is still waiting
+        // on the owner; only the origin actually confirmed here stops being pending.
+        if (string.Equals(Entry.PendingOrigin, _shownPendingOrigin, StringComparison.OrdinalIgnoreCase))
+        {
+            Entry.PendingOrigin = null;
+        }
+
+        _shownPendingOrigin = null;
 
         OnPropertyChanged(nameof(Origin));
         OnPropertyChanged(nameof(PendingOrigin));
         OnPropertyChanged(nameof(HasPendingRelink));
         OnPropertyChanged(nameof(RelinkDescription));
-        onChanged();
+        _onChanged();
     }
 
     private void Set(Action mutate, [System.Runtime.CompilerServices.CallerMemberName] string? name = null)
     {
         mutate();
         OnPropertyChanged(name);
-        onChanged();
+        _onChanged();
     }
 }
 

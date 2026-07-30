@@ -134,6 +134,43 @@ public sealed class DiscoveryTests
     }
 
     [TestMethod]
+    public async Task An_excluded_location_that_is_a_junction_is_still_excluded()
+    {
+        var project = _workspace.NewProject("host");
+        var target = Path.Combine(_workspace.Root, "external-deps");
+        _workspace.WriteFile(Path.Combine(target, "dep", "AGENTS.md"), "# vendored elsewhere\n");
+
+        var junction = Path.Combine(project, "node_modules");
+        if (!TryCreateJunction(junction, target))
+        {
+            Assert.Inconclusive("This host cannot create a directory junction.");
+        }
+
+        var snapshot = await _harness.RefreshAsync();
+
+        CollectionAssert.AreEquivalent(
+            new[] { "host" },
+            snapshot.Projects.Select(p => p.Identity.Name).ToArray(),
+            "The exclusion follows the name on disk; a junction must not route around it.");
+    }
+
+    /// <summary>A junction needs no elevation, but a host may still refuse it.</summary>
+    private static bool TryCreateJunction(string link, string target)
+    {
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe")
+        {
+            ArgumentList = { "/c", "mklink", "/J", link, target },
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        })!;
+
+        process.WaitForExit();
+        return process.ExitCode == 0 && Directory.Exists(link);
+    }
+
+    [TestMethod]
     public async Task Bounded_traversal_reports_truncation_instead_of_scanning_without_limit()
     {
         for (var i = 0; i < 5; i++)

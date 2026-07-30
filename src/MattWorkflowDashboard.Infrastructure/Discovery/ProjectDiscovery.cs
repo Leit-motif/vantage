@@ -114,17 +114,41 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                     continue;
                 }
 
-                foreach (var child in EnumerateChildren(path, diagnostics))
+                if (excludedLocation is not null)
                 {
-                    var childExcludedLocation = excludedLocation
-                        ?? (excluded.Contains(Path.GetFileName(child)) ? child : null);
+                    // Inside an excluded tree nothing is enumerated at all: the walk steps along
+                    // the opted-in paths themselves, so a vendor directory with thousands of
+                    // siblings costs one directory probe per opted-in segment.
+                    foreach (var next in OptInDescendants(path, optIns))
+                    {
+                        queue.Enqueue((next, depth + 1, owningProject, excludedLocation));
+                    }
 
-                    if (childExcludedLocation is not null && !LeadsToOptIn(child, optIns))
+                    continue;
+                }
+
+                foreach (var (name, child) in EnumerateChildren(path, diagnostics))
+                {
+                    // Repository internals and scratch contents are indexed by their own adapters,
+                    // never treated as places to look for further projects.
+                    if (string.Equals(name, ".git", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(name, ".scratch", StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
                     }
 
-                    queue.Enqueue((child, depth + 1, owningProject, childExcludedLocation));
+                    // The policy is about the name the owner sees on disk. Canonicalizing first
+                    // would let a junction named 'node_modules' pointing elsewhere escape it.
+                    if (!excluded.Contains(name))
+                    {
+                        queue.Enqueue((child, depth + 1, owningProject, null));
+                        continue;
+                    }
+
+                    if (LeadsToOptIn(child, optIns))
+                    {
+                        queue.Enqueue((child, depth + 1, owningProject, child));
+                    }
                 }
             }
 
@@ -140,6 +164,18 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                 DiagnosticCode.ScanTruncated,
                 $"Discovery stopped after {scanned} directories or {found.Count} projects; raise the limits in Settings to see more.",
                 string.Join("; ", settings.Roots)));
+        }
+
+        // An opt-in that discovery never reached would otherwise be silent: no project, no reason.
+        if (!truncated)
+        {
+            foreach (var optIn in optIns.Where(o => !visited.Contains(o)))
+            {
+                diagnostics.Add(Diagnostic.Warning(
+                    DiagnosticCode.ProjectScanFailed,
+                    $"The opted-in project '{optIn}' was not reached: check that the path exists, sits beneath a configured root, and is within the discovery depth.",
+                    optIn));
+            }
         }
 
         return new DiscoveryResult(found, diagnostics, truncated);
@@ -215,7 +251,39 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
             || optIn.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static IEnumerable<string> EnumerateChildren(
+    /// <summary>
+    /// The next directory below <paramref name="path"/> on the way to each opted-in project, taken
+    /// from the opt-in paths themselves rather than from enumerating the directory.
+    /// </summary>
+    private static IEnumerable<string> OptInDescendants(string path, IReadOnlyList<string> optIns)
+    {
+        var prefix = path + Path.DirectorySeparatorChar;
+        var next = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var optIn in optIns)
+        {
+            if (!optIn.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var remainder = optIn[prefix.Length..];
+            var separator = remainder.IndexOf(Path.DirectorySeparatorChar);
+            var segment = separator < 0 ? remainder : remainder[..separator];
+            if (segment.Length > 0)
+            {
+                next.Add(prefix + segment);
+            }
+        }
+
+        return next.Where(Directory.Exists).Select(Canonicalize);
+    }
+
+    /// <summary>
+    /// Child directories as the lexical name on disk paired with the canonical path. Policy reads
+    /// the name; identity reads the canonical path.
+    /// </summary>
+    private static IEnumerable<(string Name, string CanonicalPath)> EnumerateChildren(
         string path,
         ICollection<Diagnostic> diagnostics)
     {
@@ -241,15 +309,7 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                 continue;
             }
 
-            // Repository internals and scratch contents are indexed by their own adapters,
-            // never treated as places to look for further projects.
-            if (string.Equals(name, ".git", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(name, ".scratch", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            yield return Canonicalize(child);
+            yield return (name, Canonicalize(child));
         }
     }
 }

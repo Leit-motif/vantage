@@ -42,12 +42,11 @@ public sealed class RefreshService(
         var refreshId = $"r{_clock.GetUtcNow():yyyyMMddHHmmssfff}";
         var now = _clock.GetUtcNow();
         var diagnostics = new List<Diagnostic>(cache.Diagnostics);
-        var registryChanges = new RegistryChanges();
 
         var discovery = new ProjectDiscovery(settings).Discover(cancellationToken);
         diagnostics.AddRange(discovery.Diagnostics);
 
-        var selected = SelectProjects(discovery.Projects, diagnostics, registryChanges);
+        var selected = SelectProjects(discovery.Projects, diagnostics);
 
         var gitHubAuthenticated = settings.GitHubEnrichmentEnabled
             && await _gitHub.IsAuthenticatedAsync(cancellationToken).ConfigureAwait(false);
@@ -63,27 +62,32 @@ public sealed class RefreshService(
         var views = new ConcurrentBag<(int Order, ProjectView View)>();
         var failures = new ConcurrentBag<Diagnostic>();
 
-        await Parallel.ForEachAsync(
-            selected.Select((entry, index) => (entry, index)),
-            new ParallelOptions
-            {
-                CancellationToken = cancellationToken,
-                MaxDegreeOfParallelism = Math.Max(1, settings.MaxConcurrentExternalProcesses),
-            },
-            async (item, token) =>
-            {
-                var view = await RefreshProjectAsync(
-                        item.entry, refreshId, now, gitHubAuthenticated, failures, registryChanges, token)
-                    .ConfigureAwait(false);
-                views.Add((item.index, view));
-            }).ConfigureAwait(false);
-
-        diagnostics.AddRange(failures);
-
-        if (registryChanges.Any)
+        try
         {
+            await Parallel.ForEachAsync(
+                selected.Select((entry, index) => (entry, index)),
+                new ParallelOptions
+                {
+                    CancellationToken = cancellationToken,
+                    MaxDegreeOfParallelism = Math.Max(1, settings.MaxConcurrentExternalProcesses),
+                },
+                async (item, token) =>
+                {
+                    var view = await RefreshProjectAsync(
+                            item.entry, refreshId, now, gitHubAuthenticated, failures, token)
+                        .ConfigureAwait(false);
+                    views.Add((item.index, view));
+                }).ConfigureAwait(false);
+        }
+        finally
+        {
+            // A superseded or failed pass still changed registry intent in memory. Writing it here
+            // means a cancelled refresh cannot quietly drop a discovered project or a remote that
+            // is waiting on confirmation, and a failed write stays outstanding for the next pass.
             PersistRegistry(diagnostics);
         }
+
+        diagnostics.AddRange(failures);
 
         var ordered = views
             .OrderBy(v => v.Order)
@@ -118,8 +122,7 @@ public sealed class RefreshService(
     /// </summary>
     private IReadOnlyList<(DiscoveredProject Project, ProjectRegistryEntry Entry)> SelectProjects(
         IReadOnlyList<DiscoveredProject> discovered,
-        ICollection<Diagnostic> diagnostics,
-        RegistryChanges registryChanges)
+        ICollection<Diagnostic> diagnostics)
     {
         var selected = new List<(DiscoveredProject, ProjectRegistryEntry)>();
 
@@ -134,7 +137,7 @@ public sealed class RefreshService(
                     State = ProjectRegistryState.Enabled,
                 };
                 settings.Projects.Add(entry);
-                registryChanges.Mark();
+                settings.HasUnsavedRegistryChanges = true;
             }
 
             if (entry.State != ProjectRegistryState.Enabled)
@@ -164,7 +167,7 @@ public sealed class RefreshService(
     /// </summary>
     private void PersistRegistry(ICollection<Diagnostic> diagnostics)
     {
-        if (settingsStore is null)
+        if (settingsStore is null || !settings.HasUnsavedRegistryChanges)
         {
             return;
         }
@@ -182,23 +185,12 @@ public sealed class RefreshService(
         }
     }
 
-    /// <summary>Tracks whether this refresh changed anything the settings file has to keep.</summary>
-    private sealed class RegistryChanges
-    {
-        private int _changed;
-
-        public bool Any => Volatile.Read(ref _changed) == 1;
-
-        public void Mark() => Interlocked.Exchange(ref _changed, 1);
-    }
-
     private async Task<ProjectView> RefreshProjectAsync(
         (DiscoveredProject Project, ProjectRegistryEntry Entry) item,
         string refreshId,
         DateTimeOffset now,
         bool gitHubAuthenticated,
         ConcurrentBag<Diagnostic> failures,
-        RegistryChanges registryChanges,
         CancellationToken cancellationToken)
     {
         var (project, entry) = item;
@@ -208,7 +200,7 @@ public sealed class RefreshService(
         try
         {
             return await IndexProjectAsync(
-                    project, entry, refreshId, now, gitHubAuthenticated, registryChanges, cancellationToken)
+                    project, entry, refreshId, now, gitHubAuthenticated, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -238,7 +230,6 @@ public sealed class RefreshService(
         string refreshId,
         DateTimeOffset now,
         bool gitHubAuthenticated,
-        RegistryChanges registryChanges,
         CancellationToken cancellationToken)
     {
         var diagnostics = new List<Diagnostic>();
@@ -249,7 +240,7 @@ public sealed class RefreshService(
 
         diagnostics.AddRange(git.Diagnostics);
 
-        var origin = ConfirmOrigin(entry, git, diagnostics, registryChanges);
+        var origin = ConfirmOrigin(entry, git, diagnostics);
 
         var index = _indexer.Index(project.CanonicalPath, git.FileFacts, refreshId, cancellationToken);
         diagnostics.AddRange(index.Diagnostics);
@@ -311,11 +302,10 @@ public sealed class RefreshService(
     /// cannot silently attach unrelated GitHub work — and so confirming a relink adopts the origin
     /// the owner was actually shown rather than whatever the remote reads by then.
     /// </summary>
-    private static GitHubOrigin? ConfirmOrigin(
+    private GitHubOrigin? ConfirmOrigin(
         ProjectRegistryEntry entry,
         GitReadResult git,
-        ICollection<Diagnostic> diagnostics,
-        RegistryChanges registryChanges)
+        ICollection<Diagnostic> diagnostics)
     {
         var observed = git.Origin;
 
@@ -325,19 +315,26 @@ public sealed class RefreshService(
             {
                 entry.ConfirmedOrigin = observed.Slug;
                 entry.PendingOrigin = null;
-                registryChanges.Mark();
+                settings.HasUnsavedRegistryChanges = true;
             }
 
             return observed;
         }
 
-        if (observed is null || string.Equals(entry.ConfirmedOrigin, observed.Slug, StringComparison.OrdinalIgnoreCase))
+        if (observed is null)
+        {
+            // Not being able to read the remote says nothing about it. A relink that is waiting on
+            // the owner must survive an unreadable repository rather than quietly cancelling itself.
+            return GitHubOrigin.TryParse($"https://github.com/{entry.ConfirmedOrigin}");
+        }
+
+        if (string.Equals(entry.ConfirmedOrigin, observed.Slug, StringComparison.OrdinalIgnoreCase))
         {
             // The remote agrees with the confirmed association again; there is nothing to confirm.
             if (entry.PendingOrigin is not null)
             {
                 entry.PendingOrigin = null;
-                registryChanges.Mark();
+                settings.HasUnsavedRegistryChanges = true;
             }
 
             return GitHubOrigin.TryParse($"https://github.com/{entry.ConfirmedOrigin}");
@@ -346,7 +343,7 @@ public sealed class RefreshService(
         if (!string.Equals(entry.PendingOrigin, observed.Slug, StringComparison.OrdinalIgnoreCase))
         {
             entry.PendingOrigin = observed.Slug;
-            registryChanges.Mark();
+            settings.HasUnsavedRegistryChanges = true;
         }
 
         diagnostics.Add(Diagnostic.Warning(

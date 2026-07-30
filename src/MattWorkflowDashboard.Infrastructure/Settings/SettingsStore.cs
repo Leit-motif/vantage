@@ -71,6 +71,9 @@ public sealed class SettingsStore(AppPaths paths)
                 File.Move(temp, paths.SettingsFile);
             }
         }
+
+        // Only once the swap succeeded: a failed write must leave the change outstanding.
+        settings.HasUnsavedRegistryChanges = false;
     }
 
     /// <summary>Forward-only settings migration. Unknown future versions are left untouched.</summary>
