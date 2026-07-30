@@ -32,6 +32,14 @@ public sealed class ProjectRegistryEntry
     public bool NestedOptIn { get; set; }
 
     /// <summary>
+    /// The route to this project as the owner wrote it, kept only when it differs from the canonical
+    /// <see cref="Path"/> — a project that is itself a link out of an excluded location has a
+    /// canonical identity that leads nowhere near the excluded tree, and discovery would have no way
+    /// back to it. Identity stays <see cref="Path"/>; this is only how the walk gets there.
+    /// </summary>
+    public string? OptInPath { get; set; }
+
+    /// <summary>
     /// The GitHub origin the owner confirmed for this path. A remote that no longer matches is
     /// reported rather than silently adopted, so unrelated remote work cannot attach itself.
     /// </summary>

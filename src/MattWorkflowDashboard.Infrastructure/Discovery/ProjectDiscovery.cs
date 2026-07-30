@@ -32,6 +32,13 @@ public static class ProjectMarkers
     public static readonly IReadOnlyList<string> All = [Git, Agents, IssueTracker, Scratch];
 }
 
+/// <summary>
+/// One opted-in project and every name discovery may meet it under: the path as written, its
+/// lexical form, and its canonical form — plus the same for a separately recorded route, when the
+/// canonical identity is not a path that can be navigated back to.
+/// </summary>
+internal sealed record OptIn(string Written, IReadOnlyList<string> Paths);
+
 public sealed record DiscoveryResult(
     IReadOnlyList<DiscoveredProject> Projects,
     IReadOnlyList<Diagnostic> Diagnostics,
@@ -58,20 +65,32 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
         // reach it, while identity stays canonical.
         var optInPaths = settings.Projects
             .Where(p => p.NestedOptIn && p.Path.Length > 0)
-            .Select(p => (Written: p.Path, Lexical: Lexical(p.Path), Canonical: Canonicalize(p.Path)))
+            .Select(p => new OptIn(
+                p.Path,
+                [
+                    .. new[] { p.Path, p.OptInPath }
+                        .Where(path => !string.IsNullOrWhiteSpace(path))
+                        .SelectMany(path => new[] { Lexical(path!), Canonicalize(path!) })
+                        .Distinct(StringComparer.OrdinalIgnoreCase),
+                ]))
             .ToList();
 
         var optIns = optInPaths
-            .SelectMany(p => new[] { p.Lexical, p.Canonical })
+            .SelectMany(o => o.Paths)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         var found = new List<DiscoveredProject>();
         var diagnostics = new List<Diagnostic>();
-        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Routes are deduplicated separately from identities. Two routes can lead to one directory —
+        // a junction and its target — and dropping the second route would hide whatever only it can
+        // reach, while emitting both would invent a second project for one place on disk.
+        var routes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var emitted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // Every directory actually walked, in both forms, so an unreached opt-in can be told apart
-        // from one that was reached under its other name.
+        // from one that was reached under another of its names.
         var reached = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var scanned = 0;
         var truncated = false;
@@ -99,7 +118,7 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var (lexical, path, depth, owner, excludedLocation) = queue.Dequeue();
-                if (!visited.Add(path))
+                if (!routes.Add(lexical))
                 {
                     continue;
                 }
@@ -118,13 +137,18 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
 
                 if (markers.Count > 0)
                 {
-                    found.Add(new DiscoveredProject(
-                        path,
-                        Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar)),
-                        markers,
-                        IsNested: owner is not null,
-                        ParentProjectPath: owner,
-                        ExcludedLocation: excludedLocation));
+                    // One place on disk is one project, whichever route arrived at it first.
+                    if (emitted.Add(path))
+                    {
+                        found.Add(new DiscoveredProject(
+                            path,
+                            Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar)),
+                            markers,
+                            IsNested: owner is not null,
+                            ParentProjectPath: owner,
+                            ExcludedLocation: excludedLocation));
+                    }
+
                     owningProject = path;
                 }
 
@@ -138,15 +162,20 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                     // Inside an excluded tree nothing is enumerated at all: the walk steps along
                     // the opted-in paths themselves, so a vendor directory with thousands of
                     // siblings costs one directory probe per opted-in segment.
-                    foreach (var next in OptInDescendants(lexical, path, optIns))
+                    foreach (var name in OptInDescendants(lexical, path, optIns))
                     {
-                        queue.Enqueue((next, Canonicalize(next), depth + 1, owningProject, excludedLocation));
+                        queue.Enqueue((
+                            Path.Combine(lexical, name),
+                            CanonicalChild(path, name),
+                            depth + 1,
+                            owningProject,
+                            excludedLocation));
                     }
 
                     continue;
                 }
 
-                foreach (var (name, child) in EnumerateChildren(path, diagnostics))
+                foreach (var name in EnumerateChildNames(path, diagnostics))
                 {
                     // Repository internals and scratch contents are indexed by their own adapters,
                     // never treated as places to look for further projects.
@@ -157,18 +186,21 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                     }
 
                     var childLexical = Path.Combine(lexical, name);
+                    var childCanonical = CanonicalChild(path, name);
 
                     // The policy is about the name the owner sees on disk. Canonicalizing first
                     // would let a junction named 'node_modules' pointing elsewhere escape it.
                     if (!excluded.Contains(name))
                     {
-                        queue.Enqueue((childLexical, child, depth + 1, owningProject, null));
+                        queue.Enqueue((childLexical, childCanonical, depth + 1, owningProject, null));
                         continue;
                     }
 
-                    if (LeadsToOptIn(childLexical, optIns) || LeadsToOptIn(child, optIns))
+                    // Either name can carry the opt-in: the route the owner wrote, or the place the
+                    // junction actually points at.
+                    if (LeadsToOptIn(childLexical, optIns) || LeadsToOptIn(childCanonical, optIns))
                     {
-                        queue.Enqueue((childLexical, child, depth + 1, owningProject, childLexical));
+                        queue.Enqueue((childLexical, childCanonical, depth + 1, owningProject, childLexical));
                     }
                 }
             }
@@ -190,12 +222,12 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
         // An opt-in that discovery never reached would otherwise be silent: no project, no reason.
         if (!truncated)
         {
-            foreach (var optIn in optInPaths.Where(o => !reached.Contains(o.Lexical) && !reached.Contains(o.Canonical)))
+            foreach (var optIn in optInPaths.Where(o => !o.Paths.Any(reached.Contains)))
             {
                 diagnostics.Add(Diagnostic.Warning(
                     DiagnosticCode.ProjectScanFailed,
                     $"The opted-in project '{optIn.Written}' was not reached: check that the path exists, sits beneath a configured root, and is within the discovery depth.",
-                    optIn.Canonical));
+                    Canonicalize(optIn.Written)));
             }
         }
 
@@ -280,10 +312,10 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
     }
 
     /// <summary>
-    /// The next directory below this one on the way to each opted-in project, taken from the opt-in
-    /// paths themselves rather than from enumerating the directory. Segments are matched against
-    /// both the lexical and canonical form of the current directory and are always returned as
-    /// lexical children of it, so the walk keeps reading the way the owner wrote the opt-in.
+    /// The names of the next directories below this one on the way to each opted-in project, taken
+    /// from the opt-in paths themselves rather than from enumerating the directory. Segments match
+    /// against either form of the current directory, because an opt-in may have been written as the
+    /// route the owner sees or as the place a junction points at.
     /// </summary>
     private static IEnumerable<string> OptInDescendants(
         string lexical,
@@ -308,19 +340,27 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                 var segment = separator < 0 ? remainder : remainder[..separator];
                 if (segment.Length > 0)
                 {
-                    next.Add(Path.Combine(lexical, segment));
+                    next.Add(segment);
                 }
             }
         }
 
-        return next.Where(Directory.Exists);
+        return next.Where(name => Directory.Exists(Path.Combine(lexical, name)));
     }
 
     /// <summary>
-    /// Child directories as the lexical name on disk paired with the canonical path. Policy reads
-    /// the name; identity reads the canonical path.
+    /// The canonical path of a child, built from the canonical parent so that a junction anywhere
+    /// above it is already resolved. Canonicalizing a whole path only resolves its final segment,
+    /// which is how an alias would otherwise become a second identity for one directory.
     /// </summary>
-    private static IEnumerable<(string Name, string CanonicalPath)> EnumerateChildren(
+    private static string CanonicalChild(string canonicalParent, string name) =>
+        Canonicalize(Path.Combine(canonicalParent, name));
+
+    /// <summary>
+    /// Child directory names as they read on disk. Policy reads the name, and identity is composed
+    /// from the canonical parent — never from canonicalizing the child's own full path.
+    /// </summary>
+    private static IEnumerable<string> EnumerateChildNames(
         string path,
         ICollection<Diagnostic> diagnostics)
     {
@@ -346,7 +386,7 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                 continue;
             }
 
-            yield return (name, Canonicalize(child));
+            yield return name;
         }
     }
 }

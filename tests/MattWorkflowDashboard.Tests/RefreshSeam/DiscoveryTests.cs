@@ -155,7 +155,7 @@ public sealed class DiscoveryTests
     }
 
     [TestMethod]
-    public async Task An_opt_in_beneath_a_junctioned_excluded_location_is_still_reached()
+    public async Task An_opt_in_beneath_a_junctioned_excluded_location_is_reached_by_its_route()
     {
         var project = _workspace.NewProject("host");
         var target = Path.Combine(_workspace.Root, "external-deps");
@@ -168,23 +168,87 @@ public sealed class DiscoveryTests
             Assert.Inconclusive("This host cannot create a directory junction.");
         }
 
-        // Opted in the way the owner sees it on disk, not the way the junction resolves.
+        // Identity is where the project physically is; the route is how the owner reaches it.
         _harness.Settings.Projects.Add(new ProjectRegistryEntry
         {
-            Path = Path.Combine(junction, "companion"),
+            Path = Path.Combine(target, "companion"),
+            OptInPath = Path.Combine(junction, "companion"),
             NestedOptIn = true,
         });
 
         var snapshot = await _harness.RefreshAsync();
 
         CollectionAssert.AreEquivalent(
-            new[] { "host", "companion" },
-            snapshot.Projects.Select(p => p.Identity.Name).ToArray(),
-            "An opt-in written as the owner sees it must survive a junction along the way.");
+            new[] { project, Path.Combine(target, "companion") },
+            snapshot.Projects.Select(p => p.Identity.CanonicalPath).ToArray(),
+            "The route reaches it, and one place on disk stays one identity.");
+    }
+
+    [TestMethod]
+    public async Task A_junctioned_excluded_location_still_reaches_an_opt_in_recorded_physically()
+    {
+        var project = _workspace.NewProject("host");
+        var target = Path.Combine(_workspace.Root, "external-deps");
+        _workspace.WriteFile(Path.Combine(target, "companion", "AGENTS.md"), "# opted in, recorded where it lives\n");
+
+        if (!TryCreateJunction(Path.Combine(project, "node_modules"), target))
+        {
+            Assert.Inconclusive("This host cannot create a directory junction.");
+        }
+
+        // Only the physical path is registered — the walk has to notice that the excluded junction
+        // points at it.
+        _harness.Settings.Projects.Add(new ProjectRegistryEntry
+        {
+            Path = Path.Combine(target, "companion"),
+            NestedOptIn = true,
+        });
+
+        var snapshot = await _harness.RefreshAsync();
+
+        CollectionAssert.AreEquivalent(
+            new[] { project, Path.Combine(target, "companion") },
+            snapshot.Projects.Select(p => p.Identity.CanonicalPath).ToArray(),
+            "An opt-in recorded where the project physically lives must still be reached through the junction.");
+    }
+
+    [TestMethod]
+    public async Task A_second_route_to_a_directory_can_still_reach_what_only_it_can_see()
+    {
+        // The target sits at the depth limit under its own root, so its children are out of reach
+        // that way; the junction under the other root is the only route that can see them.
+        var deepRoot = Path.Combine(_workspace.Root, "deep");
+        var target = Path.Combine(deepRoot, "a", "b", "target");
+        _workspace.WriteFile(Path.Combine(target, "companion", "AGENTS.md"), "# only reachable through the junction\n");
+
+        var project = _workspace.NewProject("host");
+        if (!TryCreateJunction(Path.Combine(project, "node_modules"), target))
+        {
+            Assert.Inconclusive("This host cannot create a directory junction.");
+        }
+
+        _harness.Settings.MaxDiscoveryDepth = 3;
+        _harness.Settings.Roots.Insert(0, deepRoot);
+        _harness.Settings.Projects.Add(new ProjectRegistryEntry
+        {
+            Path = Path.Combine(target, "companion"),
+            OptInPath = Path.Combine(project, "node_modules", "companion"),
+            NestedOptIn = true,
+        });
+
+        var snapshot = await _harness.RefreshAsync();
+
+        CollectionAssert.Contains(
+            snapshot.Projects.Select(p => p.Identity.CanonicalPath).ToArray(),
+            Path.Combine(target, "companion"),
+            "Having walked a directory by one route must not discard the route that can go further.");
+        Assert.IsFalse(
+            snapshot.Diagnostics.Any(d => d.Message.Contains("was not reached", StringComparison.Ordinal)),
+            "Nothing should be reported unreachable when a route to it exists.");
     }
 
     /// <summary>A junction needs no elevation, but a host may still refuse it.</summary>
-    private static bool TryCreateJunction(string link, string target)
+    internal static bool TryCreateJunction(string link, string target)
     {
         using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe")
         {

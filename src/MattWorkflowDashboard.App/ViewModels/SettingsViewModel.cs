@@ -243,9 +243,11 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
 
         string path;
+        string route;
         try
         {
             path = ProjectDiscovery.Canonicalize(typed);
+            route = ProjectDiscovery.Lexical(typed);
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
         {
@@ -263,6 +265,10 @@ public sealed partial class SettingsViewModel : ObservableObject
             Path = path,
             State = ProjectRegistryState.Enabled,
             NestedOptIn = true,
+
+            // Identity is canonical, but a project that is itself a link out of an excluded location
+            // cannot be walked to by that name — so the route as typed is kept alongside it.
+            OptInPath = string.Equals(route, path, StringComparison.OrdinalIgnoreCase) ? null : route,
         };
 
         _settings.Projects.Add(entry);

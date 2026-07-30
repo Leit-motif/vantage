@@ -127,6 +127,39 @@ public sealed class RegistryControlTests
     }
 
     [TestMethod]
+    public async Task An_opt_in_typed_as_a_junction_route_keeps_both_its_identity_and_its_route()
+    {
+        var host = _workspace.NewProject("host");
+        var target = Path.Combine(_workspace.Root, "external-companion");
+        _workspace.WriteFile(Path.Combine(target, "AGENTS.md"), "# independent, and itself a junction\n");
+
+        var typed = Path.Combine(host, "node_modules", "companion");
+        Directory.CreateDirectory(Path.Combine(host, "node_modules"));
+        if (!DiscoveryTests.TryCreateJunction(typed, target))
+        {
+            Assert.Inconclusive("This host cannot create a directory junction.");
+        }
+
+        await _harness.RefreshAsync();
+
+        var settings = OpenSettings();
+        settings.NewNestedProject = typed;
+        settings.AddNestedProjectCommand.Execute(null);
+
+        var entry = PersistedEntry(target);
+        Assert.IsTrue(entry.NestedOptIn);
+        Assert.AreEqual(typed, entry.OptInPath, "The route the owner typed is what discovery can walk.");
+
+        _harness.Restart();
+        var snapshot = await _harness.RefreshAsync();
+
+        CollectionAssert.AreEquivalent(
+            new[] { host, target },
+            snapshot.Projects.Select(p => p.Identity.CanonicalPath).ToArray(),
+            "A project that is itself a junction out of an excluded location is still reached after a restart.");
+    }
+
+    [TestMethod]
     public async Task A_first_seen_origin_is_confirmed_once_and_still_requires_confirmation_after_restart()
     {
         var project = _workspace.NewProject("widget");
