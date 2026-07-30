@@ -6,7 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
-    <InvariantGlobalization>true</InvariantGlobalization>
+<!--
+      Globalization data stays enabled: WPF resolves binding cultures through it, and an
+      invariant-only runtime makes every data binding throw at startup.
+    -->
     <Platforms>AnyCPU</Platforms>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <NoWarn>$(NoWarn);NU1902;NU1903</NoWarn>

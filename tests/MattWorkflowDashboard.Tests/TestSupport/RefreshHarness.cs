@@ -67,8 +67,13 @@ public static class SnapshotAssertions
         ?? throw new AssertFailedException(
             $"No project named '{name}'. Found: {string.Join(", ", snapshot.Projects.Select(p => p.Identity.Name))}");
 
+    /// <summary>
+    /// Finds a ticket by its project-unique id or by the name it answers to inside its effort,
+    /// so fixtures can keep saying "001" without repeating the effort name.
+    /// </summary>
     public static TicketView Ticket(this ProjectView project, string id) =>
-        project.Efforts.SelectMany(e => e.Tickets).SingleOrDefault(t => t.Id == id)
+        project.Efforts.SelectMany(e => e.Tickets)
+            .SingleOrDefault(t => t.Id == id || t.Id.EndsWith("/" + id, StringComparison.OrdinalIgnoreCase))
         ?? throw new AssertFailedException(
             $"No ticket '{id}'. Found: {string.Join(", ", project.Efforts.SelectMany(e => e.Tickets).Select(t => t.Id))}");
 

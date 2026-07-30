@@ -35,7 +35,14 @@ public sealed record BlockerReference(string RawValue, string NormalizedKey);
 /// </summary>
 public sealed record WorkflowTicket
 {
+    /// <summary>Unique within the project, so two efforts can both hold an <c>001.md</c>.</summary>
     public required string Id { get; init; }
+
+    /// <summary>
+    /// How the ticket refers to itself inside its own effort. Blocker references resolve against
+    /// this, which is why they can never reach across efforts.
+    /// </summary>
+    public required string LocalKey { get; init; }
 
     public required string EffortId { get; init; }
 

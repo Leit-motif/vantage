@@ -34,7 +34,7 @@ public sealed class NextActionTests
 
         var view = (await _harness.RefreshAsync()).Project("app");
 
-        Assert.AreEqual("001", view.NextAction!.TicketId, "The map's first unblocked item wins, not simply its first item.");
+        Assert.AreEqual("feature/001", view.NextAction!.TicketId, "The map's first unblocked item wins, not simply its first item.");
         Assert.AreEqual(NextActionSource.WayfinderFrontier, view.NextAction.Source);
     }
 
@@ -64,7 +64,7 @@ public sealed class NextActionTests
 
         var view = (await _harness.RefreshAsync()).Project("app");
 
-        Assert.AreEqual("002", view.NextAction!.TicketId);
+        Assert.AreEqual("feature/002", view.NextAction!.TicketId);
         Assert.AreEqual(NextActionSource.ReadyFallback, view.NextAction.Source);
     }
 

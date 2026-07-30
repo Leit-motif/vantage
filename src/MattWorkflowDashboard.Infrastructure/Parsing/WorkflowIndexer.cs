@@ -106,7 +106,7 @@ public sealed partial class WorkflowIndexer(int maxFileBytes = 1_048_576, int ma
                 continue;
             }
 
-            tickets.Add(ToTicket(artifact, effortId, usedIds, diagnostics));
+            tickets.Add(ToTicket(artifact, effortId, name, usedIds, diagnostics));
         }
 
         if (tickets.Count == 0)
@@ -194,10 +194,12 @@ public sealed partial class WorkflowIndexer(int maxFileBytes = 1_048_576, int ma
     private static WorkflowTicket ToTicket(
         ObservedArtifact artifact,
         string effortId,
+        string effortName,
         HashSet<string> usedIds,
         ICollection<Diagnostic> diagnostics)
     {
-        var id = MakeTicketId(artifact.RelativePath, usedIds);
+        var localKey = MakeLocalKey(artifact.RelativePath, usedIds);
+        var id = $"{effortName.ToLowerInvariant()}/{localKey}";
         var statusField = artifact.Field(MetadataGrammar.Keys.Status);
         var title = artifact.Field(MetadataGrammar.Keys.Title)?.RawValue
             ?? artifact.HeadingTitle
@@ -214,6 +216,7 @@ public sealed partial class WorkflowIndexer(int maxFileBytes = 1_048_576, int ma
             return new WorkflowTicket
             {
                 Id = id,
+                LocalKey = localKey,
                 EffortId = effortId,
                 Title = title,
                 Status = new StatusReading(WorkflowStatus.Unknown, string.Empty),
@@ -243,6 +246,7 @@ public sealed partial class WorkflowIndexer(int maxFileBytes = 1_048_576, int ma
         return new WorkflowTicket
         {
             Id = id,
+            LocalKey = localKey,
             EffortId = effortId,
             Title = title,
             Status = status,
@@ -350,7 +354,11 @@ public sealed partial class WorkflowIndexer(int maxFileBytes = 1_048_576, int ma
     private static string MakeEffortId(string projectPath, string effortPath) =>
         Path.GetRelativePath(projectPath, effortPath).Replace('\\', '/').ToLowerInvariant();
 
-    private static string MakeTicketId(string relativePath, HashSet<string> usedIds)
+    /// <summary>
+    /// The name a ticket answers to inside its own effort. Two efforts may each hold an
+    /// <c>001.md</c>; the project-unique id is built from this and the effort name.
+    /// </summary>
+    private static string MakeLocalKey(string relativePath, HashSet<string> usedIds)
     {
         var stem = Path.GetFileNameWithoutExtension(relativePath).ToLowerInvariant();
         if (usedIds.Add(stem))

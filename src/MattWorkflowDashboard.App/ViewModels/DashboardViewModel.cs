@@ -52,11 +52,21 @@ public sealed partial class DashboardViewModel : ObservableObject
         IsExpanded = !settings.Ui.StartCompact;
         Projects = [];
         AllProjects = [];
+        VisibleProjects = [];
     }
 
+    /// <summary>Everything the current filter matched.</summary>
     public ObservableCollection<ProjectItemViewModel> Projects { get; }
 
+    /// <summary>
+    /// What the window shows: the compact view deliberately stops at three rows so continuous
+    /// awareness costs almost no screen space.
+    /// </summary>
+    public ObservableCollection<ProjectItemViewModel> VisibleProjects { get; }
+
     public ObservableCollection<ProjectItemViewModel> AllProjects { get; }
+
+    public const int CompactRowLimit = 3;
 
     [ObservableProperty]
     private bool _isExpanded;
@@ -128,9 +138,6 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     public string RefreshId => _snapshot.RefreshId;
 
-    /// <summary>The three most recently active projects, for the compact view.</summary>
-    public IEnumerable<ProjectItemViewModel> CompactRows => Projects.Take(3);
-
     partial void OnFilterChanged(DashboardFilter value) => ApplyFilter();
 
     partial void OnSearchTextChanged(string value) => ApplyFilter();
@@ -139,6 +146,7 @@ public sealed partial class DashboardViewModel : ObservableObject
     {
         _settings.Ui.StartCompact = !value;
         OnPropertyChanged(nameof(ShellWidth));
+        UpdateVisibleProjects();
         SaveSettings();
     }
 
@@ -259,7 +267,16 @@ public sealed partial class DashboardViewModel : ObservableObject
         }
 
         SelectedProject = Projects.FirstOrDefault(p => p.Path == SelectedProject?.Path) ?? Projects.FirstOrDefault();
-        OnPropertyChanged(nameof(CompactRows));
+        UpdateVisibleProjects();
+    }
+
+    private void UpdateVisibleProjects()
+    {
+        VisibleProjects.Clear();
+        foreach (var project in IsExpanded ? Projects : Projects.Take(CompactRowLimit))
+        {
+            VisibleProjects.Add(project);
+        }
     }
 
     private void SaveSettings()

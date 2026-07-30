@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Threading;
 using MattWorkflowDashboard.App.Shell;
 using MattWorkflowDashboard.App.ViewModels;
@@ -10,6 +11,9 @@ using MattWorkflowDashboard.Infrastructure.Persistence;
 using MattWorkflowDashboard.Infrastructure.Processes;
 using MattWorkflowDashboard.Infrastructure.Settings;
 using Serilog.Core;
+
+// WinForms brings System.Drawing into scope for the tray icon; here the WPF types are meant.
+using Color = System.Windows.Media.Color;
 
 namespace MattWorkflowDashboard.App;
 
@@ -96,6 +100,42 @@ public partial class App : Application
         _periodicRefresh.Start();
 
         RequestRefresh();
+
+        var captureIndex = Array.FindIndex(e.Args, a => a.Equals("--capture", StringComparison.OrdinalIgnoreCase));
+        if (captureIndex >= 0 && captureIndex + 1 < e.Args.Length)
+        {
+            _ = CaptureFramesAsync(e.Args[captureIndex + 1]);
+        }
+    }
+
+    /// <summary>
+    /// Development-only: waits for the first refresh, writes runtime frames of the built
+    /// application in each layout, then exits. Never reached in ordinary use.
+    /// </summary>
+    private async Task CaptureFramesAsync(string directory)
+    {
+        await _viewModel.RefreshCommand.ExecutionTask!.ConfigureAwait(true);
+        await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+
+        var backdrop = new LinearGradientBrush(
+            Color.FromRgb(0x24, 0x28, 0x2E),
+            Color.FromRgb(0x3A, 0x33, 0x2C),
+            45);
+
+        void Frame(string name, bool expanded, double width)
+        {
+            _viewModel.IsExpanded = expanded;
+            _window.Width = width;
+            _window.UpdateLayout();
+            FrameCapture.Save(_window, Path.Combine(directory, name), backdrop);
+        }
+
+        Frame("compact.png", expanded: false, width: 380);
+        Frame("expanded.png", expanded: true, width: 720);
+        Frame("narrow.png", expanded: false, width: 320);
+
+        _window.ExitForReal();
+        Shutdown();
     }
 
     private void WireTray()

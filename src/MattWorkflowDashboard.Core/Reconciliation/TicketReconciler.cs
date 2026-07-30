@@ -183,6 +183,7 @@ public static class TicketReconciler
             return new WorkflowTicket
             {
                 Id = $"gh#{issue.Number}",
+                LocalKey = issue.Number.ToString(),
                 EffortId = GitHubEffortId,
                 Title = issue.Title,
                 Status = status,

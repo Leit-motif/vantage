@@ -130,7 +130,7 @@ public sealed class GitActivityTests
         _workspace.WriteFile(ticket, Fixtures.Ticket("Work", "ready"));
         var view = (await _harness.RefreshAsync()).Project("repo");
 
-        var change = view.RecentActivity.SingleOrDefault(a => a.TicketId == "001");
+        var change = view.RecentActivity.SingleOrDefault(a => a.TicketId == "feature/001");
         Assert.IsNotNull(change, "A status change observed between refreshes is real movement.");
         Assert.AreEqual(TimestampProvenance.WatcherEvent, change.Provenance.TimestampKind);
         StringAssert.Contains(change.Summary, "ready");
@@ -149,7 +149,7 @@ public sealed class GitActivityTests
         _workspace.WriteFile(first, Fixtures.Ticket("Work", "done"));
         var view = (await _harness.RefreshAsync()).Project("repo");
 
-        Assert.IsFalse(view.RecentActivity.Any(a => a.TicketId == "001"), "Closure is not movement worth surfacing.");
+        Assert.IsFalse(view.RecentActivity.Any(a => a.TicketId == "feature/001"), "Closure is not movement worth surfacing.");
     }
 
     [TestMethod]

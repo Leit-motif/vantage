@@ -130,9 +130,9 @@ public static class BlockerGraph
 
         foreach (var ticket in effort.Tickets)
         {
-            Add(NormalizeReference(ticket.Id), ticket.Id);
+            Add(NormalizeReference(ticket.LocalKey), ticket.Id);
 
-            var numericPrefix = NumericPrefix(ticket.Id);
+            var numericPrefix = NumericPrefix(ticket.LocalKey);
             if (numericPrefix is not null)
             {
                 Add(numericPrefix, ticket.Id);

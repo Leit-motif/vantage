@@ -250,9 +250,21 @@
         <ToggleButton Style="{StaticResource FilterChip}" Content="Archive"
                       Command="{Binding SetFilterCommand}" CommandParameter="Archive"
                       IsChecked="{Binding Filter, Converter={StaticResource FilterEquals}, ConverterParameter=Archive, Mode=OneWay}" />
-        <TextBox Style="{StaticResource SearchBox}" Width="120" Margin="4,0,0,0"
-                 AutomationProperties.Name="Search projects and tickets"
-                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=200}" />
+        <Grid Width="140" Margin="4,0,0,0">
+          <TextBox x:Name="SearchInput" Style="{StaticResource SearchBox}"
+                   AutomationProperties.Name="Search projects and tickets"
+                   Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=200}" />
+          <TextBlock Style="{StaticResource TertiaryText}" Margin="8,0,0,0" IsHitTestVisible="False"
+                     VerticalAlignment="Center" Text="Search">
+            <TextBlock.Visibility>
+              <Binding ElementName="SearchInput" Path="Text.IsEmpty">
+                <Binding.Converter>
+                  <conv:BoolToVisibilityConverter />
+                </Binding.Converter>
+              </Binding>
+            </TextBlock.Visibility>
+          </TextBlock>
+        </Grid>
       </WrapPanel>
 
       <!-- Counters -->
@@ -284,7 +296,7 @@
 
         <ListBox Grid.Column="0"
                  x:Name="ProjectList"
-                 ItemsSource="{Binding Projects}"
+                 ItemsSource="{Binding VisibleProjects}"
                  SelectedItem="{Binding SelectedProject}"
                  ItemTemplate="{StaticResource ProjectRowTemplate}"
                  Background="Transparent"

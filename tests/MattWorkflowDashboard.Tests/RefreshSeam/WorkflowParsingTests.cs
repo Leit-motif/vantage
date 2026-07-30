@@ -171,6 +171,26 @@ public sealed class WorkflowParsingTests
     }
 
     [TestMethod]
+    public async Task Two_efforts_may_each_hold_a_ticket_with_the_same_filename()
+    {
+        var project = _workspace.NewProject("app");
+        var alpha = _workspace.NewEffort(project, "alpha");
+        var beta = _workspace.NewEffort(project, "beta");
+        _workspace.WriteTicket(alpha, "001.md", Fixtures.Ticket("Alpha one", "ready"));
+        _workspace.WriteTicket(beta, "001.md", Fixtures.Ticket("Beta one", "open"));
+
+        // The second pass exercises the persisted snapshot, where colliding ids would clash.
+        await _harness.RefreshAsync();
+        var view = (await _harness.RefreshAsync()).Project("app");
+
+        Assert.IsFalse(view.IsStale, "Neither effort should have failed to index.");
+        Assert.AreEqual(2, view.Progress.Total);
+        CollectionAssert.AreEquivalent(
+            new[] { "Alpha one", "Beta one" },
+            view.Efforts.SelectMany(e => e.Tickets).Select(t => t.Title).ToArray());
+    }
+
+    [TestMethod]
     public async Task A_map_orders_work_but_never_overrides_a_ticket_fact()
     {
         var project = _workspace.NewProject("app");
@@ -189,6 +209,6 @@ public sealed class WorkflowParsingTests
         var view = (await _harness.RefreshAsync()).Project("app");
 
         Assert.AreEqual(0, view.Progress.Completed, "The map's own metadata must not complete the tickets.");
-        Assert.AreEqual("002", view.NextAction!.TicketId, "Map order decides direction.");
+        Assert.AreEqual("feature/002", view.NextAction!.TicketId, "Map order decides direction.");
     }
 }
