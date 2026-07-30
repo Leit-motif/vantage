@@ -160,6 +160,86 @@ public sealed class RegistryControlTests
     }
 
     [TestMethod]
+    public async Task An_opt_in_typed_through_a_junctioned_excluded_location_is_stored_by_where_it_lives()
+    {
+        var host = _workspace.NewProject("host");
+        var target = Path.Combine(_workspace.Root, "external-deps");
+        _workspace.WriteFile(Path.Combine(target, "companion", "AGENTS.md"), "# a plain directory inside a linked tree\n");
+
+        if (!DiscoveryTests.TryCreateJunction(Path.Combine(host, "node_modules"), target))
+        {
+            Assert.Inconclusive("This host cannot create a directory junction.");
+        }
+
+        await _harness.RefreshAsync();
+
+        var typed = Path.Combine(host, "node_modules", "companion");
+        var settings = OpenSettings();
+        settings.NewNestedProject = typed;
+        settings.AddNestedProjectCommand.Execute(null);
+
+        // The junction is above the typed path, so only resolving every segment gets the identity
+        // discovery will emit.
+        var entry = PersistedEntry(Path.Combine(target, "companion"));
+        Assert.IsTrue(entry.NestedOptIn);
+        Assert.AreEqual(typed, entry.OptInPath);
+
+        _harness.Restart();
+        var snapshot = await _harness.RefreshAsync();
+
+        CollectionAssert.AreEquivalent(
+            new[] { host, Path.Combine(target, "companion") },
+            snapshot.Projects.Select(p => p.Identity.CanonicalPath).ToArray(),
+            "The opt-in must land on the identity discovery emits, not on an alias beside it.");
+    }
+
+    [TestMethod]
+    public async Task Opting_in_a_project_that_is_already_registered_records_its_route_instead_of_dropping_it()
+    {
+        var host = _workspace.NewProject("host");
+
+        // A second root that holds the project directly, so it is registered before any opt-in.
+        var directRoot = Path.Combine(_workspace.Root, "direct");
+        var companion = Path.Combine(directRoot, "companion");
+        _workspace.WriteFile(Path.Combine(companion, "AGENTS.md"), "# reachable two ways\n");
+        _harness.Settings.Roots.Add(directRoot);
+
+        if (!DiscoveryTests.TryCreateJunction(Path.Combine(host, "node_modules"), directRoot))
+        {
+            Assert.Inconclusive("This host cannot create a directory junction.");
+        }
+
+        await _harness.RefreshAsync();
+        Assert.IsFalse(PersistedEntry(companion).NestedOptIn, "It was found directly, so nothing was opted in.");
+
+        var typed = Path.Combine(host, "node_modules", "companion");
+        var settings = OpenSettings();
+        settings.NewNestedProject = typed;
+        settings.AddNestedProjectCommand.Execute(null);
+
+        var entry = PersistedEntry(companion);
+        Assert.IsTrue(entry.NestedOptIn, "The opt-in must land on the entry that already exists.");
+        Assert.AreEqual(typed, entry.OptInPath);
+        Assert.AreEqual(
+            1,
+            _harness.SettingsStore.Load().Settings.Projects.Count(p =>
+                string.Equals(p.Path, companion, StringComparison.OrdinalIgnoreCase)),
+            "One place on disk keeps one registry entry.");
+
+        // The direct route goes away; the recorded route is now the only way there.
+        _harness.Settings.Roots.Remove(directRoot);
+        _harness.SettingsStore.Save(_harness.Settings);
+        _harness.Restart();
+
+        var snapshot = await _harness.RefreshAsync();
+
+        CollectionAssert.Contains(
+            snapshot.Projects.Select(p => p.Identity.CanonicalPath).ToArray(),
+            companion,
+            "With the direct root gone, the route recorded on the opt-in has to still reach it.");
+    }
+
+    [TestMethod]
     public async Task A_first_seen_origin_is_confirmed_once_and_still_requires_confirmation_after_restart()
     {
         var project = _workspace.NewProject("widget");

@@ -70,7 +70,7 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                 [
                     .. new[] { p.Path, p.OptInPath }
                         .Where(path => !string.IsNullOrWhiteSpace(path))
-                        .SelectMany(path => new[] { Lexical(path!), Canonicalize(path!) })
+                        .SelectMany(path => new[] { Lexical(path!), CanonicalizeFully(path!) })
                         .Distinct(StringComparer.OrdinalIgnoreCase),
                 ]))
             .ToList();
@@ -111,7 +111,7 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
             // Lexical is the path as it reads on disk and drives policy and opt-in matching;
             // canonical resolves links and is the project's identity.
             var queue = new Queue<(string Lexical, string Path, int Depth, string? Owner, string? ExcludedLocation)>();
-            queue.Enqueue((Lexical(root), Canonicalize(root), 0, null, null));
+            queue.Enqueue((Lexical(root), CanonicalizeFully(root), 0, null, null));
 
             while (queue.Count > 0)
             {
@@ -227,7 +227,7 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                 diagnostics.Add(Diagnostic.Warning(
                     DiagnosticCode.ProjectScanFailed,
                     $"The opted-in project '{optIn.Written}' was not reached: check that the path exists, sits beneath a configured root, and is within the discovery depth.",
-                    Canonicalize(optIn.Written)));
+                    CanonicalizeFully(optIn.Written)));
             }
         }
 
@@ -263,6 +263,33 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
     /// </summary>
     public static string Lexical(string path) =>
         Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+    /// <summary>
+    /// The identity of a path that arrives from outside the walk — one the owner typed, or a
+    /// configured root. Every segment is resolved in turn, because <see cref="Canonicalize"/>
+    /// resolves only the last one: a link anywhere above would otherwise survive into the identity
+    /// and become a second name for one directory. The walk itself does this by induction, each
+    /// step composing from an already-canonical parent.
+    /// </summary>
+    public static string CanonicalizeFully(string path)
+    {
+        var full = Lexical(path);
+        var root = Path.GetPathRoot(full);
+        if (string.IsNullOrEmpty(root))
+        {
+            return Canonicalize(full);
+        }
+
+        var current = root;
+        foreach (var segment in full[root.Length..].Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Canonicalize(Path.Combine(current, segment));
+        }
+
+        return current.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
 
     private static List<string> DetectMarkers(string path, ICollection<Diagnostic> diagnostics)
     {

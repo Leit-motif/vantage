@@ -91,6 +91,15 @@ public sealed partial class ProjectRegistryRow : ObservableObject
         _onChanged();
     }
 
+    /// <summary>Re-reads the entry after something other than this row changed it.</summary>
+    public void NotifyEntryChanged()
+    {
+        OnPropertyChanged(nameof(State));
+        OnPropertyChanged(nameof(Pinned));
+        OnPropertyChanged(nameof(NestedOptIn));
+        OnPropertyChanged(nameof(Origin));
+    }
+
     private void Set(Action mutate, [System.Runtime.CompilerServices.CallerMemberName] string? name = null)
     {
         mutate();
@@ -246,7 +255,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         string route;
         try
         {
-            path = ProjectDiscovery.Canonicalize(typed);
+            // Every segment is resolved, not just the last: a link anywhere along a typed path would
+            // otherwise be stored as the identity, and discovery would emit the physical one instead.
+            path = ProjectDiscovery.CanonicalizeFully(typed);
             route = ProjectDiscovery.Lexical(typed);
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
@@ -255,8 +266,22 @@ public sealed partial class SettingsViewModel : ObservableObject
             return;
         }
 
-        if (_settings.FindProject(path) is not null)
+        // Identity is canonical, but a project reached through a link cannot be walked to by that
+        // name — so the route as typed is kept alongside it.
+        var recordedRoute = string.Equals(route, path, StringComparison.OrdinalIgnoreCase) ? null : route;
+        var existing = _settings.FindProject(path);
+
+        if (existing is not null)
         {
+            // The place is already registered — perhaps it was found by another route entirely. The
+            // opt-in still has to land on it, route included, rather than being dropped as a
+            // duplicate. Its state is left alone: opting in is not the same as un-hiding.
+            existing.NestedOptIn = true;
+            existing.OptInPath = recordedRoute ?? existing.OptInPath;
+
+            Projects.FirstOrDefault(r => ReferenceEquals(r.Entry, existing))?.NotifyEntryChanged();
+            NewNestedProject = string.Empty;
+            Apply();
             return;
         }
 
@@ -265,10 +290,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             Path = path,
             State = ProjectRegistryState.Enabled,
             NestedOptIn = true,
-
-            // Identity is canonical, but a project that is itself a link out of an excluded location
-            // cannot be walked to by that name — so the route as typed is kept alongside it.
-            OptInPath = string.Equals(route, path, StringComparison.OrdinalIgnoreCase) ? null : route,
+            OptInPath = recordedRoute,
         };
 
         _settings.Projects.Add(entry);
