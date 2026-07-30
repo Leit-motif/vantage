@@ -111,9 +111,14 @@ public sealed class ConflictInspectionTests
             620));
     }
 
+    /// <summary>
+    /// A control the owner can actually reach: on screen, invokable, and announced by a name that
+    /// says what it inspects.
+    /// </summary>
     private static ButtonBase? ConflictControl(DependencyObject root, string named) =>
         WpfTestHost.Descendants<ButtonBase>(root)
             .SingleOrDefault(b => b.Command is not null
+                && WpfTestHost.IsRendered(b)
                 && (AutomationProperties.GetName(b) ?? string.Empty)
                     .Contains(named, StringComparison.OrdinalIgnoreCase));
 

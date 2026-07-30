@@ -86,11 +86,22 @@ public static class WpfTestHost
                 automationName,
                 StringComparison.Ordinal));
 
+    /// <summary>
+    /// Whether an element was actually given room by the layout pass. A collapsed element stays
+    /// in the visual tree with nothing but its bindings, so a search that ignores this would
+    /// happily find evidence and controls the owner can never see. <c>UIElement.IsVisible</c>
+    /// cannot answer this here: it is false for everything in a tree with no presentation source.
+    /// </summary>
+    public static bool IsRendered(FrameworkElement element) =>
+        element.Visibility == Visibility.Visible && element.ActualWidth > 0 && element.ActualHeight > 0;
+
     /// <summary>Everything the laid-out tree actually puts on screen as text.</summary>
     public static string RenderedText(DependencyObject root) =>
         string.Join(
             "\n",
-            Descendants<TextBlock>(root).Select(t => t.Text).Where(t => !string.IsNullOrEmpty(t)));
+            Descendants<TextBlock>(root)
+                .Where(t => IsRendered(t) && !string.IsNullOrEmpty(t.Text))
+                .Select(t => t.Text));
 
     private static Dispatcher Ui()
     {
