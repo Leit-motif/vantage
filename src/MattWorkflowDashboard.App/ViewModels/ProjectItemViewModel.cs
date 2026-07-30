@@ -3,6 +3,9 @@ using MattWorkflowDashboard.Core.Projection;
 
 namespace MattWorkflowDashboard.App.ViewModels;
 
+/// <summary>One piece of stuck work, what is holding it, and where that was observed.</summary>
+public sealed record BlockedItem(string Title, string HeldBy, string Provenance);
+
 /// <summary>
 /// One project row. Everything shown here is read straight from the snapshot, and every value
 /// carries the provenance that produced it so any conclusion can be challenged.
@@ -50,6 +53,9 @@ public sealed class ProjectItemViewModel(ProjectView view)
 
     public bool HasNextAction => View.NextAction is not null;
 
+    /// <summary>Where the next action came from, so the recommendation can be challenged.</summary>
+    public string NextActionProvenance => View.NextAction?.Provenance.Description ?? string.Empty;
+
     public string LastUpdateText => View.LastActivityAt is { } at
         ? Relative(at)
         : "no observed activity";
@@ -59,6 +65,20 @@ public sealed class ProjectItemViewModel(ProjectView view)
     public IReadOnlyList<ActivityEvent> RecentActivity => View.RecentActivity;
 
     public IReadOnlyList<EffortView> Efforts => View.Efforts;
+
+    /// <summary>Everything that cannot move, and what is holding it.</summary>
+    public IReadOnlyList<BlockedItem> Blockers => View.Efforts
+        .SelectMany(e => e.Tickets)
+        .Where(t => t.IsBlocked)
+        .Select(t => new BlockedItem(
+            t.Title,
+            t.BlockedBy.Count > 0
+                ? "Waiting on " + string.Join(", ", t.BlockedBy)
+                : "Marked blocked, with no dependency named",
+            t.Provenance.Description))
+        .ToList();
+
+    public int BlockerCount => Blockers.Count;
 
     public IReadOnlyList<ConflictReport> Conflicts => View.Conflicts;
 

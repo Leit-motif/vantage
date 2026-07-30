@@ -21,7 +21,9 @@ public sealed record GitHubReadResult(
 /// </summary>
 public sealed class GitHubCliAdapter(IProcessRunner runner, int maxIssues = 200)
 {
-    private const string Fields = "number,title,state,labels,assignees,updatedAt,closedAt,url";
+    // The body carries the workflow metadata a linked ticket can disagree with, and the comment
+    // count is qualifying activity in its own right.
+    private const string Fields = "number,title,state,labels,assignees,updatedAt,closedAt,url,body,comments";
 
     /// <summary>Authentication is probed once per refresh, not once per repository.</summary>
     public async Task<bool> IsAuthenticatedAsync(CancellationToken cancellationToken)
@@ -107,13 +109,19 @@ public sealed class GitHubCliAdapter(IProcessRunner runner, int maxIssues = 200)
                 ReadNames(element, "assignees", "login"),
                 updatedAt,
                 ReadDate(element, "closedAt"),
-                CommentCount: 0,
+                CountComments(element),
                 url,
+                ReadString(element, "body") ?? string.Empty,
                 Provenance.GitHub($"{origin.Slug}#{number}", updatedAt, refreshId)));
         }
 
         return issues;
     }
+
+    private static int CountComments(JsonElement element) =>
+        element.TryGetProperty("comments", out var comments) && comments.ValueKind == JsonValueKind.Array
+            ? comments.GetArrayLength()
+            : 0;
 
     private static string? ReadString(JsonElement element, string name) =>
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String

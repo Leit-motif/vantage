@@ -87,9 +87,12 @@ public sealed record ConflictReport(
 /// <summary>Equal-weight work-unit totals. A ticket counts once, at completion.</summary>
 public sealed record ProgressSummary(int Completed, int Total, int Excluded)
 {
-    public double Fraction => Total == 0 ? 1d : (double)Completed / Total;
+    /// <summary>Nothing counted means nothing is known, which is not the same as finished.</summary>
+    public double Fraction => Total == 0 ? 0d : (double)Completed / Total;
 
     public int Remaining => Total - Completed;
+
+    public bool HasWorkUnits => Total > 0;
 }
 
 /// <summary>Completion counts per pipeline stage, so progress reflects the whole effort.</summary>

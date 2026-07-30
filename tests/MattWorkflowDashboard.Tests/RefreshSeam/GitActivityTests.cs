@@ -132,7 +132,11 @@ public sealed class GitActivityTests
 
         var change = view.RecentActivity.SingleOrDefault(a => a.TicketId == "feature/001");
         Assert.IsNotNull(change, "A status change observed between refreshes is real movement.");
-        Assert.AreEqual(TimestampProvenance.WatcherEvent, change.Provenance.TimestampKind);
+        Assert.AreEqual(
+            TimestampProvenance.ObservedChange,
+            change.Provenance.TimestampKind,
+            "No watcher ran; the timestamp is when the change was noticed and must say so.");
+        Assert.IsTrue(change.Provenance.IsActivityGradeTimestamp);
         StringAssert.Contains(change.Summary, "ready");
     }
 

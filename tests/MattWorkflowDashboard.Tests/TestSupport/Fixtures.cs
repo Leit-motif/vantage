@@ -36,18 +36,30 @@ public static class Fixtures
         return string.Join("\n", lines) + "\n";
     }
 
+    /// <summary>One issue as gh would report it.</summary>
+    public sealed record GhIssue(int Number, string Title, string State, string[] Labels, string UpdatedAt)
+    {
+        public string[] Assignees { get; init; } = [];
+
+        public string Body { get; init; } = string.Empty;
+
+        public int Comments { get; init; }
+    }
+
     /// <summary>A gh issue-list payload with the fields the adapter reads.</summary>
-    public static string GhIssues(params (int Number, string Title, string State, string[] Labels, string UpdatedAt)[] issues) =>
+    public static string GhIssues(params GhIssue[] issues) =>
         "[" + string.Join(",", issues.Select(i => $$"""
             {
               "number": {{i.Number}},
               "title": {{System.Text.Json.JsonSerializer.Serialize(i.Title)}},
               "state": "{{i.State}}",
               "labels": [{{string.Join(",", i.Labels.Select(l => $$"""{"name":"{{l}}"}"""))}}],
-              "assignees": [],
+              "assignees": [{{string.Join(",", i.Assignees.Select(a => $$"""{"login":"{{a}}"}"""))}}],
               "updatedAt": "{{i.UpdatedAt}}",
               "closedAt": {{(i.State == "CLOSED" ? $"\"{i.UpdatedAt}\"" : "null")}},
-              "url": "https://github.com/acme/widget/issues/{{i.Number}}"
+              "url": "https://github.com/acme/widget/issues/{{i.Number}}",
+              "body": {{System.Text.Json.JsonSerializer.Serialize(i.Body)}},
+              "comments": [{{string.Join(",", Enumerable.Range(0, i.Comments).Select(_ => "{}"))}}]
             }
             """)) + "]";
 }

@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\MattWorkflowDashboard.Core\MattWorkflowDashboard.Core.csproj" />
     <ProjectReference Include="..\..\src\MattWorkflowDashboard.Infrastructure\MattWorkflowDashboard.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\MattWorkflowDashboard.App\MattWorkflowDashboard.App.csproj" />
   </ItemGroup>
 
 </Project>

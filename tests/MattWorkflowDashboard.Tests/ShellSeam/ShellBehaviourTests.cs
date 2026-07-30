@@ -1,0 +1,244 @@
+using MattWorkflowDashboard.App.Shell;
+using MattWorkflowDashboard.App.ViewModels;
+using MattWorkflowDashboard.Core.Projection;
+using MattWorkflowDashboard.Infrastructure.Persistence;
+using MattWorkflowDashboard.Infrastructure.Settings;
+using MattWorkflowDashboard.Tests.TestSupport;
+
+namespace MattWorkflowDashboard.Tests.ShellSeam;
+
+/// <summary>
+/// The Windows shell seam, exercised through user-visible commands and observable state rather
+/// than the visual tree. Logic that can be expressed as a snapshot or a command result stays
+/// below the visual tree; these tests prove wiring and Windows behaviour.
+/// </summary>
+[TestClass]
+public sealed class ShellBehaviourTests
+{
+    private WorkspaceFixture _workspace = null!;
+    private DashboardCache _cache = null!;
+    private DashboardSettings _settings = null!;
+    private DashboardViewModel _viewModel = null!;
+
+    [TestInitialize]
+    public void SetUp()
+    {
+        _workspace = new WorkspaceFixture();
+        _cache = DashboardCache.Open(_workspace.CacheFile);
+        _settings = new DashboardSettings { Roots = [_workspace.WorkspacesRoot] };
+
+        var paths = new MattWorkflowDashboard.Infrastructure.AppPaths(Path.Combine(_workspace.Root, "appdata"));
+        _viewModel = new DashboardViewModel(_settings, new SettingsStore(paths), _cache, new FakeProcessRunner());
+    }
+
+    [TestCleanup]
+    public void TearDown()
+    {
+        _cache.Dispose();
+        _workspace.Dispose();
+    }
+
+    [TestMethod]
+    public void Compact_and_expanded_modes_change_the_shell_width_the_owner_chose()
+    {
+        _settings.Ui.Geometry.CompactWidth = 380;
+        _settings.Ui.Geometry.ExpandedWidth = 720;
+
+        _viewModel.IsExpanded = false;
+        Assert.AreEqual(380, _viewModel.ShellWidth);
+
+        _viewModel.ToggleExpandedCommand.Execute(null);
+        Assert.IsTrue(_viewModel.IsExpanded);
+        Assert.AreEqual(720, _viewModel.ShellWidth);
+    }
+
+    [TestMethod]
+    public void The_compact_view_shows_at_most_three_rows_and_the_expanded_view_shows_them_all()
+    {
+        for (var i = 0; i < 6; i++)
+        {
+            var project = _workspace.NewProject($"project-{i}");
+            var effort = _workspace.NewEffort(project, "feature");
+            _workspace.WriteTicket(effort, "001.md", Fixtures.Ticket($"Work {i}", "ready"));
+        }
+
+        _viewModel.Filter = DashboardFilter.AllRemaining;
+        _viewModel.RefreshCommand.Execute(null);
+        _viewModel.RefreshCommand.ExecutionTask!.GetAwaiter().GetResult();
+
+        _viewModel.IsExpanded = false;
+        Assert.AreEqual(DashboardViewModel.CompactRowLimit, _viewModel.VisibleProjects.Count);
+
+        _viewModel.IsExpanded = true;
+        Assert.AreEqual(6, _viewModel.VisibleProjects.Count);
+    }
+
+    [TestMethod]
+    public void Opacity_is_stated_as_what_the_owner_sees_and_stays_within_a_legible_range()
+    {
+        _viewModel.SurfaceOpacityPercent = 80;
+        Assert.AreEqual(0.8d, _viewModel.SurfaceOpacity, 0.001);
+
+        _viewModel.SurfaceOpacityPercent = 0;
+        Assert.AreEqual(10, _viewModel.SurfaceOpacityPercent, "Transparency must never make the dashboard unreadable.");
+
+        _viewModel.SurfaceOpacityPercent = 400;
+        Assert.AreEqual(100, _viewModel.SurfaceOpacityPercent);
+    }
+
+    [TestMethod]
+    public void A_settings_change_reaches_the_running_window_without_a_restart()
+    {
+        var changed = new List<string>();
+        _viewModel.PropertyChanged += (_, e) => changed.Add(e.PropertyName ?? string.Empty);
+
+        _settings.Ui.SurfaceOpacityPercent = 45;
+        _viewModel.NotifyAppearanceChanged();
+
+        CollectionAssert.Contains(changed, nameof(DashboardViewModel.SurfaceOpacity));
+        Assert.AreEqual(0.45d, _viewModel.SurfaceOpacity, 0.001);
+    }
+
+    [TestMethod]
+    public void Geometry_from_a_monitor_that_is_gone_is_brought_back_on_screen()
+    {
+        var (left, top) = WindowInterop.EnsureOnScreen(-40_000, -40_000, 380, 520);
+
+        Assert.IsTrue(
+            System.Windows.Forms.Screen.AllScreens.Any(s =>
+                s.WorkingArea.IntersectsWith(new System.Drawing.Rectangle((int)left, (int)top, 380, 520))),
+            "A display change must never strand the window off-screen.");
+    }
+
+    [TestMethod]
+    public void Geometry_that_is_already_visible_is_left_exactly_where_the_owner_put_it()
+    {
+        var area = System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
+        var (left, top) = WindowInterop.EnsureOnScreen(area.Left + 100, area.Top + 100, 380, 520);
+
+        Assert.AreEqual(area.Left + 100, left);
+        Assert.AreEqual(area.Top + 100, top);
+    }
+
+    [TestMethod]
+    public void Edge_snap_pulls_a_nearly_aligned_window_flush_and_leaves_a_distant_one_alone()
+    {
+        var area = System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
+
+        var (snappedLeft, _) = WindowInterop.SnapToEdge(area.Left + 6, area.Top + 200, 380, 520);
+        Assert.AreEqual(area.Left, snappedLeft);
+
+        var (freeLeft, _) = WindowInterop.SnapToEdge(area.Left + 400, area.Top + 200, 380, 520);
+        Assert.AreEqual(area.Left + 400, freeLeft);
+    }
+
+    [TestMethod]
+    public void Click_through_is_off_by_default()
+    {
+        Assert.IsFalse(new DashboardSettings().Ui.ClickThrough, "A window that ignores the mouse is hard to recover.");
+    }
+
+    [TestMethod]
+    public void No_global_hotkey_is_claimed_by_default()
+    {
+        Assert.IsNull(new DashboardSettings().Ui.ClickThroughHotkey);
+    }
+
+    [TestMethod]
+    public void An_unparseable_or_empty_hotkey_leaves_the_dashboard_without_one_rather_than_guessing()
+    {
+        using var hotkey = new GlobalHotkey(0, () => { });
+
+        Assert.IsFalse(hotkey.Bind(null));
+        Assert.IsFalse(hotkey.Bind(string.Empty));
+        Assert.IsFalse(hotkey.Bind("NotAKey"));
+        Assert.IsFalse(hotkey.Bind("D"), "A bare key with no modifier is not a safe global shortcut.");
+    }
+
+    [TestMethod]
+    public void Filters_answer_the_operational_questions_they_are_named_for()
+    {
+        var ready = _workspace.NewProject("ready-project");
+        _workspace.WriteTicket(_workspace.NewEffort(ready, "feature"), "001.md", Fixtures.Ticket("Available", "ready"));
+
+        var finished = _workspace.NewProject("finished-project");
+        _workspace.WriteTicket(_workspace.NewEffort(finished, "feature"), "001.md", Fixtures.Ticket("Finished", "done"));
+
+        _viewModel.RefreshCommand.Execute(null);
+        _viewModel.RefreshCommand.ExecutionTask!.GetAwaiter().GetResult();
+        _viewModel.IsExpanded = true;
+
+        _viewModel.Filter = DashboardFilter.AllRemaining;
+        CollectionAssert.AreEquivalent(
+            new[] { "ready-project" },
+            _viewModel.VisibleProjects.Select(p => p.Name).ToArray());
+
+        _viewModel.Filter = DashboardFilter.Archive;
+        CollectionAssert.AreEquivalent(
+            new[] { "finished-project" },
+            _viewModel.VisibleProjects.Select(p => p.Name).ToArray());
+
+        _viewModel.Filter = DashboardFilter.AllRemaining;
+        _viewModel.SearchText = "nothing matches this";
+        Assert.AreEqual(0, _viewModel.VisibleProjects.Count);
+    }
+
+    [TestMethod]
+    public void A_pinned_but_finished_project_belongs_to_the_archive_not_to_pinned()
+    {
+        var finished = _workspace.NewProject("pinned-and-finished");
+        _workspace.WriteTicket(_workspace.NewEffort(finished, "feature"), "001.md", Fixtures.Ticket("Finished", "done"));
+
+        _viewModel.RefreshCommand.Execute(null);
+        _viewModel.RefreshCommand.ExecutionTask!.GetAwaiter().GetResult();
+
+        _settings.FindProject(finished)!.Pinned = true;
+        _viewModel.RefreshCommand.Execute(null);
+        _viewModel.RefreshCommand.ExecutionTask!.GetAwaiter().GetResult();
+
+        _viewModel.IsExpanded = true;
+        _viewModel.Filter = DashboardFilter.Pinned;
+        Assert.AreEqual(0, _viewModel.VisibleProjects.Count);
+
+        _viewModel.Filter = DashboardFilter.Archive;
+        Assert.AreEqual(1, _viewModel.VisibleProjects.Count);
+    }
+
+    [TestMethod]
+    public void Every_project_row_reads_as_one_sentence_for_a_screen_reader()
+    {
+        var project = _workspace.NewProject("described");
+        _workspace.WriteTicket(_workspace.NewEffort(project, "feature"), "001.md", Fixtures.Ticket("Available", "ready"));
+
+        _viewModel.RefreshCommand.Execute(null);
+        _viewModel.RefreshCommand.ExecutionTask!.GetAwaiter().GetResult();
+        _viewModel.Filter = DashboardFilter.AllRemaining;
+
+        var row = _viewModel.VisibleProjects.Single();
+
+        StringAssert.Contains(row.AccessibleSummary, "described");
+        StringAssert.Contains(row.AccessibleSummary, "Ready");
+        StringAssert.Contains(row.AccessibleSummary, "Available");
+    }
+
+    [TestMethod]
+    public void State_is_carried_by_a_written_label_and_a_glyph_as_well_as_an_accent()
+    {
+        foreach (var state in Enum.GetValues<ProjectState>())
+        {
+            Assert.IsFalse(string.IsNullOrWhiteSpace(Glyphs.ForState(state)), $"{state} needs a glyph.");
+        }
+
+        var labels = Enum.GetValues<ProjectState>()
+            .Select(s => new ProjectItemViewModel(new ProjectView
+            {
+                Identity = new Core.Workflow.ProjectIdentity("p", "p"),
+                State = s,
+                StateReason = "because",
+                Progress = new ProgressSummary(0, 1, 0),
+            }).StateLabel)
+            .ToList();
+
+        CollectionAssert.AllItemsAreUnique(labels, "Each state must read as a distinct word, not only a colour.");
+    }
+}

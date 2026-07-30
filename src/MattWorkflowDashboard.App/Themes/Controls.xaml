@@ -44,7 +44,7 @@
   <!-- A flat, quiet command button; the dashboard is for reading, not for clicking about. -->
   <Style TargetType="Button" x:Key="GlassButton">
     <Setter Property="Background" Value="Transparent" />
-    <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
     <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
     <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
     <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />

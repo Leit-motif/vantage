@@ -20,7 +20,8 @@ public sealed record StatusReading(WorkflowStatus Status, string RawValue, strin
 {
     public bool IsComplete => Status is WorkflowStatus.Resolved or WorkflowStatus.Done;
 
-    public string Describe() => AliasApplied is null
+    /// <summary>The reading with its working shown, so normalization is never invisible.</summary>
+    public string Description => AliasApplied is null
         ? $"{RawValue} → {Status}"
         : $"{RawValue} → alias '{AliasApplied}' → {Status}";
 }
@@ -63,10 +64,6 @@ public static class WorkflowStatusVocabulary
         ["complete"] = "done",
         ["completed"] = "done",
     };
-
-    public static IReadOnlyDictionary<string, WorkflowStatus> KnownStatuses => Canonical;
-
-    public static IReadOnlyDictionary<string, string> KnownAliases => FreeFormAliases;
 
     public static StatusReading Read(string? raw)
     {

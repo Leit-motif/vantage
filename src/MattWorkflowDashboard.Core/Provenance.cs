@@ -19,6 +19,13 @@ public enum TimestampProvenance
     GitCommit,
     GitHubApi,
     WatcherEvent,
+
+    /// <summary>
+    /// A semantic change the dashboard saw for itself by comparing this refresh against the
+    /// previous one. It is real movement, but the timestamp is when it was noticed, not when
+    /// it happened — which is why it is not labelled as a watcher event.
+    /// </summary>
+    ObservedChange,
     FileSystem,
 }
 
@@ -46,6 +53,9 @@ public sealed record Provenance(
     public static Provenance Watcher(string path, DateTimeOffset at, string refreshId) =>
         new(EvidenceSource.LocalFile, path, TimestampProvenance.WatcherEvent, at, refreshId);
 
+    public static Provenance ObservedChange(string path, DateTimeOffset noticedAt, string refreshId) =>
+        new(EvidenceSource.LocalFile, path, TimestampProvenance.ObservedChange, noticedAt, refreshId);
+
     /// <summary>
     /// True when the timestamp is trustworthy as evidence that something actually happened,
     /// as opposed to merely being when a file landed on disk.
@@ -54,9 +64,14 @@ public sealed record Provenance(
         ObservedAt is not null &&
         TimestampKind is TimestampProvenance.GitCommit
             or TimestampProvenance.GitHubApi
-            or TimestampProvenance.WatcherEvent;
+            or TimestampProvenance.WatcherEvent
+            or TimestampProvenance.ObservedChange;
 
-    public string Describe() =>
+    /// <summary>
+    /// The whole trail in one line: source, locator, what kind of timestamp it is, when, and the
+    /// refresh that produced it. This is what makes a displayed conclusion challengeable.
+    /// </summary>
+    public string Description =>
         $"{Source} · {Locator} · {TimestampKind}" +
         (ObservedAt is { } at ? $" · {at:u}" : string.Empty) +
         $" · refresh {RefreshId}";

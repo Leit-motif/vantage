@@ -42,7 +42,7 @@ public sealed class GitHubReconciliationTests
     public async Task An_explicitly_linked_ticket_is_counted_once()
     {
         LinkedProject(Fixtures.Ticket("Build the thing", "ready", gitHub: "#7"));
-        _runner.GhIssues(Fixtures.GhIssues((7, "Build the thing", "OPEN", ["ready-for-agent"], "2026-07-29T10:00:00Z")));
+        _runner.GhIssues(Fixtures.GhIssues(new Fixtures.GhIssue(7, "Build the thing", "OPEN", ["ready-for-agent"], "2026-07-29T10:00:00Z")));
 
         var view = (await _harness.RefreshAsync()).Project("widget");
 
@@ -54,7 +54,7 @@ public sealed class GitHubReconciliationTests
     public async Task Similar_titles_are_never_treated_as_the_same_ticket()
     {
         LinkedProject(Fixtures.Ticket("Build the thing", "ready"));
-        _runner.GhIssues(Fixtures.GhIssues((7, "Build the thing", "OPEN", ["ready-for-agent"], "2026-07-29T10:00:00Z")));
+        _runner.GhIssues(Fixtures.GhIssues(new Fixtures.GhIssue(7, "Build the thing", "OPEN", ["ready-for-agent"], "2026-07-29T10:00:00Z")));
 
         var view = (await _harness.RefreshAsync()).Project("widget");
 
@@ -65,7 +65,7 @@ public sealed class GitHubReconciliationTests
     public async Task Local_facts_win_a_linked_disagreement_and_the_conflict_is_reported()
     {
         LinkedProject(Fixtures.Ticket("Local title", "ready", gitHub: "#7"));
-        _runner.GhIssues(Fixtures.GhIssues((7, "Remote title", "CLOSED", [], "2026-07-29T10:00:00Z")));
+        _runner.GhIssues(Fixtures.GhIssues(new Fixtures.GhIssue(7, "Remote title", "CLOSED", [], "2026-07-29T10:00:00Z")));
 
         var view = (await _harness.RefreshAsync()).Project("widget");
 
@@ -81,7 +81,7 @@ public sealed class GitHubReconciliationTests
     public async Task Information_only_GitHub_has_is_enrichment_rather_than_conflict()
     {
         LinkedProject(Fixtures.Ticket("Build the thing", "ready", gitHub: "#7"));
-        _runner.GhIssues(Fixtures.GhIssues((7, "Build the thing", "OPEN", ["ready-for-agent"], "2026-07-29T10:00:00Z")));
+        _runner.GhIssues(Fixtures.GhIssues(new Fixtures.GhIssue(7, "Build the thing", "OPEN", ["ready-for-agent"], "2026-07-29T10:00:00Z")));
 
         var view = (await _harness.RefreshAsync()).Project("widget");
 
@@ -96,8 +96,8 @@ public sealed class GitHubReconciliationTests
     {
         LinkedProject(Fixtures.Ticket("Local ready work", "ready"));
         _runner.GhIssues(Fixtures.GhIssues(
-            (11, "Someone filed a bug", "OPEN", [], "2026-07-29T10:00:00Z"),
-            (12, "Agent-ready remote work", "OPEN", ["ready-for-agent"], "2026-07-29T10:00:00Z")));
+            new Fixtures.GhIssue(11, "Someone filed a bug", "OPEN", [], "2026-07-29T10:00:00Z"),
+            new Fixtures.GhIssue(12, "Agent-ready remote work", "OPEN", ["ready-for-agent"], "2026-07-29T10:00:00Z")));
 
         var view = (await _harness.RefreshAsync()).Project("widget");
 
@@ -111,7 +111,7 @@ public sealed class GitHubReconciliationTests
     {
         LinkedProject(Fixtures.Ticket("Local work", "ready"));
         _runner.GhIssues(Fixtures.GhIssues(
-            (11, "Finished remote work", "CLOSED", [], DateTimeOffset.UtcNow.ToString("O"))));
+            new Fixtures.GhIssue(11, "Finished remote work", "CLOSED", [], DateTimeOffset.UtcNow.ToString("O"))));
 
         var view = (await _harness.RefreshAsync()).Project("widget");
 

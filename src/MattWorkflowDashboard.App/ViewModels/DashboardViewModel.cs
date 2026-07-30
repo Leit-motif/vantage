@@ -128,6 +128,15 @@ public sealed partial class DashboardViewModel : ObservableObject
         }
     }
 
+    /// <summary>Re-reads appearance settings so a change in the Settings window lands immediately.</summary>
+    public void NotifyAppearanceChanged()
+    {
+        OnPropertyChanged(nameof(SurfaceOpacity));
+        OnPropertyChanged(nameof(SurfaceOpacityPercent));
+        OnPropertyChanged(nameof(ShellWidth));
+        OnPropertyChanged(nameof(ReducedMotion));
+    }
+
     public double ShellWidth => IsExpanded
         ? _settings.Ui.Geometry.ExpandedWidth
         : _settings.Ui.Geometry.CompactWidth;
@@ -244,7 +253,8 @@ public sealed partial class DashboardViewModel : ObservableObject
                 .ThenByDescending(p => p.LastActivityAt),
             DashboardFilter.InProgress => AllProjects.Where(p => p.State == ProjectState.InProgress),
             DashboardFilter.Blocked => AllProjects.Where(p => p.State == ProjectState.Blocked),
-            DashboardFilter.Pinned => AllProjects.Where(p => p.IsPinned),
+            // Pinned still answers a question about current work; finished work lives in Archive.
+            DashboardFilter.Pinned => AllProjects.Where(p => p.IsPinned && p.State != ProjectState.Complete),
             DashboardFilter.Archive => AllProjects
                 .Where(p => p.State == ProjectState.Complete)
                 .OrderByDescending(p => p.LastActivityAt),

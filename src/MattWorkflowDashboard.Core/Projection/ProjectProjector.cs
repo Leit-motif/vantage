@@ -289,6 +289,15 @@ public static class ProjectProjector
 
         if (remaining.Count == 0)
         {
+            // Completion means work was tracked and finished. A project with no work units at all
+            // has told us nothing, and reporting that as Complete would be a false conclusion.
+            if (!progress.HasWorkUnits)
+            {
+                return (ProjectState.Idle, progress.Excluded > 0
+                    ? $"No recognized work units; {progress.Excluded} artifact(s) could not be interpreted — see diagnostics."
+                    : "No workflow artifacts were found for this project.");
+            }
+
             return (ProjectState.Complete, progress.Excluded > 0
                 ? $"No work remains; {progress.Excluded} artifact(s) excluded from totals — see diagnostics."
                 : "No work remains.");

@@ -40,7 +40,9 @@ public sealed partial class GlobalHotkey : IDisposable
     {
         _handle = handle;
         _onPressed = onPressed;
-        _source = HwndSource.FromHwnd(handle);
+
+        // Without a window there is nothing to register against; binding simply never succeeds.
+        _source = handle == 0 ? null : HwndSource.FromHwnd(handle);
         _source?.AddHook(OnMessage);
     }
 
@@ -52,7 +54,7 @@ public sealed partial class GlobalHotkey : IDisposable
     {
         Unbind();
 
-        if (string.IsNullOrWhiteSpace(gesture) || !TryParse(gesture, out var modifiers, out var key))
+        if (_handle == 0 || string.IsNullOrWhiteSpace(gesture) || !TryParse(gesture, out var modifiers, out var key))
         {
             return false;
         }

@@ -46,6 +46,16 @@ public sealed class BoolToVisibilityConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+/// <summary>Shows a placeholder only while the field it labels is empty.</summary>
+public sealed class EmptyTextToVisibilityConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        string.IsNullOrEmpty(value as string) ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
 /// <summary>Binds a filter chip's checked state to the single active filter.</summary>
 public sealed class FilterEqualsConverter : IValueConverter
 {

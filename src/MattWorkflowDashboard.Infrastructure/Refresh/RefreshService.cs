@@ -236,17 +236,18 @@ public sealed class RefreshService(
             GitHubAvailable = gitHub.Available,
         };
 
-        var localTickets = normalized.AllTickets
-            .Where(t => t.EffortId != TicketReconciler.GitHubEffortId)
-            .ToList();
+        var artifacts = reconciled.Efforts.SelectMany(e => e.Artifacts).ToList();
 
-        var newActivity = DetectSemanticChanges(project.CanonicalPath, localTickets, now, refreshId);
+        var newActivity = DetectSemanticChanges(project.CanonicalPath, normalized.AllTickets.ToList(), now, refreshId);
+        newActivity.AddRange(DetectPlanningChanges(project.CanonicalPath, artifacts, now, refreshId));
+
         if (newActivity.Count > 0)
         {
             cache.RecordActivity(newActivity);
         }
 
-        cache.SaveTicketSnapshots(project.CanonicalPath, localTickets);
+        cache.SaveTicketSnapshots(project.CanonicalPath, normalized.AllTickets);
+        cache.SaveArtifactSnapshots(project.CanonicalPath, artifacts);
 
         var persisted = cache.LoadActivity(
             project.CanonicalPath,
@@ -331,11 +332,6 @@ public sealed class RefreshService(
                 continue;
             }
 
-            if (string.Equals(before.SemanticHash, ticket.SemanticHash, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
             // Completion is not movement worth surfacing: closing work must not displace
             // actionable work in Recent.
             if (ticket.IsComplete)
@@ -343,11 +339,44 @@ public sealed class RefreshService(
                 continue;
             }
 
-            var kind = string.Equals(before.RawStatus, ticket.Status.RawValue, StringComparison.OrdinalIgnoreCase)
-                ? ActivityKind.TicketChanged
-                : ActivityKind.WorkflowFileChanged;
+            // Each kind of change is reported for what it is, rather than collapsed into a
+            // single "something changed".
+            if (!string.Equals(before.Labels, DashboardCache.Join(ticket.Labels), StringComparison.Ordinal))
+            {
+                events.Add(Change(ticket, ActivityKind.LabelChanged, $"{ticket.Title}: labels changed"));
+            }
 
-            events.Add(Change(ticket, kind, $"{ticket.Title}: {before.RawStatus} → {ticket.Status.RawValue}"));
+            if (!string.Equals(before.Assignees, DashboardCache.Join(ticket.Assignees), StringComparison.Ordinal))
+            {
+                events.Add(Change(ticket, ActivityKind.AssignmentChanged, $"{ticket.Title}: assignment changed"));
+            }
+
+            var blockers = DashboardCache.Join(ticket.Blockers.Select(b => b.NormalizedKey));
+            if (!string.Equals(before.Blockers, blockers, StringComparison.Ordinal))
+            {
+                events.Add(Change(ticket, ActivityKind.BlockerChanged, $"{ticket.Title}: blockers changed"));
+            }
+
+            if (ticket.CommentCount > before.CommentCount)
+            {
+                events.Add(Change(
+                    ticket,
+                    ActivityKind.CommentAdded,
+                    $"{ticket.Title}: {ticket.CommentCount - before.CommentCount} new comment(s)"));
+            }
+
+            if (string.Equals(before.SemanticHash, ticket.SemanticHash, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var statusChanged = !string.Equals(before.RawStatus, ticket.Status.RawValue, StringComparison.OrdinalIgnoreCase);
+            events.Add(Change(
+                ticket,
+                statusChanged ? ActivityKind.WorkflowFileChanged : ActivityKind.TicketChanged,
+                statusChanged
+                    ? $"{ticket.Title}: {before.RawStatus} → {ticket.Status.RawValue}"
+                    : $"{ticket.Title}: edited"));
         }
 
         return events;
@@ -358,7 +387,45 @@ public sealed class RefreshService(
             summary,
             projectPath,
             ticket.Id,
-            Provenance.Watcher(ticket.SourcePath, now, refreshId));
+            Provenance.ObservedChange(ticket.SourcePath, now, refreshId));
+    }
+
+    /// <summary>
+    /// A change to a map, spec, or PRD is direction or scope moving. It is not a work unit, so it
+    /// never touches progress, but it is exactly the kind of movement Recent exists to show.
+    /// </summary>
+    private List<ActivityEvent> DetectPlanningChanges(
+        string projectPath,
+        IReadOnlyList<PlanningArtifact> artifacts,
+        DateTimeOffset now,
+        string refreshId)
+    {
+        var previous = cache.LoadArtifactSnapshots(projectPath);
+        if (previous.Count == 0)
+        {
+            return [];
+        }
+
+        var events = new List<ActivityEvent>();
+
+        foreach (var artifact in artifacts)
+        {
+            if (!previous.TryGetValue(artifact.Path, out var before)
+                || string.Equals(before.SemanticHash, artifact.SemanticHash, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            events.Add(new ActivityEvent(
+                now,
+                artifact.Kind == EffortArtifactKind.Map ? ActivityKind.MapChanged : ActivityKind.SpecChanged,
+                $"{artifact.Kind} changed: {Path.GetFileName(artifact.Path)}",
+                projectPath,
+                null,
+                Provenance.ObservedChange(artifact.Path, now, refreshId)));
+        }
+
+        return events;
     }
 
     /// <summary>

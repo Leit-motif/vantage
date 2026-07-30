@@ -211,6 +211,7 @@ public partial class App : Application
     private void OnSettingsApplied()
     {
         _themes.Apply(_settings.Ui.Theme);
+        _viewModel.NotifyAppearanceChanged();
         _hotkey?.Bind(_settings.Ui.ClickThroughHotkey);
 
         _watcher?.Dispose();

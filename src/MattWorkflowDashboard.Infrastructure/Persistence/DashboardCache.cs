@@ -8,7 +8,20 @@ using Microsoft.Data.Sqlite;
 namespace MattWorkflowDashboard.Infrastructure.Persistence;
 
 /// <summary>What the cache remembered about a ticket at the end of the previous refresh.</summary>
-public sealed record TicketSnapshot(string TicketId, string SemanticHash, string Title, string RawStatus, bool IsComplete, string SourcePath);
+public sealed record TicketSnapshot(
+    string TicketId,
+    string SemanticHash,
+    string Title,
+    string RawStatus,
+    bool IsComplete,
+    string SourcePath,
+    string Labels,
+    string Assignees,
+    string Blockers,
+    int CommentCount);
+
+/// <summary>What the cache remembered about a map, spec, or PRD at the end of the previous refresh.</summary>
+public sealed record ArtifactSnapshot(string Path, string Kind, string SemanticHash);
 
 /// <summary>
 /// The dashboard's disposable index. Nothing here is workflow truth: it is derived state that
@@ -17,7 +30,7 @@ public sealed record TicketSnapshot(string TicketId, string SemanticHash, string
 /// </summary>
 public sealed class DashboardCache : IDisposable
 {
-    private const int SchemaVersion = 1;
+    private const int SchemaVersion = 2;
 
     private static readonly JsonSerializerOptions SnapshotOptions = new()
     {
@@ -136,7 +149,30 @@ public sealed class DashboardCache : IDisposable
                     captured_at  TEXT NOT NULL
                 );
                 """);
+        }
 
+        if (version < 2)
+        {
+            // Ticket facts beyond the file's own content, plus the planning artifacts whose
+            // change is movement in its own right.
+            Execute(connection, """
+                ALTER TABLE ticket_snapshot ADD COLUMN labels TEXT NOT NULL DEFAULT '';
+                ALTER TABLE ticket_snapshot ADD COLUMN assignees TEXT NOT NULL DEFAULT '';
+                ALTER TABLE ticket_snapshot ADD COLUMN blockers TEXT NOT NULL DEFAULT '';
+                ALTER TABLE ticket_snapshot ADD COLUMN comment_count INTEGER NOT NULL DEFAULT 0;
+
+                CREATE TABLE artifact_snapshot (
+                    project_path  TEXT NOT NULL,
+                    path          TEXT NOT NULL,
+                    kind          TEXT NOT NULL,
+                    semantic_hash TEXT NOT NULL,
+                    PRIMARY KEY (project_path, path)
+                );
+                """);
+        }
+
+        if (version < SchemaVersion)
+        {
             Execute(connection, $"PRAGMA user_version={SchemaVersion};");
         }
     }
@@ -239,7 +275,8 @@ public sealed class DashboardCache : IDisposable
         {
             using var command = _connection.CreateCommand();
             command.CommandText = """
-                SELECT ticket_id, semantic_hash, title, raw_status, is_complete, source_path
+                SELECT ticket_id, semantic_hash, title, raw_status, is_complete, source_path,
+                       labels, assignees, blockers, comment_count
                 FROM ticket_snapshot WHERE project_path = $path;
                 """;
             command.Parameters.AddWithValue("$path", projectPath);
@@ -254,10 +291,75 @@ public sealed class DashboardCache : IDisposable
                     reader.GetString(2),
                     reader.GetString(3),
                     reader.GetInt32(4) != 0,
-                    reader.GetString(5));
+                    reader.GetString(5),
+                    reader.GetString(6),
+                    reader.GetString(7),
+                    reader.GetString(8),
+                    reader.GetInt32(9));
             }
 
             return snapshots;
+        }
+    }
+
+    public IReadOnlyDictionary<string, ArtifactSnapshot> LoadArtifactSnapshots(string projectPath)
+    {
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = "SELECT path, kind, semantic_hash FROM artifact_snapshot WHERE project_path = $path;";
+            command.Parameters.AddWithValue("$path", projectPath);
+
+            var snapshots = new Dictionary<string, ArtifactSnapshot>(StringComparer.OrdinalIgnoreCase);
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                snapshots[reader.GetString(0)] = new ArtifactSnapshot(
+                    reader.GetString(0),
+                    reader.GetString(1),
+                    reader.GetString(2));
+            }
+
+            return snapshots;
+        }
+    }
+
+    public void SaveArtifactSnapshots(string projectPath, IEnumerable<PlanningArtifact> artifacts)
+    {
+        lock (_gate)
+        {
+            using var transaction = _connection.BeginTransaction();
+
+            using (var delete = _connection.CreateCommand())
+            {
+                delete.Transaction = transaction;
+                delete.CommandText = "DELETE FROM artifact_snapshot WHERE project_path = $path;";
+                delete.Parameters.AddWithValue("$path", projectPath);
+                delete.ExecuteNonQuery();
+            }
+
+            using var insert = _connection.CreateCommand();
+            insert.Transaction = transaction;
+            insert.CommandText = """
+                INSERT OR REPLACE INTO artifact_snapshot (project_path, path, kind, semantic_hash)
+                VALUES ($path, $artifact, $kind, $hash);
+                """;
+
+            var path = insert.Parameters.Add("$path", SqliteType.Text);
+            var artifactPath = insert.Parameters.Add("$artifact", SqliteType.Text);
+            var kind = insert.Parameters.Add("$kind", SqliteType.Text);
+            var hash = insert.Parameters.Add("$hash", SqliteType.Text);
+
+            foreach (var artifact in artifacts)
+            {
+                path.Value = projectPath;
+                artifactPath.Value = artifact.Path;
+                kind.Value = artifact.Kind.ToString();
+                hash.Value = artifact.SemanticHash;
+                insert.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
         }
     }
 
@@ -278,9 +380,11 @@ public sealed class DashboardCache : IDisposable
             using var insert = _connection.CreateCommand();
             insert.Transaction = transaction;
             insert.CommandText = """
-                INSERT INTO ticket_snapshot
-                    (project_path, ticket_id, semantic_hash, title, raw_status, is_complete, source_path)
-                VALUES ($path, $id, $hash, $title, $status, $complete, $source);
+                INSERT OR REPLACE INTO ticket_snapshot
+                    (project_path, ticket_id, semantic_hash, title, raw_status, is_complete, source_path,
+                     labels, assignees, blockers, comment_count)
+                VALUES ($path, $id, $hash, $title, $status, $complete, $source,
+                        $labels, $assignees, $blockers, $comments);
                 """;
 
             var path = insert.Parameters.Add("$path", SqliteType.Text);
@@ -290,6 +394,10 @@ public sealed class DashboardCache : IDisposable
             var status = insert.Parameters.Add("$status", SqliteType.Text);
             var complete = insert.Parameters.Add("$complete", SqliteType.Integer);
             var source = insert.Parameters.Add("$source", SqliteType.Text);
+            var labels = insert.Parameters.Add("$labels", SqliteType.Text);
+            var assignees = insert.Parameters.Add("$assignees", SqliteType.Text);
+            var blockers = insert.Parameters.Add("$blockers", SqliteType.Text);
+            var comments = insert.Parameters.Add("$comments", SqliteType.Integer);
 
             foreach (var ticket in tickets)
             {
@@ -300,6 +408,10 @@ public sealed class DashboardCache : IDisposable
                 status.Value = ticket.Status.RawValue;
                 complete.Value = ticket.IsComplete ? 1 : 0;
                 source.Value = ticket.SourcePath;
+                labels.Value = Join(ticket.Labels);
+                assignees.Value = Join(ticket.Assignees);
+                blockers.Value = Join(ticket.Blockers.Select(b => b.NormalizedKey));
+                comments.Value = ticket.CommentCount;
                 insert.ExecuteNonQuery();
             }
 
@@ -352,11 +464,15 @@ public sealed class DashboardCache : IDisposable
         }
     }
 
+    /// <summary>A stable, comparable rendering of a set of values.</summary>
+    public static string Join(IEnumerable<string> values) =>
+        string.Join('|', values.Select(v => v.Trim()).OrderBy(v => v, StringComparer.OrdinalIgnoreCase));
+
     public void ForgetProject(string projectPath)
     {
         lock (_gate)
         {
-            foreach (var table in new[] { "activity", "ticket_snapshot", "project_snapshot" })
+            foreach (var table in new[] { "activity", "ticket_snapshot", "project_snapshot", "artifact_snapshot" })
             {
                 using var command = _connection.CreateCommand();
                 command.CommandText = $"DELETE FROM {table} WHERE project_path = $path;";

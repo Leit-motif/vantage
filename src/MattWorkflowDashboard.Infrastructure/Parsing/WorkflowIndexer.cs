@@ -74,9 +74,9 @@ public sealed partial class WorkflowIndexer(int maxFileBytes = 1_048_576, int ma
             return null;
         }
 
-        var mapFiles = markdown.Where(f => MatchesName(f, MapNames)).ToList();
-        var specFiles = markdown.Where(f => MatchesName(f, SpecNames)).ToList();
-        var prdFiles = markdown.Where(f => MatchesName(f, PrdNames)).ToList();
+        var mapFiles = markdown.Where(f => IsPlanningArtifact(f, effortPath, MapNames)).ToList();
+        var specFiles = markdown.Where(f => IsPlanningArtifact(f, effortPath, SpecNames)).ToList();
+        var prdFiles = markdown.Where(f => IsPlanningArtifact(f, effortPath, PrdNames)).ToList();
         var issuesDirectory = Path.Combine(effortPath, "issues");
         var hasIssuesDirectory = Directory.Exists(issuesDirectory)
             && markdown.Any(f => IsUnder(f, issuesDirectory));
@@ -126,9 +126,12 @@ public sealed partial class WorkflowIndexer(int maxFileBytes = 1_048_576, int ma
             Id = effortId,
             Name = name,
             Path = effortPath,
-            HasMap = mapFiles.Count > 0,
-            HasSpec = specFiles.Count > 0,
-            HasPrd = prdFiles.Count > 0,
+            Artifacts =
+            [
+                .. Describe(mapFiles, EffortArtifactKind.Map, diagnostics),
+                .. Describe(specFiles, EffortArtifactKind.Spec, diagnostics),
+                .. Describe(prdFiles, EffortArtifactKind.Prd, diagnostics),
+            ],
             Tickets = tickets,
             MapOrder = mapOrder,
         };
@@ -351,6 +354,35 @@ public sealed partial class WorkflowIndexer(int maxFileBytes = 1_048_576, int ma
         return order;
     }
 
+    /// <summary>
+    /// Records a planning artifact's content identity so a change to direction or scope can be
+    /// recognized later as movement, without the artifact ever counting as a work unit.
+    /// </summary>
+    private static IEnumerable<PlanningArtifact> Describe(
+        IEnumerable<string> files,
+        EffortArtifactKind kind,
+        ICollection<Diagnostic> diagnostics)
+    {
+        foreach (var file in files)
+        {
+            string content;
+            try
+            {
+                content = File.ReadAllText(file);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                diagnostics.Add(Diagnostic.Info(
+                    DiagnosticCode.ProjectScanFailed,
+                    $"Could not read '{file}': {ex.Message}",
+                    file));
+                continue;
+            }
+
+            yield return new PlanningArtifact(kind, file, SemanticHash.Compute(content));
+        }
+    }
+
     private static string MakeEffortId(string projectPath, string effortPath) =>
         Path.GetRelativePath(projectPath, effortPath).Replace('\\', '/').ToLowerInvariant();
 
@@ -418,14 +450,22 @@ public sealed partial class WorkflowIndexer(int maxFileBytes = 1_048_576, int ma
         }
     }
 
-    /// <summary>Case-insensitive stem matching, so filename casing never hides an artifact.</summary>
-    private static bool MatchesName(string file, string[] names)
+    /// <summary>
+    /// A planning artifact is a direct child of the effort whose stem is exactly map, spec, or
+    /// PRD, matched case-insensitively so filename casing never hides one. The match is exact on
+    /// purpose: treating <c>001-spec.md</c> as the effort's spec would silently drop a ticket
+    /// from progress.
+    /// </summary>
+    private static bool IsPlanningArtifact(string file, string effortPath, string[] names)
     {
+        var directory = Path.GetDirectoryName(file);
+        if (!string.Equals(directory, effortPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         var stem = Path.GetFileNameWithoutExtension(file);
-        return names.Any(name =>
-            string.Equals(stem, name, StringComparison.OrdinalIgnoreCase)
-            || stem.EndsWith("-" + name, StringComparison.OrdinalIgnoreCase)
-            || stem.StartsWith(name + "-", StringComparison.OrdinalIgnoreCase));
+        return names.Any(name => string.Equals(stem, name, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsUnder(string file, string directory) =>

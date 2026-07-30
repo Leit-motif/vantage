@@ -2,6 +2,9 @@ using MattWorkflowDashboard.Core.Observed;
 
 namespace MattWorkflowDashboard.Core.Workflow;
 
+// EffortArtifactKind lives in the observed layer; the normalized layer reuses the same vocabulary
+// rather than inventing a parallel one.
+
 /// <summary>
 /// Where a work unit sits in the full pipeline. Progress counts the whole effort, not coding
 /// alone, so planning, research, grilling, prototypes, review, and release all count as work.
@@ -63,6 +66,9 @@ public sealed record WorkflowTicket
 
     public IReadOnlyList<string> Assignees { get; init; } = [];
 
+    /// <summary>Comments observed on the linked issue. A new one is movement worth showing.</summary>
+    public int CommentCount { get; init; }
+
     public required string SourcePath { get; init; }
 
     public required string SemanticHash { get; init; }
@@ -86,6 +92,12 @@ public sealed record WorkflowTicket
 /// An immediate <c>.scratch</c> child holding a map, spec, PRD, or markdown issues. Blockers
 /// resolve only inside the effort that declares them.
 /// </summary>
+/// <summary>
+/// A map, spec, or PRD: the effort's direction and scope. Not a work unit, but a change to one
+/// is real movement, so its content identity is tracked.
+/// </summary>
+public sealed record PlanningArtifact(EffortArtifactKind Kind, string Path, string SemanticHash);
+
 public sealed record WorkflowEffort
 {
     public required string Id { get; init; }
@@ -94,11 +106,13 @@ public sealed record WorkflowEffort
 
     public required string Path { get; init; }
 
-    public bool HasMap { get; init; }
+    public IReadOnlyList<PlanningArtifact> Artifacts { get; init; } = [];
 
-    public bool HasSpec { get; init; }
+    public bool HasMap => Artifacts.Any(a => a.Kind == EffortArtifactKind.Map);
 
-    public bool HasPrd { get; init; }
+    public bool HasSpec => Artifacts.Any(a => a.Kind == EffortArtifactKind.Spec);
+
+    public bool HasPrd => Artifacts.Any(a => a.Kind == EffortArtifactKind.Prd);
 
     public IReadOnlyList<WorkflowTicket> Tickets { get; init; } = [];
 

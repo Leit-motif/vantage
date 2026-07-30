@@ -28,8 +28,13 @@ public static class TicketReconciler
         ["needs-info"] = WorkflowStatus.Blocked,
         ["blocked"] = WorkflowStatus.Blocked,
         ["in-progress"] = WorkflowStatus.InProgress,
-        ["wontfix"] = WorkflowStatus.Done,
     };
+
+    /// <summary>
+    /// Labels that take work off the board without it having been done. They are not completion,
+    /// so they never count towards progress.
+    /// </summary>
+    private static readonly string[] WithdrawnLabels = ["wontfix", "invalid", "duplicate"];
 
     public static ReconciliationResult Reconcile(
         IReadOnlyList<WorkflowEffort> localEfforts,
@@ -63,7 +68,7 @@ public static class TicketReconciler
                 }
 
                 claimed.Add(issue.Number);
-                tickets.Add(Merge(ticket, issue, conflicts));
+                tickets.Add(Merge(ticket, issue, effort, conflicts));
             }
 
             efforts.Add(effort with { Tickets = tickets });
@@ -82,8 +87,19 @@ public static class TicketReconciler
     /// Local facts win. Only genuine disagreements in title, state, workflow status, blockers, or
     /// effort are reported; anything the local file simply does not say is enrichment.
     /// </summary>
-    private static WorkflowTicket Merge(WorkflowTicket local, ObservedGitHubIssue issue, ICollection<ConflictReport> conflicts)
+    private static WorkflowTicket Merge(
+        WorkflowTicket local,
+        ObservedGitHubIssue issue,
+        WorkflowEffort effort,
+        ICollection<ConflictReport> conflicts)
     {
+        // The issue body speaks the same metadata grammar as a local ticket file, so the two can
+        // be compared field for field rather than guessed at.
+        var (_, remoteFields) = MetadataGrammar.Parse(issue.Body);
+
+        string? RemoteField(string key) => remoteFields
+            .FirstOrDefault(f => string.Equals(f.Key, key, StringComparison.OrdinalIgnoreCase))?.RawValue;
+
         void Report(ConflictField field, string localValue, string remoteValue) =>
             conflicts.Add(new ConflictReport(
                 local.Id,
@@ -115,7 +131,11 @@ public static class TicketReconciler
             Report(ConflictField.WorkflowStatus, local.Status.RawValue, remoteStatus.ToString()!);
         }
 
-        var remoteBlockers = ParseBlockersFromLabels(issue.Labels);
+        var remoteBlockers = MetadataGrammar
+            .SplitList(RemoteField(MetadataGrammar.Keys.BlockedBy))
+            .Concat(ParseBlockersFromLabels(issue.Labels))
+            .ToList();
+
         if (remoteBlockers.Count > 0 && local.Blockers.Count > 0 && !BlockersAgree(local.Blockers, remoteBlockers))
         {
             Report(
@@ -124,11 +144,19 @@ public static class TicketReconciler
                 string.Join(", ", remoteBlockers));
         }
 
+        var remoteEffort = RemoteField(MetadataGrammar.Keys.Effort);
+        if (!string.IsNullOrWhiteSpace(remoteEffort)
+            && !string.Equals(remoteEffort.Trim(), effort.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            Report(ConflictField.Effort, effort.Name, remoteEffort.Trim());
+        }
+
         // Enrichment: fill only what the local file did not say.
         return local with
         {
             Labels = local.Labels.Count > 0 ? local.Labels : issue.Labels,
             Assignees = local.Assignees.Count > 0 ? local.Assignees : issue.Assignees,
+            CommentCount = issue.CommentCount,
             EnrichmentProvenance = [.. local.EnrichmentProvenance, issue.Provenance],
         };
     }
@@ -174,6 +202,8 @@ public static class TicketReconciler
         var tickets = issues.Select(issue =>
         {
             var labelStatus = ClassifyFromLabels(issue.Labels);
+            var withdrawn = issue.Labels.Any(l => WithdrawnLabels.Contains(l, StringComparer.OrdinalIgnoreCase));
+
             var status = issue.IsClosed
                 ? new StatusReading(WorkflowStatus.Done, issue.State, "closed")
                 : labelStatus is { } known
@@ -182,14 +212,16 @@ public static class TicketReconciler
 
             return new WorkflowTicket
             {
+                // Withdrawn work leaves the totals entirely rather than counting as finished.
+                Kind = withdrawn ? WorkUnitKind.Container : WorkUnitKind.Implementation,
                 Id = $"gh#{issue.Number}",
                 LocalKey = issue.Number.ToString(),
                 EffortId = GitHubEffortId,
                 Title = issue.Title,
                 Status = status,
-                Kind = WorkUnitKind.Implementation,
                 Labels = issue.Labels,
                 Assignees = issue.Assignees,
+                CommentCount = issue.CommentCount,
                 Link = new GitHubLink(slug, issue.Number, issue.Url),
                 SourcePath = issue.Url,
                 SemanticHash = $"{issue.Number}:{issue.UpdatedAt:O}",
@@ -203,7 +235,6 @@ public static class TicketReconciler
             Id = GitHubEffortId,
             Name = $"GitHub · {slug}",
             Path = origin is null ? "github" : $"https://github.com/{slug}/issues",
-            HasMap = false,
             Tickets = tickets,
         };
     }
