@@ -23,6 +23,13 @@ public sealed class ConflictInspectionTests
 {
     private const string Origin = "https://github.com/acme/widget.git";
 
+    /// <summary>
+    /// How tall the shell is laid out. The default is tall enough to read and short enough that a
+    /// busy project's detail pane scrolls; a test that needs a whole list on screen at once says
+    /// so by raising it.
+    /// </summary>
+    private double _shellHeight = 620;
+
     private WorkspaceFixture _workspace = null!;
     private FakeProcessRunner _runner = null!;
     private BoundedProcessRunner _realProcesses = null!;
@@ -108,7 +115,7 @@ public sealed class ConflictInspectionTests
         return WpfTestHost.Run(() => WpfTestHost.HostContent(
             new DashboardWindow(_viewModel, _settings, () => { }),
             expanded ? 720 : 380,
-            620));
+            _shellHeight));
     }
 
     /// <summary>
@@ -135,12 +142,19 @@ public sealed class ConflictInspectionTests
             return WpfTestHost.RenderedText(region);
         });
 
-    private static void Invoke(ButtonBase control, FrameworkElement shell, double width) =>
+    private void Invoke(ButtonBase control, FrameworkElement shell, double width)
+    {
         WpfTestHost.Run(() =>
         {
             control.Command.Execute(control.CommandParameter);
-            WpfTestHost.LayOut(shell, width, 620);
+            WpfTestHost.LayOut(shell, width, _shellHeight);
         });
+
+        // The shell scrolls the region into view after layout has settled, exactly as it would
+        // for the owner; the second pass lets that scroll take effect.
+        WpfTestHost.Drain();
+        WpfTestHost.Run(() => WpfTestHost.LayOut(shell, width, _shellHeight));
+    }
 
     [TestMethod]
     public void The_conflict_shown_on_an_item_names_both_values_the_resolution_and_each_side_s_provenance()
@@ -194,11 +208,40 @@ public sealed class ConflictInspectionTests
     }
 
     [TestMethod]
+    public void Navigation_scrolls_the_evidence_into_view_rather_than_merely_onto_the_pane()
+    {
+        // Enough work above the conflicts region to push it past the bottom of the detail pane.
+        DisagreeingProject([.. Enumerable.Range(1, 14).Select(i => ($"Local {i:00}", $"Remote {i:00}", i))]);
+        _viewModel.SelectedProject = Refresh();
+
+        var shell = Shell(expanded: true);
+        var region = WpfTestHost.Run(() => WpfTestHost.Region(shell, "Conflicts"));
+        Assert.IsNotNull(region);
+
+        Assert.IsFalse(
+            WpfTestHost.Run(() => WpfTestHost.IsRendered(region)),
+            "Precondition: this fixture has to leave the conflicts region below the fold, or the "
+            + "test proves nothing about reaching it.");
+
+        var badge = WpfTestHost.Run(() => ConflictControl(shell, "in project widget"));
+        Assert.IsNotNull(badge, "The badge must be reachable from the project row while scrolled away.");
+
+        Invoke(badge, shell, 720);
+
+        Assert.IsTrue(
+            WpfTestHost.Run(() => WpfTestHost.IsRendered(region)),
+            "An aggregate warning has to lead to the evidence, not merely to the pane holding it.");
+    }
+
+    [TestMethod]
     public void A_conflict_control_on_an_affected_item_narrows_the_inspection_to_that_item()
     {
         DisagreeingProject(("First local", "First remote", 7), ("Second local", "Second remote", 8));
         _viewModel.SelectedProject = Refresh();
 
+        // Both disagreements on screen at once, so what narrowing removes is what the owner
+        // could actually see beforehand.
+        _shellHeight = 1000;
         var shell = Shell(expanded: true);
         StringAssert.Contains(
             ConflictEvidence(shell),

@@ -87,13 +87,59 @@ public static class WpfTestHost
                 StringComparison.Ordinal));
 
     /// <summary>
-    /// Whether an element was actually given room by the layout pass. A collapsed element stays
-    /// in the visual tree with nothing but its bindings, so a search that ignores this would
-    /// happily find evidence and controls the owner can never see. <c>UIElement.IsVisible</c>
-    /// cannot answer this here: it is false for everything in a tree with no presentation source.
+    /// Whether an element is somewhere the owner can actually see it. Two things can hide one
+    /// without removing it from the visual tree, and both have to be ruled out. A collapsed
+    /// element keeps its bindings and its place in the tree, and an element scrolled past the
+    /// bottom of a viewport keeps a perfectly good arranged size — so a search that asked only
+    /// about size would find evidence and controls that are not on screen at all.
+    /// <para>
+    /// <c>UIElement.IsVisible</c> cannot answer this here: in a tree with no presentation source
+    /// it is false for everything. So this walks the ancestors instead, requiring each to be
+    /// visible and the element's own bounds to still intersect it — which is exactly what a
+    /// scrolled-away element fails against the viewport that clips it.
+    /// </para>
     /// </summary>
-    public static bool IsRendered(FrameworkElement element) =>
-        element.Visibility == Visibility.Visible && element.ActualWidth > 0 && element.ActualHeight > 0;
+    public static bool IsRendered(FrameworkElement element)
+    {
+        if (element.Visibility != Visibility.Visible || element.ActualWidth <= 0 || element.ActualHeight <= 0)
+        {
+            return false;
+        }
+
+        var bounds = new Rect(element.RenderSize);
+
+        for (var node = VisualTreeHelper.GetParent(element); node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (node is not FrameworkElement ancestor)
+            {
+                continue;
+            }
+
+            if (ancestor.Visibility != Visibility.Visible)
+            {
+                return false;
+            }
+
+            if (ancestor.ActualWidth <= 0 || ancestor.ActualHeight <= 0)
+            {
+                return false;
+            }
+
+            var inAncestor = element.TransformToAncestor(ancestor).TransformBounds(bounds);
+            if (!inAncestor.IntersectsWith(new Rect(0, 0, ancestor.ActualWidth, ancestor.ActualHeight)))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Lets work the shell queued for after layout — bringing a region into view, for one — run
+    /// before the tree is inspected.
+    /// </summary>
+    public static void Drain() => Ui().Invoke(() => { }, DispatcherPriority.Loaded);
 
     /// <summary>Everything the laid-out tree actually puts on screen as text.</summary>
     public static string RenderedText(DependencyObject root) =>

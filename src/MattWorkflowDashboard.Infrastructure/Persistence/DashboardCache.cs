@@ -205,7 +205,28 @@ public sealed class DashboardCache : IDisposable
             }
         }
 
+        // A stored value that contains the separator is exactly what the previous encoding could
+        // not pin down: those bytes meant either one item spelling the separator or several items,
+        // and nothing in the cache can say which. Re-reading them one way would make the other way
+        // look like movement, which is the very mistake this ticket exists to stop. So the project
+        // holding such a row loses its whole baseline and is observed afresh, which is the one
+        // reading that cannot invent movement — the same rule a first scan already follows.
+        var undecidable = rows
+            .Where(r => IsAmbiguous(r.Labels) || IsAmbiguous(r.Assignees) || IsAmbiguous(r.Blockers))
+            .Select(r => r.Project)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         using var transaction = connection.BeginTransaction();
+
+        foreach (var project in undecidable)
+        {
+            using var forget = connection.CreateCommand();
+            forget.Transaction = transaction;
+            forget.CommandText = "DELETE FROM ticket_snapshot WHERE project_path = $path;";
+            forget.Parameters.AddWithValue("$path", project);
+            forget.ExecuteNonQuery();
+        }
+
         using var write = connection.CreateCommand();
         write.Transaction = transaction;
         write.CommandText = """
@@ -219,7 +240,7 @@ public sealed class DashboardCache : IDisposable
         var path = write.Parameters.Add("$path", SqliteType.Text);
         var id = write.Parameters.Add("$id", SqliteType.Text);
 
-        foreach (var row in rows)
+        foreach (var row in rows.Where(r => !undecidable.Contains(r.Project)))
         {
             labels.Value = Canonical(ReadUnescaped(row.Labels));
             assignees.Value = Canonical(ReadUnescaped(row.Assignees));
@@ -231,6 +252,8 @@ public sealed class DashboardCache : IDisposable
 
         transaction.Commit();
     }
+
+    private static bool IsAmbiguous(string stored) => stored.Contains(Separator, StringComparison.Ordinal);
 
     public IReadOnlyList<ActivityEvent> LoadActivity(string projectPath, DateTimeOffset since)
     {
@@ -508,8 +531,13 @@ public sealed class DashboardCache : IDisposable
 
             try
             {
+                var stored = JsonSerializer.Deserialize<ProjectView>(reader.GetString(0), SnapshotOptions);
+
                 return (
-                    JsonSerializer.Deserialize<ProjectView>(reader.GetString(0), SnapshotOptions),
+                    // A projection written by an earlier build carries the project's conflicts but
+                    // nothing on its items, so the attachment is rebuilt rather than left missing
+                    // until the next successful refresh.
+                    stored is null ? null : ProjectProjector.AttachConflictsToItems(stored),
                     DateTimeOffset.Parse(reader.GetString(1)));
             }
             catch (JsonException)

@@ -1,4 +1,6 @@
 using MattWorkflowDashboard.Core;
+using MattWorkflowDashboard.Core.Projection;
+using MattWorkflowDashboard.Core.Workflow;
 using MattWorkflowDashboard.Infrastructure;
 using MattWorkflowDashboard.Infrastructure.Persistence;
 using MattWorkflowDashboard.Infrastructure.Settings;
@@ -91,6 +93,64 @@ public sealed class ResilienceTests
         Assert.IsTrue(after.IsStale, "A stale view must never be mistaken for a fresh one.");
         Assert.AreEqual(1, after.Progress.Total, "The last thing known to be true stays visible.");
         Assert.IsTrue(after.HasDiagnostic(DiagnosticCode.ProjectScanFailed));
+    }
+
+    /// <summary>
+    /// A projection stored by an earlier build records a project's disagreements but nothing on
+    /// its items. A stale view is still a view the owner has to be able to inspect, so the
+    /// attachment has to come back on the way out of the cache rather than waiting for the next
+    /// successful refresh.
+    /// </summary>
+    [TestMethod]
+    public void A_snapshot_stored_before_items_carried_their_conflicts_still_offers_them()
+    {
+        var provenance = new Provenance(EvidenceSource.LocalFile, "001.md", TimestampProvenance.FileSystem, null, "r1");
+        var conflict = new ConflictReport(
+            "feature/001",
+            ConflictField.Title,
+            "Local title",
+            "Remote title",
+            "Local value kept.",
+            provenance,
+            new Provenance(EvidenceSource.GitHubCli, "acme/widget#7", TimestampProvenance.GitHubApi, null, "r1"));
+
+        var ticket = new TicketView(
+            "feature/001",
+            "Local title",
+            "feature",
+            new StatusReading(WorkflowStatus.Ready, "ready"),
+            WorkUnitKind.Implementation,
+            null,
+            true,
+            false,
+            [],
+            null,
+            "001.md",
+            provenance,
+            []);
+
+        // Exactly the shape an earlier build wrote: the project knows about the disagreement, the
+        // item it is about does not.
+        var legacy = new ProjectView
+        {
+            Identity = new ProjectIdentity("c:/legacy", "legacy"),
+            State = ProjectState.Ready,
+            StateReason = "because",
+            Progress = new ProgressSummary(0, 1, 0),
+            Efforts = [new EffortView("feature", "feature", "feature", false, new ProgressSummary(0, 1, 0), [ticket])],
+            Conflicts = [conflict],
+        };
+
+        using var cache = DashboardCache.Open(Path.Combine(_workspace.Root, "cache", "legacy-view.db"));
+        cache.SaveProjectSnapshot(legacy, DateTimeOffset.UtcNow);
+
+        var (loaded, _) = cache.LoadProjectSnapshot("c:/legacy");
+
+        Assert.IsNotNull(loaded);
+        Assert.AreEqual(
+            "Remote title",
+            loaded.Efforts.Single().Tickets.Single().Conflicts.Single().RemoteValue,
+            "A stale item must still offer the disagreement it is the subject of.");
     }
 
     [TestMethod]

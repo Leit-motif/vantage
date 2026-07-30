@@ -146,6 +146,14 @@ public sealed partial class ProjectItemViewModel : ObservableObject
     public string ConflictBadgeName => $"Inspect {ConflictCount} conflict(s) in project {Name}";
 
     /// <summary>
+    /// How many times the conflicts region has been asked for. The view scrolls it into view on
+    /// each request, because a pane taller than its viewport can otherwise leave the evidence
+    /// below the fold — selected and expanded, but not actually reached.
+    /// </summary>
+    [ObservableProperty]
+    private int _conflictInspectionRequests;
+
+    /// <summary>
     /// The aggregate badge leads to the evidence: it opens this project's conflicts, all of them,
     /// wherever the owner clicked from.
     /// </summary>
@@ -153,7 +161,7 @@ public sealed partial class ProjectItemViewModel : ObservableObject
     public void InspectConflicts()
     {
         ConflictFocusTicketId = null;
-        _navigateToConflicts?.Invoke(this);
+        Reach();
     }
 
     /// <summary>The control on an affected item narrows the same region to that item.</summary>
@@ -161,7 +169,13 @@ public sealed partial class ProjectItemViewModel : ObservableObject
     public void InspectTicketConflicts(string? ticketId)
     {
         ConflictFocusTicketId = ticketId;
+        Reach();
+    }
+
+    private void Reach()
+    {
         _navigateToConflicts?.Invoke(this);
+        ConflictInspectionRequests++;
     }
 
     [RelayCommand]

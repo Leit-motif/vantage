@@ -137,6 +137,30 @@ public sealed class CollectionSnapshotTests
             "The ticket file did not change; only the way its labels were stored did.");
     }
 
+    /// <summary>
+    /// The previous encoding could not tell one item spelling the separator from several items.
+    /// Neither reading of those bytes may be asserted as what was there before, so neither may
+    /// produce movement on the refresh that migrates them.
+    /// </summary>
+    [TestMethod]
+    public async Task Upgrading_a_value_the_previous_encoding_could_not_pin_down_is_not_movement()
+    {
+        _workspace.WriteTicket(_effort, "001.md", Fixtures.Ticket("Work", "ready", labels: "alpha|beta"));
+        await _harness.RefreshAsync();
+
+        // Exactly what schema 2 stored for this ticket — and equally, what it stored for a ticket
+        // carrying the two separate labels 'alpha' and 'beta'.
+        WriteAsPreviousEncoding("alpha|beta");
+        _harness.Restart();
+
+        var view = (await _harness.RefreshAsync()).Project("app");
+
+        CollectionAssert.DoesNotContain(
+            view.RecentActivity.Select(a => a.Kind).ToArray(),
+            ActivityKind.LabelChanged,
+            "Reading undecidable bytes one way would make the other way look like movement.");
+    }
+
     /// <summary>Rewrites the stored labels the way schema 2 wrote them, and marks the file as
     /// schema 2 so the next open migrates it.</summary>
     private void WriteAsPreviousEncoding(string labels)
