@@ -240,6 +240,44 @@ public sealed class RegistryControlTests
     }
 
     [TestMethod]
+    public async Task Registry_intent_recorded_under_a_linked_root_follows_the_project_to_its_resolved_path()
+    {
+        // A configured root with a link above its final segment: the older behaviour resolved only
+        // that final segment, so entries were recorded under the alias.
+        var actual = Path.Combine(_workspace.Root, "actual");
+        var project = Path.Combine(actual, "workspaces", "project");
+        _workspace.WriteFile(Path.Combine(project, "AGENTS.md"), "# recorded under an alias\n");
+
+        var alias = Path.Combine(_workspace.Root, "alias");
+        if (!DiscoveryTests.TryCreateJunction(alias, actual))
+        {
+            Assert.Inconclusive("This host cannot create a directory junction.");
+        }
+
+        var aliasedProject = Path.Combine(alias, "workspaces", "project");
+
+        _harness.Settings.Roots.Clear();
+        _harness.Settings.Roots.Add(Path.Combine(alias, "workspaces"));
+        _harness.Settings.Projects.Add(new ProjectRegistryEntry
+        {
+            Path = aliasedProject,
+            State = ProjectRegistryState.Hidden,
+            ConfirmedOrigin = "acme/widget",
+        });
+        _harness.SettingsStore.Save(_harness.Settings);
+
+        var snapshot = await _harness.RefreshAsync();
+
+        Assert.AreEqual(0, snapshot.Projects.Count, "A choice recorded under the old name still has to be honoured.");
+
+        var persisted = _harness.SettingsStore.Load().Settings;
+        Assert.AreEqual(1, persisted.Projects.Count, "The intent moves to the resolved path; it is not duplicated beside it.");
+        Assert.AreEqual(ProjectRegistryState.Hidden, persisted.Projects[0].State);
+        Assert.AreEqual("acme/widget", persisted.Projects[0].ConfirmedOrigin);
+        Assert.AreEqual(project, persisted.Projects[0].Path);
+    }
+
+    [TestMethod]
     public async Task A_first_seen_origin_is_confirmed_once_and_still_requires_confirmation_after_restart()
     {
         var project = _workspace.NewProject("widget");

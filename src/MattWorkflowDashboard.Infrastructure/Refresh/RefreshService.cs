@@ -129,9 +129,23 @@ public sealed class RefreshService(
     {
         var selected = new List<(DiscoveredProject, ProjectRegistryEntry)>();
 
+        // Built only if something looks new, and only once: an entry recorded under a path that
+        // resolves somewhere else is the owner's intent under an old name, not a different project.
+        Dictionary<string, ProjectRegistryEntry>? entriesByResolvedPath = null;
+
         foreach (var project in discovered)
         {
             var entry = settings.FindProject(project.CanonicalPath);
+
+            if (entry is null)
+            {
+                entriesByResolvedPath ??= IndexEntriesByResolvedPath();
+                if (entriesByResolvedPath.TryGetValue(project.CanonicalPath, out var recorded))
+                {
+                    entry = Migrate(recorded, project.CanonicalPath);
+                }
+            }
+
             if (entry is null)
             {
                 entry = new ProjectRegistryEntry
@@ -161,6 +175,57 @@ public sealed class RefreshService(
         }
 
         return selected;
+    }
+
+    /// <summary>
+    /// Registry entries keyed by where their recorded path actually resolves to, for the entries
+    /// where those differ. A path recorded before links were resolved through every segment — or
+    /// one whose links have since changed — names the same directory under a different name, and
+    /// hidden, excluded, opted-in, and confirmed-origin intent has to follow it there.
+    /// </summary>
+    private Dictionary<string, ProjectRegistryEntry> IndexEntriesByResolvedPath()
+    {
+        var index = new Dictionary<string, ProjectRegistryEntry>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in settings.Projects.Where(e => e.Path.Length > 0))
+        {
+            string resolved;
+            try
+            {
+                resolved = ProjectDiscovery.CanonicalizeFully(entry.Path);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                // A path that is no longer even well-formed cannot be matched; leave it alone.
+                continue;
+            }
+
+            if (!string.Equals(resolved, entry.Path, StringComparison.OrdinalIgnoreCase))
+            {
+                index.TryAdd(resolved, entry);
+            }
+        }
+
+        return index;
+    }
+
+    /// <summary>
+    /// Moves an existing entry onto the identity this refresh discovered, keeping every choice the
+    /// owner made about it. The name it was recorded under becomes its route when it is an opt-in
+    /// that has none, because that name may be the only way back into an excluded location.
+    /// </summary>
+    private ProjectRegistryEntry Migrate(ProjectRegistryEntry entry, string canonicalPath)
+    {
+        var recordedPath = entry.Path;
+
+        entry.Path = canonicalPath;
+        if (entry.NestedOptIn && string.IsNullOrWhiteSpace(entry.OptInPath))
+        {
+            entry.OptInPath = recordedPath;
+        }
+
+        settings.MarkChanged();
+        return entry;
     }
 
     /// <summary>
