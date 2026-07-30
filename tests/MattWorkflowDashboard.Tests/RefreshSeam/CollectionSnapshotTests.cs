@@ -108,4 +108,45 @@ public sealed class CollectionSnapshotTests
             "Two entries that differ only in case are still the same two entries; reordering them "
             + "is formatting, and a canonical representation must not read it as work moving.");
     }
+
+    /// <summary>
+    /// Changing how a collection is written down is not something that happened to the owner's
+    /// work. A cache written by the previous encoding has to migrate to the new one silently.
+    /// </summary>
+    [TestMethod]
+    public async Task Upgrading_a_cache_written_by_the_previous_encoding_is_not_movement()
+    {
+        // A backslash is the one character the two encodings render differently, so this is the
+        // case a migration is actually needed for.
+        _workspace.WriteTicket(_effort, "001.md", Fixtures.Ticket("Work", "ready", labels: @"a\b"));
+        await _harness.RefreshAsync();
+
+        WriteAsPreviousEncoding(@"a\b");
+        _harness.Restart();
+
+        var view = (await _harness.RefreshAsync()).Project("app");
+
+        Assert.AreEqual(
+            "Work",
+            view.Ticket("001").Title,
+            "A migratable cache must be migrated, not discarded.");
+
+        CollectionAssert.DoesNotContain(
+            view.RecentActivity.Select(a => a.Kind).ToArray(),
+            ActivityKind.LabelChanged,
+            "The ticket file did not change; only the way its labels were stored did.");
+    }
+
+    /// <summary>Rewrites the stored labels the way schema 2 wrote them, and marks the file as
+    /// schema 2 so the next open migrates it.</summary>
+    private void WriteAsPreviousEncoding(string labels)
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={_workspace.CacheFile}");
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE ticket_snapshot SET labels = $labels; PRAGMA user_version=2;";
+        command.Parameters.AddWithValue("$labels", labels);
+        command.ExecuteNonQuery();
+    }
 }

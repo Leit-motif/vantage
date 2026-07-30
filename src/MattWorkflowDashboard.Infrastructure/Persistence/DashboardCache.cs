@@ -30,7 +30,7 @@ public sealed record ArtifactSnapshot(string Path, string Kind, string SemanticH
 /// </summary>
 public sealed class DashboardCache : IDisposable
 {
-    private const int SchemaVersion = 2;
+    private const int SchemaVersion = 3;
 
     private static readonly JsonSerializerOptions SnapshotOptions = new()
     {
@@ -171,10 +171,65 @@ public sealed class DashboardCache : IDisposable
                 """);
         }
 
+        if (version < 3)
+        {
+            // The collection columns changed to an escaped encoding. Rewriting what is already
+            // stored keeps every row this cache held and stops the change of encoding from being
+            // read as movement on the next refresh — an upgrade is not something that happened to
+            // the owner's work.
+            Recanonicalize(connection);
+        }
+
         if (version < SchemaVersion)
         {
             Execute(connection, $"PRAGMA user_version={SchemaVersion};");
         }
+    }
+
+    private static void Recanonicalize(SqliteConnection connection)
+    {
+        var rows = new List<(string Project, string Ticket, string Labels, string Assignees, string Blockers)>();
+
+        using (var read = connection.CreateCommand())
+        {
+            read.CommandText = "SELECT project_path, ticket_id, labels, assignees, blockers FROM ticket_snapshot;";
+            using var reader = read.ExecuteReader();
+            while (reader.Read())
+            {
+                rows.Add((
+                    reader.GetString(0),
+                    reader.GetString(1),
+                    reader.GetString(2),
+                    reader.GetString(3),
+                    reader.GetString(4)));
+            }
+        }
+
+        using var transaction = connection.BeginTransaction();
+        using var write = connection.CreateCommand();
+        write.Transaction = transaction;
+        write.CommandText = """
+            UPDATE ticket_snapshot SET labels = $labels, assignees = $assignees, blockers = $blockers
+            WHERE project_path = $path AND ticket_id = $id;
+            """;
+
+        var labels = write.Parameters.Add("$labels", SqliteType.Text);
+        var assignees = write.Parameters.Add("$assignees", SqliteType.Text);
+        var blockers = write.Parameters.Add("$blockers", SqliteType.Text);
+        var path = write.Parameters.Add("$path", SqliteType.Text);
+        var id = write.Parameters.Add("$id", SqliteType.Text);
+
+        foreach (var row in rows)
+        {
+            labels.Value = Canonical(ReadUnescaped(row.Labels));
+            assignees.Value = Canonical(ReadUnescaped(row.Assignees));
+            blockers.Value = Canonical(ReadUnescaped(row.Blockers));
+            path.Value = row.Project;
+            id.Value = row.Ticket;
+            write.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
     }
 
     public IReadOnlyList<ActivityEvent> LoadActivity(string projectPath, DateTimeOffset since)
@@ -408,9 +463,9 @@ public sealed class DashboardCache : IDisposable
                 status.Value = ticket.Status.RawValue;
                 complete.Value = ticket.IsComplete ? 1 : 0;
                 source.Value = ticket.SourcePath;
-                labels.Value = Join(ticket.Labels);
-                assignees.Value = Join(ticket.Assignees);
-                blockers.Value = Join(ticket.Blockers.Select(b => b.NormalizedKey));
+                labels.Value = Canonical(ticket.Labels);
+                assignees.Value = Canonical(ticket.Assignees);
+                blockers.Value = Canonical(ticket.Blockers.Select(b => b.NormalizedKey));
                 comments.Value = ticket.CommentCount;
                 insert.ExecuteNonQuery();
             }
@@ -464,9 +519,41 @@ public sealed class DashboardCache : IDisposable
         }
     }
 
-    /// <summary>A stable, comparable rendering of a set of values.</summary>
-    public static string Join(IEnumerable<string> values) =>
-        string.Join('|', values.Select(v => v.Trim()).OrderBy(v => v, StringComparer.OrdinalIgnoreCase));
+    /// <summary>
+    /// A canonical, collision-safe rendering of a set of values, and the only thing the dashboard
+    /// compares one refresh's collections against the next.
+    /// <para>
+    /// Two properties matter and neither is free. It is <em>injective</em>: every value is escaped
+    /// before the items are joined, so an item that itself contains the separator can never read
+    /// back as several distinct items — one label written <c>alpha|beta</c> and the two labels
+    /// <c>alpha</c> and <c>beta</c> are different strings, and moving between them is real
+    /// movement. And it is <em>canonical</em>: the ordering is total, so the same items written in
+    /// a different order — including entries that differ only in case — always render the same
+    /// way, and reformatting is never reported as work moving.
+    /// </para>
+    /// </summary>
+    public static string Canonical(IEnumerable<string> values) =>
+        string.Join(
+            Separator,
+            values
+                .Select(v => v.Trim())
+                .OrderBy(v => v, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(v => v, StringComparer.Ordinal)
+                .Select(Escape));
+
+    private const char Separator = '|';
+
+    private static string Escape(string value) => value
+        .Replace("\\", "\\\\", StringComparison.Ordinal)
+        .Replace("|", "\\|", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Reads a collection stored before the encoding escaped anything. Values that contained the
+    /// separator were already indistinguishable from several items back then; this reads them the
+    /// way that schema did, which is the only meaning those bytes ever had.
+    /// </summary>
+    private static IEnumerable<string> ReadUnescaped(string stored) =>
+        stored.Split(Separator, StringSplitOptions.RemoveEmptyEntries);
 
     public void ForgetProject(string projectPath)
     {

@@ -136,16 +136,19 @@
             </StackPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal">
-              <Border Background="Transparent" Margin="4,0,0,0"
+              <!-- The aggregate warning is a control: it opens this project's conflict evidence. -->
+              <Button Style="{StaticResource GlassButton}" Margin="4,0,0,0" Padding="5,1"
+                      Command="{Binding InspectConflictsCommand}"
                       Visibility="{Binding ConflictCount, Converter={StaticResource CountToVisibility}}"
-                      ToolTip="Linked sources disagree — open the project to inspect.">
+                      AutomationProperties.Name="{Binding ConflictBadgeName}"
+                      ToolTip="Linked sources disagree — inspect the evidence.">
                 <StackPanel Orientation="Horizontal">
                   <TextBlock Style="{StaticResource IconText}" Foreground="{DynamicResource ConflictBrush}"
                              Text="{x:Static vm:Glyphs.Conflict}" />
                   <TextBlock Style="{StaticResource SecondaryText}" Foreground="{DynamicResource ConflictBrush}"
                              Text="{Binding ConflictCount}" Margin="3,0,0,0" />
                 </StackPanel>
-              </Border>
+              </Button>
 
               <Border Background="Transparent" Margin="6,0,0,0"
                       Visibility="{Binding DiagnosticCount, Converter={StaticResource CountToVisibility}}"
@@ -357,13 +360,26 @@
                                     <Grid.ColumnDefinitions>
                                       <ColumnDefinition Width="*" />
                                       <ColumnDefinition Width="Auto" />
+                                      <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Style="{StaticResource SecondaryText}"
                                                Text="{Binding Title}"
-                                               ToolTip="{Binding Provenance.Description}" />
+                                               ToolTip="{Binding ProvenanceDescription}" />
                                     <TextBlock Grid.Column="1" Style="{StaticResource TertiaryText}"
                                                Text="{Binding Status.RawValue}"
                                                ToolTip="{Binding Status.Description}" Margin="6,0,0,0" />
+                                    <!-- The conflict is inspectable on the item it is about. -->
+                                    <Button Grid.Column="2" Style="{StaticResource GlassButton}"
+                                            Padding="4,0" Margin="6,0,0,0"
+                                            Command="{Binding InspectConflictsCommand}"
+                                            CommandParameter="{Binding Id}"
+                                            Visibility="{Binding ConflictCount, Converter={StaticResource CountToVisibility}}"
+                                            AutomationProperties.Name="{Binding ConflictControlName}"
+                                            ToolTip="Inspect this item's disagreement.">
+                                      <TextBlock Style="{StaticResource IconText}"
+                                                 Foreground="{DynamicResource ConflictBrush}"
+                                                 Text="{x:Static vm:Glyphs.Conflict}" />
+                                    </Button>
                                   </Grid>
                                 </DataTemplate>
                               </ItemsControl.ItemTemplate>
@@ -398,21 +414,60 @@
                       </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <TextBlock Style="{StaticResource SecondaryText}" Margin="0,10,0,2" Text="CONFLICTS"
-                               Foreground="{DynamicResource ConflictBrush}"
-                               Visibility="{Binding ConflictCount, Converter={StaticResource CountToVisibility}}" />
-                    <ItemsControl ItemsSource="{Binding Conflicts}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                          <StackPanel Margin="0,0,0,4">
-                            <TextBlock Style="{StaticResource SecondaryText}" Foreground="{DynamicResource ConflictBrush}"
-                                       Text="{Binding Field}" />
-                            <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap"
-                                       Text="{Binding Resolution}" />
-                          </StackPanel>
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                    <!--
+                      Both sides of every disagreement, which side was kept, and where each side
+                      was observed. An announced region of its own, so the evidence can be
+                      navigated to and read out as one thing.
+                    -->
+                    <StackPanel AutomationProperties.Name="Conflicts"
+                                Visibility="{Binding ConflictCount, Converter={StaticResource CountToVisibility}}">
+                      <Grid Margin="0,10,0,2">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Style="{StaticResource SecondaryText}"
+                                   Foreground="{DynamicResource ConflictBrush}"
+                                   Text="{Binding ConflictHeading}" TextWrapping="Wrap" />
+                        <Button Grid.Column="1" Style="{StaticResource GlassButton}" Padding="6,0"
+                                Command="{Binding ShowAllConflictsCommand}"
+                                Content="Show all"
+                                AutomationProperties.Name="Show every disagreement in this project"
+                                Visibility="{Binding IsConflictInspectionNarrowed, Converter={StaticResource BoolToVisibility}}" />
+                      </Grid>
+                      <ItemsControl ItemsSource="{Binding InspectedConflicts}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <StackPanel Margin="0,0,0,8" AutomationProperties.Name="{Binding AccessibleSummary}">
+                              <TextBlock Style="{StaticResource SecondaryText}" Foreground="{DynamicResource ConflictBrush}"
+                                         Text="{Binding Headline}" TextWrapping="Wrap" />
+                              <Grid Margin="0,2,0,0">
+                                <Grid.ColumnDefinitions>
+                                  <ColumnDefinition Width="Auto" />
+                                  <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                  <RowDefinition Height="Auto" />
+                                  <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource TertiaryText}" Text="local " />
+                                <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource SecondaryText}"
+                                           Text="{Binding LocalValue}" TextWrapping="Wrap" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource TertiaryText}" Text="remote " />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource SecondaryText}"
+                                           Text="{Binding RemoteValue}" TextWrapping="Wrap" />
+                              </Grid>
+                              <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                         Text="{Binding Resolution}" />
+                              <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap"
+                                         Text="{Binding LocalProvenance}" />
+                              <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap"
+                                         Text="{Binding RemoteProvenance}" />
+                            </StackPanel>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
 
                     <TextBlock Style="{StaticResource SecondaryText}" Margin="0,10,0,2" Text="DIAGNOSTICS"
                                Visibility="{Binding DiagnosticCount, Converter={StaticResource CountToVisibility}}" />

@@ -89,6 +89,15 @@ Progress is equal-weight and spans the whole pipeline: planning, research, grill
 implementation, review, and release. Maps and parent artifacts are containers, not work units.
 A ticket counts exactly once, at completion; its internal stage is shown separately.
 
+### Following a conflict to its evidence
+
+A project's conflict badge is a control rather than a decoration: it selects that project, opens
+the expanded view, and lists its disagreements. Each one names the item it is about, what the local
+side says, what the remote side says, which side was kept and why, and where each side was
+observed — source, locator, what kind of timestamp it has, and the refresh that produced it. Every
+affected item carries the same control, which narrows the list to that item alone; **Show all**
+widens it again.
+
 ### On "80% transparency"
 
 The specification's target is stated as *80% transparency*. Opacity and transparency are routinely

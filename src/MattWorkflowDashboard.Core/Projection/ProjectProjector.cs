@@ -29,6 +29,13 @@ public static class ProjectProjector
     {
         var diagnostics = new List<Diagnostic>(project.Diagnostics);
         var effortViews = new List<EffortView>();
+
+        // A disagreement travels with the work it is about, so the aggregate warning on a project
+        // and the control on the affected item are two routes to one piece of evidence.
+        var conflictsByTicket = options.Conflicts
+            .GroupBy(c => c.TicketId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, IReadOnlyList<ConflictReport> (g) => [.. g], StringComparer.OrdinalIgnoreCase);
+
         var resolutions = new Dictionary<string, BlockerResolution>(StringComparer.OrdinalIgnoreCase);
         var actionable = new List<(WorkflowEffort Effort, WorkflowTicket Ticket, NextActionSource Source, string Reason)>();
 
@@ -61,7 +68,10 @@ public static class ProjectProjector
                     ticket.Link,
                     ticket.SourcePath,
                     ticket.Provenance,
-                    ticket.EnrichmentProvenance));
+                    ticket.EnrichmentProvenance)
+                {
+                    Conflicts = conflictsByTicket.TryGetValue(ticket.Id, out var reports) ? reports : [],
+                });
             }
 
             effortViews.Add(new EffortView(

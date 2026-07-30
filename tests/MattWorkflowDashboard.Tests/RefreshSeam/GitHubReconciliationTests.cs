@@ -78,6 +78,50 @@ public sealed class GitHubReconciliationTests
     }
 
     [TestMethod]
+    public async Task A_conflict_carries_both_values_the_resolution_and_each_side_s_provenance()
+    {
+        LinkedProject(Fixtures.Ticket("Local title", "ready", gitHub: "#7"));
+        _runner.GhIssues(Fixtures.GhIssues(new Fixtures.GhIssue(7, "Remote title", "OPEN", [], "2026-07-29T10:00:00Z")));
+
+        var view = (await _harness.RefreshAsync()).Project("widget");
+        var conflict = view.Conflicts.Single(c => c.Field == ConflictField.Title);
+
+        Assert.AreEqual("Local title", conflict.LocalValue);
+        Assert.AreEqual("Remote title", conflict.RemoteValue);
+        StringAssert.Contains(conflict.Resolution, "Local", "The resolution has to say which side was kept.");
+        Assert.IsTrue(
+            conflict.LocalProvenance.Source is EvidenceSource.LocalFile or EvidenceSource.LocalGit,
+            $"The local side must be traceable to a local source, not {conflict.LocalProvenance.Source}.");
+        Assert.AreEqual(EvidenceSource.GitHubCli, conflict.RemoteProvenance.Source);
+        Assert.AreEqual(
+            view.Ticket("001").Provenance.RefreshId,
+            conflict.LocalProvenance.RefreshId,
+            "Every side of a conflict is traceable to the refresh that produced it.");
+    }
+
+    [TestMethod]
+    public async Task A_conflict_is_attached_to_the_item_it_is_about()
+    {
+        LinkedProject(Fixtures.Ticket("First local", "ready", gitHub: "#7"));
+        _workspace.WriteTicket(
+            Path.Combine(_workspace.WorkspacesRoot, "widget", ".scratch", "feature"),
+            "002.md",
+            Fixtures.Ticket("Second local", "ready", gitHub: "#8"));
+
+        _runner.GhIssues(Fixtures.GhIssues(
+            new Fixtures.GhIssue(7, "First remote", "OPEN", [], "2026-07-29T10:00:00Z"),
+            new Fixtures.GhIssue(8, "Second remote", "OPEN", [], "2026-07-29T10:00:00Z")));
+
+        var view = (await _harness.RefreshAsync()).Project("widget");
+
+        Assert.AreEqual("First remote", view.Ticket("001").Conflicts.Single().RemoteValue);
+        Assert.AreEqual(
+            "Second remote",
+            view.Ticket("002").Conflicts.Single().RemoteValue,
+            "A disagreement belongs to the work it is about, not to a list beside it.");
+    }
+
+    [TestMethod]
     public async Task Information_only_GitHub_has_is_enrichment_rather_than_conflict()
     {
         LinkedProject(Fixtures.Ticket("Build the thing", "ready", gitHub: "#7"));
