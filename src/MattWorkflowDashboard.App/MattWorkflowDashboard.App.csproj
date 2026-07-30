@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>MattWorkflowDashboard.App</RootNamespace>
+    <AssemblyName>MattWorkflowDashboard</AssemblyName>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Required by the LibraryImport source generator used for the Win32 overlay calls. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!--
+      WFO0003 asks WinForms apps to move DPI settings out of the manifest. This is a WPF app that
+      uses WinForms only for the tray icon, and WPF takes its per-monitor DPI awareness from the
+      manifest, so the manifest stays and the WinForms advice does not apply.
+    -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MattWorkflowDashboard.Core\MattWorkflowDashboard.Core.csproj" />
+    <ProjectReference Include="..\MattWorkflowDashboard.Infrastructure\MattWorkflowDashboard.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
