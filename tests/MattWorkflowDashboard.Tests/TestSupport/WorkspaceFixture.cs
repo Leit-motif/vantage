@@ -108,10 +108,15 @@ public sealed class WorkspaceFixture : IDisposable
     /// A content fingerprint of a tree, used to prove that observing a workspace changed nothing
     /// in it.
     /// </summary>
-    public static string Fingerprint(string path)
+    public static string Fingerprint(string path, string? excludingSegment = null)
     {
         var builder = new StringBuilder();
-        foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).OrderBy(f => f, StringComparer.Ordinal))
+        var files = Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
+            .Where(f => excludingSegment is null
+                || !f.Contains(Path.DirectorySeparatorChar + excludingSegment + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(f => f, StringComparer.Ordinal);
+
+        foreach (var file in files)
         {
             var info = new FileInfo(file);
             builder.Append(file).Append('|').Append(info.Length).Append('|')

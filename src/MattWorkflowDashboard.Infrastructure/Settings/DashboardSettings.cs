@@ -35,9 +35,10 @@ public sealed class ProjectRegistryEntry
 
 public sealed class WindowGeometry
 {
-    public double Left { get; set; } = double.NaN;
+    /// <summary>Null until the window has been placed, so "unset" is representable in JSON.</summary>
+    public double? Left { get; set; }
 
-    public double Top { get; set; } = double.NaN;
+    public double? Top { get; set; }
 
     public double CompactWidth { get; set; } = 380;
 

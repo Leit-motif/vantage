@@ -29,6 +29,12 @@ public sealed class FakeProcessRunner : IProcessRunner
             (name, args) => name == fileName && args.Count > 0 && args.Contains(firstArgument),
             () => result);
 
+    /// <summary>Makes a command fail unexpectedly, so failure isolation can be exercised.</summary>
+    public FakeProcessRunner Throwing(string fileName, string firstArgument) =>
+        When(
+            (name, args) => name == fileName && args.Contains(firstArgument),
+            () => throw new InvalidOperationException($"{fileName} exploded"));
+
     public FakeProcessRunner GhAuthenticated() =>
         WhenCommand("gh", "auth", Ok(string.Empty));
 

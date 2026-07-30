@@ -1,0 +1,228 @@
+using MattWorkflowDashboard.Core;
+using MattWorkflowDashboard.Infrastructure;
+using MattWorkflowDashboard.Infrastructure.Persistence;
+using MattWorkflowDashboard.Infrastructure.Settings;
+using MattWorkflowDashboard.Tests.TestSupport;
+
+namespace MattWorkflowDashboard.Tests.RefreshSeam;
+
+[TestClass]
+public sealed class ResilienceTests
+{
+    private WorkspaceFixture _workspace = null!;
+
+    [TestInitialize]
+    public void SetUp() => _workspace = new WorkspaceFixture();
+
+    [TestCleanup]
+    public void TearDown() => _workspace.Dispose();
+
+    private RefreshHarness NewHarness(FakeProcessRunner? runner = null) =>
+        new(_workspace, runner ?? new FakeProcessRunner().GhUnauthenticated(), DateTimeOffset.UtcNow);
+
+    [TestMethod]
+    public async Task Observing_a_workspace_changes_nothing_in_it()
+    {
+        var project = _workspace.NewProject("repo");
+        var effort = _workspace.NewEffort(project, "feature");
+        _workspace.WriteTicket(effort, "001.md", Fixtures.Ticket("Work", "ready"));
+        _workspace.InitGitRepository(project, "https://github.com/acme/widget.git");
+        _workspace.Commit(project, "add planning");
+
+        var runner = new FakeProcessRunner().GhAuthenticated().GhIssues(Fixtures.GhIssues());
+        using var harness = NewHarness(runner).WithRealGit();
+
+        var contentBefore = WorkspaceFixture.Fingerprint(_workspace.WorkspacesRoot, excludingSegment: ".git");
+        var headBefore = _workspace.Git(project, "rev-parse", "HEAD");
+        var statusBefore = _workspace.Git(project, "status", "--porcelain");
+        var configBefore = _workspace.Git(project, "config", "--get", "remote.origin.url");
+
+        await harness.RefreshAsync();
+        await harness.RefreshAsync();
+
+        Assert.AreEqual(contentBefore, WorkspaceFixture.Fingerprint(_workspace.WorkspacesRoot, excludingSegment: ".git"));
+        Assert.AreEqual(headBefore, _workspace.Git(project, "rev-parse", "HEAD"));
+        Assert.AreEqual(statusBefore, _workspace.Git(project, "status", "--porcelain"));
+        Assert.AreEqual(configBefore, _workspace.Git(project, "config", "--get", "remote.origin.url"));
+    }
+
+    [TestMethod]
+    public async Task Monitored_content_is_data_and_never_reaches_a_command_line()
+    {
+        var hostile = "Status: ready; rm -rf /\nBlocked by: $(whoami)\n--repo evil/evil\n";
+        var project = _workspace.NewProject("repo");
+        var effort = _workspace.NewEffort(project, "feature");
+        _workspace.WriteTicket(effort, "ticket & $(whoami) ; echo.md", "# Hostile\n\n" + hostile);
+
+        var runner = new FakeProcessRunner().GhUnauthenticated();
+        using var harness = NewHarness(runner);
+
+        var snapshot = await harness.RefreshAsync();
+
+        Assert.AreEqual(1, snapshot.Project("repo").Efforts.SelectMany(e => e.Tickets).Count(),
+            "Hostile names and bodies are ordinary data and must still be indexed.");
+
+        foreach (var argument in runner.Invocations.SelectMany(i => i.Arguments))
+        {
+            Assert.IsFalse(argument.Contains("rm -rf", StringComparison.Ordinal), "Monitored content must never be interpolated into a command.");
+            Assert.IsFalse(argument.Contains("evil/evil", StringComparison.Ordinal));
+            Assert.IsFalse(argument.Contains("$(whoami)", StringComparison.Ordinal));
+        }
+    }
+
+    [TestMethod]
+    public async Task A_broken_project_falls_back_to_its_last_known_good_view_and_says_so()
+    {
+        var project = _workspace.NewProject("repo");
+        var effort = _workspace.NewEffort(project, "feature");
+        _workspace.WriteTicket(effort, "001.md", Fixtures.Ticket("Work", "ready"));
+        _workspace.InitGitRepository(project);
+        _workspace.Commit(project, "add planning");
+
+        using var healthy = NewHarness(new FakeProcessRunner().GhUnauthenticated()).WithRealGit();
+        var before = (await healthy.RefreshAsync()).Project("repo");
+        Assert.AreEqual(1, before.Progress.Total);
+        Assert.IsFalse(before.IsStale);
+        healthy.Dispose();
+
+        using var broken = NewHarness(new FakeProcessRunner().GhUnauthenticated().Throwing("git", "rev-parse"));
+        var after = (await broken.RefreshAsync()).Project("repo");
+
+        Assert.IsTrue(after.IsStale, "A stale view must never be mistaken for a fresh one.");
+        Assert.AreEqual(1, after.Progress.Total, "The last thing known to be true stays visible.");
+        Assert.IsTrue(after.HasDiagnostic(DiagnosticCode.ProjectScanFailed));
+    }
+
+    [TestMethod]
+    public async Task One_broken_project_does_not_blank_the_others()
+    {
+        _workspace.NewEffort(_workspace.NewProject("healthy"), "feature");
+        _workspace.WriteTicket(
+            Path.Combine(_workspace.WorkspacesRoot, "healthy", ".scratch", "feature"),
+            "001.md",
+            Fixtures.Ticket("Fine", "ready"));
+
+        var broken = _workspace.NewProject("broken");
+        Directory.CreateDirectory(Path.Combine(broken, ".git"));
+
+        using var harness = NewHarness(new FakeProcessRunner().GhUnauthenticated().Throwing("git", "rev-parse"));
+        var snapshot = await harness.RefreshAsync();
+
+        Assert.AreEqual(2, snapshot.Projects.Count);
+        Assert.AreEqual(1, snapshot.Project("healthy").Progress.Total);
+    }
+
+    [TestMethod]
+    public async Task A_refresh_stops_promptly_when_it_is_cancelled()
+    {
+        for (var i = 0; i < 20; i++)
+        {
+            var project = _workspace.NewProject($"project-{i}");
+            var effort = _workspace.NewEffort(project, "feature");
+            _workspace.WriteTicket(effort, "001.md", Fixtures.Ticket("Work", "ready"));
+        }
+
+        using var harness = NewHarness();
+        using var source = new CancellationTokenSource();
+        await source.CancelAsync();
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => harness.RefreshAsync(source.Token));
+    }
+
+    [TestMethod]
+    public async Task A_corrupt_cache_is_rebuilt_rather_than_allowed_to_block_startup()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(_workspace.CacheFile)!);
+        await File.WriteAllTextAsync(_workspace.CacheFile, "this is not a database");
+
+        _workspace.NewEffort(_workspace.NewProject("repo"), "feature");
+        _workspace.WriteTicket(
+            Path.Combine(_workspace.WorkspacesRoot, "repo", ".scratch", "feature"),
+            "001.md",
+            Fixtures.Ticket("Work", "ready"));
+
+        using var harness = NewHarness();
+        var snapshot = await harness.RefreshAsync();
+
+        Assert.IsTrue(snapshot.Diagnostics.Any(d => d.Code == DiagnosticCode.CacheRebuilt));
+        Assert.AreEqual(1, snapshot.Project("repo").Progress.Total);
+    }
+
+    [TestMethod]
+    public async Task Activity_expires_after_the_retention_window_while_current_snapshots_survive()
+    {
+        var project = _workspace.NewProject("repo");
+        var effort = _workspace.NewEffort(project, "feature");
+        var ticket = _workspace.WriteTicket(effort, "001.md", Fixtures.Ticket("Work", "open"));
+
+        using var harness = NewHarness();
+        await harness.RefreshAsync();
+        _workspace.WriteFile(ticket, Fixtures.Ticket("Work", "ready"));
+        await harness.RefreshAsync();
+
+        Assert.AreEqual(1, harness.Cache.LoadActivity(project, DateTimeOffset.MinValue).Count);
+
+        harness.Clock.Advance(TimeSpan.FromDays(91));
+        var snapshot = await harness.RefreshAsync();
+
+        Assert.AreEqual(0, harness.Cache.LoadActivity(project, DateTimeOffset.MinValue).Count, "Activity is retained for 90 days, not forever.");
+        Assert.AreEqual(1, harness.Cache.LoadTicketSnapshots(project).Count, "The current snapshot outlives its activity history.");
+        Assert.AreEqual(1, snapshot.Project("repo").Progress.Total);
+    }
+
+    [TestMethod]
+    public void Settings_survive_an_unreadable_file_by_recovering_to_defaults()
+    {
+        var paths = new AppPaths(Path.Combine(_workspace.Root, "appdata"));
+        paths.EnsureCreated();
+        File.WriteAllText(paths.SettingsFile, "{ not json");
+
+        var result = new SettingsStore(paths).Load();
+
+        Assert.AreEqual(DashboardSettings.CurrentSchemaVersion, result.Settings.SchemaVersion);
+        Assert.IsTrue(result.Diagnostics.Any(d => d.Code == DiagnosticCode.SettingsRecovered));
+        Assert.IsTrue(File.Exists(paths.SettingsFile + ".invalid"), "The unreadable file is kept for inspection.");
+    }
+
+    [TestMethod]
+    public void Settings_round_trip_through_an_atomic_write()
+    {
+        var paths = new AppPaths(Path.Combine(_workspace.Root, "appdata"));
+        var store = new SettingsStore(paths);
+
+        var settings = new DashboardSettings { RecentWindowHours = 12 };
+        settings.Ui.SurfaceOpacityPercent = 55;
+        settings.Projects.Add(new ProjectRegistryEntry { Path = @"C:\somewhere", Pinned = true });
+        store.Save(settings);
+
+        var reloaded = store.Load().Settings;
+
+        Assert.AreEqual(12, reloaded.RecentWindowHours);
+        Assert.AreEqual(55, reloaded.Ui.SurfaceOpacityPercent);
+        Assert.IsTrue(reloaded.FindProject(@"C:\somewhere")!.Pinned);
+    }
+
+    [TestMethod]
+    public void A_cache_written_by_a_newer_build_is_rebuilt_rather_than_misread()
+    {
+        var path = Path.Combine(_workspace.Root, "cache", "future.db");
+        using (var cache = DashboardCache.Open(path))
+        {
+            Assert.AreEqual(0, cache.Diagnostics.Count);
+        }
+
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}");
+        connection.Open();
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "PRAGMA user_version=999;";
+            command.ExecuteNonQuery();
+        }
+
+        connection.Close();
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+
+        using var rebuilt = DashboardCache.Open(path);
+        Assert.IsTrue(rebuilt.Diagnostics.Any(d => d.Code == DiagnosticCode.CacheRebuilt));
+    }
+}

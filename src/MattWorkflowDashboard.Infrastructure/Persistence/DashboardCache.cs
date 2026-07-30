@@ -53,6 +53,7 @@ public sealed class DashboardCache : IDisposable
                 $"The cache could not be opened ({ex.Message}) and was rebuilt. No workflow source was affected.",
                 databasePath));
 
+            SqliteConnection.ClearAllPools();
             TryDelete(databasePath);
             return new DashboardCache(Connect(databasePath), diagnostics);
         }
@@ -74,10 +75,19 @@ public sealed class DashboardCache : IDisposable
             Pooling = false,
         }.ToString());
 
-        connection.Open();
-        Execute(connection, "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;");
-        Migrate(connection);
-        return connection;
+        try
+        {
+            connection.Open();
+            Execute(connection, "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;");
+            Migrate(connection);
+            return connection;
+        }
+        catch
+        {
+            // The handle has to go before the file can be replaced, or the rebuild fails too.
+            connection.Dispose();
+            throw;
+        }
     }
 
     /// <summary>Forward-only migrations keyed on <c>user_version</c>. Newer files are left alone.</summary>
