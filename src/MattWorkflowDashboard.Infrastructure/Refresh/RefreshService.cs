@@ -46,24 +46,27 @@ public sealed class RefreshService(
         var discovery = new ProjectDiscovery(settings).Discover(cancellationToken);
         diagnostics.AddRange(discovery.Diagnostics);
 
-        var selected = SelectProjects(discovery.Projects, diagnostics);
-
-        var gitHubAuthenticated = settings.GitHubEnrichmentEnabled
-            && await _gitHub.IsAuthenticatedAsync(cancellationToken).ConfigureAwait(false);
-
-        if (settings.GitHubEnrichmentEnabled && !gitHubAuthenticated)
-        {
-            diagnostics.Add(Diagnostic.Info(
-                DiagnosticCode.GitHubUnauthenticated,
-                "No authenticated gh session; the dashboard is showing local evidence only.",
-                "gh auth status"));
-        }
-
         var views = new ConcurrentBag<(int Order, ProjectView View)>();
         var failures = new ConcurrentBag<Diagnostic>();
+        bool gitHubAuthenticated;
 
+        // Everything from selection onwards can change registry intent, and every way out of it —
+        // cancellation during the gh session check included — has to leave that intent written.
         try
         {
+            var selected = SelectProjects(discovery.Projects, diagnostics);
+
+            gitHubAuthenticated = settings.GitHubEnrichmentEnabled
+                && await _gitHub.IsAuthenticatedAsync(cancellationToken).ConfigureAwait(false);
+
+            if (settings.GitHubEnrichmentEnabled && !gitHubAuthenticated)
+            {
+                diagnostics.Add(Diagnostic.Info(
+                    DiagnosticCode.GitHubUnauthenticated,
+                    "No authenticated gh session; the dashboard is showing local evidence only.",
+                    "gh auth status"));
+            }
+
             await Parallel.ForEachAsync(
                 selected.Select((entry, index) => (entry, index)),
                 new ParallelOptions
@@ -137,7 +140,7 @@ public sealed class RefreshService(
                     State = ProjectRegistryState.Enabled,
                 };
                 settings.Projects.Add(entry);
-                settings.HasUnsavedRegistryChanges = true;
+                settings.MarkChanged();
             }
 
             if (entry.State != ProjectRegistryState.Enabled)
@@ -167,7 +170,7 @@ public sealed class RefreshService(
     /// </summary>
     private void PersistRegistry(ICollection<Diagnostic> diagnostics)
     {
-        if (settingsStore is null || !settings.HasUnsavedRegistryChanges)
+        if (settingsStore is null || !settings.HasUnsavedChanges)
         {
             return;
         }
@@ -315,7 +318,7 @@ public sealed class RefreshService(
             {
                 entry.ConfirmedOrigin = observed.Slug;
                 entry.PendingOrigin = null;
-                settings.HasUnsavedRegistryChanges = true;
+                settings.MarkChanged();
             }
 
             return observed;
@@ -334,7 +337,7 @@ public sealed class RefreshService(
             if (entry.PendingOrigin is not null)
             {
                 entry.PendingOrigin = null;
-                settings.HasUnsavedRegistryChanges = true;
+                settings.MarkChanged();
             }
 
             return GitHubOrigin.TryParse($"https://github.com/{entry.ConfirmedOrigin}");
@@ -343,7 +346,7 @@ public sealed class RefreshService(
         if (!string.Equals(entry.PendingOrigin, observed.Slug, StringComparison.OrdinalIgnoreCase))
         {
             entry.PendingOrigin = observed.Slug;
-            settings.HasUnsavedRegistryChanges = true;
+            settings.MarkChanged();
         }
 
         diagnostics.Add(Diagnostic.Warning(

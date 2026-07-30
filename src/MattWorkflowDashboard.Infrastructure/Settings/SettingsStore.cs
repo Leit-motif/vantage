@@ -59,6 +59,10 @@ public sealed class SettingsStore(AppPaths paths)
 
         lock (_gate)
         {
+            // Read before serializing: a change made while this write is in flight belongs to the
+            // next save, not to this one.
+            var revision = settings.Revision;
+
             var temp = paths.SettingsFile + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(settings, SerializerOptions));
 
@@ -70,10 +74,11 @@ public sealed class SettingsStore(AppPaths paths)
             {
                 File.Move(temp, paths.SettingsFile);
             }
-        }
 
-        // Only once the swap succeeded: a failed write must leave the change outstanding.
-        settings.HasUnsavedRegistryChanges = false;
+            // Only once the swap succeeded, and only for the revision actually written: a failed
+            // write must leave the change outstanding, and so must one made during the write.
+            settings.SavedRevision = revision;
+        }
     }
 
     /// <summary>Forward-only settings migration. Unknown future versions are left untouched.</summary>

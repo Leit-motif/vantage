@@ -240,6 +240,97 @@ public sealed class RegistryControlTests
     }
 
     [TestMethod]
+    public async Task A_project_registered_before_a_cancelled_session_check_is_still_registered_after_restart()
+    {
+        var project = _workspace.NewProject("widget");
+
+        // Cancellation lands on the gh session check, before any project is indexed — the earliest
+        // point at which the registry has already changed.
+        using var cancelled = new CancellationTokenSource();
+        var cancellingRunner = new FakeProcessRunner().When(
+            (name, args) => name == "gh" && args.Contains("auth"),
+            () =>
+            {
+                cancelled.Cancel();
+                throw new OperationCanceledException(cancelled.Token);
+            });
+
+        using var cancelledRun = new RefreshHarness(_workspace, cancellingRunner, DateTimeOffset.UtcNow);
+
+        try
+        {
+            await cancelledRun.RefreshAsync(cancelled.Token);
+            Assert.Fail("The refresh was expected to be cancelled.");
+        }
+        catch (OperationCanceledException)
+        {
+            // The point of the test.
+        }
+
+        Assert.AreEqual(
+            ProjectRegistryState.Enabled,
+            PersistedEntry(project).State,
+            "Cancellation during the session check must not drop a project already registered.");
+    }
+
+    [TestMethod]
+    public async Task A_settings_write_that_fails_stays_pending_and_is_written_by_the_next_refresh()
+    {
+        var hidden = _workspace.NewProject("hidden");
+        await _harness.RefreshAsync();
+
+        var settings = OpenSettings();
+
+        // Hold the settings file open so the atomic swap cannot complete. Reads still work, so the
+        // test can see that nothing reached the file.
+        using (var _ = new FileStream(
+            _harness.SettingsStore.FilePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read))
+        {
+            settings.Projects.Single(p => p.Path == hidden).State = ProjectRegistryState.Hidden;
+
+            Assert.AreNotEqual(string.Empty, settings.SaveError, "A failed write must say so rather than look like it worked.");
+            Assert.IsTrue(_harness.Settings.HasUnsavedChanges, "The change the owner made is still outstanding.");
+            Assert.AreEqual(
+                ProjectRegistryState.Enabled,
+                PersistedEntry(hidden).State,
+                "Nothing reached the file while it was locked.");
+        }
+
+        await _harness.RefreshAsync();
+
+        Assert.AreEqual(
+            ProjectRegistryState.Hidden,
+            PersistedEntry(hidden).State,
+            "The next refresh retries the write rather than losing the choice.");
+    }
+
+    [TestMethod]
+    public async Task A_save_reports_written_only_for_the_revision_it_captured()
+    {
+        var project = _workspace.NewProject("widget");
+        await _harness.RefreshAsync();
+
+        var settings = _harness.Settings;
+        var beforeChange = settings.Revision;
+
+        settings.FindProject(project)!.Pinned = true;
+        settings.MarkChanged();
+        Assert.IsTrue(settings.HasUnsavedChanges);
+
+        _harness.SettingsStore.Save(settings);
+
+        Assert.IsFalse(settings.HasUnsavedChanges, "A completed save covers what it captured.");
+        Assert.AreNotEqual(beforeChange, settings.SavedRevision, "And it records which revision that was.");
+        Assert.AreEqual(
+            settings.Revision,
+            settings.SavedRevision,
+            "A save reports written only for the revision it read, so a later change stays outstanding.");
+    }
+
+    [TestMethod]
     public async Task Persisting_registry_intent_writes_only_under_the_dashboard_s_own_app_data()
     {
         var project = _workspace.NewProject("widget");

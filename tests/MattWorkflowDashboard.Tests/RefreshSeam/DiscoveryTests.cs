@@ -154,6 +154,35 @@ public sealed class DiscoveryTests
             "The exclusion follows the name on disk; a junction must not route around it.");
     }
 
+    [TestMethod]
+    public async Task An_opt_in_beneath_a_junctioned_excluded_location_is_still_reached()
+    {
+        var project = _workspace.NewProject("host");
+        var target = Path.Combine(_workspace.Root, "external-deps");
+        _workspace.WriteFile(Path.Combine(target, "companion", "AGENTS.md"), "# opted in, behind a junction\n");
+        _workspace.WriteFile(Path.Combine(target, "other-dep", "AGENTS.md"), "# still vendored\n");
+
+        var junction = Path.Combine(project, "node_modules");
+        if (!TryCreateJunction(junction, target))
+        {
+            Assert.Inconclusive("This host cannot create a directory junction.");
+        }
+
+        // Opted in the way the owner sees it on disk, not the way the junction resolves.
+        _harness.Settings.Projects.Add(new ProjectRegistryEntry
+        {
+            Path = Path.Combine(junction, "companion"),
+            NestedOptIn = true,
+        });
+
+        var snapshot = await _harness.RefreshAsync();
+
+        CollectionAssert.AreEquivalent(
+            new[] { "host", "companion" },
+            snapshot.Projects.Select(p => p.Identity.Name).ToArray(),
+            "An opt-in written as the owner sees it must survive a junction along the way.");
+    }
+
     /// <summary>A junction needs no elevation, but a host may still refuse it.</summary>
     private static bool TryCreateJunction(string link, string target)
     {

@@ -138,13 +138,27 @@ public sealed class DashboardSettings
 
     public UiSettings Ui { get; set; } = new();
 
+    private long _revision;
+
     /// <summary>
-    /// Set when a refresh has changed registry intent that is not on disk yet. It is not part of the
-    /// file: it describes this object. It outlives a single refresh so a pass that was cancelled or
-    /// a save that failed leaves the write to be retried rather than dropped.
+    /// How many times this object has been changed, and how much of that a successful save has
+    /// captured. Neither is part of the file: they describe this object.
+    ///
+    /// A version stamp rather than a dirty flag, because a save reads the object while a refresh
+    /// worker may still be changing it. Clearing a flag would discard a change made mid-write; a
+    /// stamp records only the revision actually serialized, so anything later stays outstanding.
     /// </summary>
     [JsonIgnore]
-    public bool HasUnsavedRegistryChanges { get; set; }
+    public long Revision => Volatile.Read(ref _revision);
+
+    [JsonIgnore]
+    public long SavedRevision { get; set; }
+
+    [JsonIgnore]
+    public bool HasUnsavedChanges => Revision != SavedRevision;
+
+    /// <summary>Records a change to be written. Safe to call from the parallel refresh workers.</summary>
+    public void MarkChanged() => Interlocked.Increment(ref _revision);
 
     public ProjectRegistryEntry? FindProject(string canonicalPath) =>
         Projects.FirstOrDefault(p => string.Equals(p.Path, canonicalPath, StringComparison.OrdinalIgnoreCase));

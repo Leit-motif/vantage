@@ -271,10 +271,30 @@ public sealed partial class SettingsViewModel : ObservableObject
         Apply();
     }
 
+    /// <summary>
+    /// Empty while configuration is being written successfully. A failed write says so here rather
+    /// than looking like it worked.
+    /// </summary>
+    [ObservableProperty]
+    private string _saveError = string.Empty;
+
     [RelayCommand]
     public void Apply()
     {
-        _store.Save(_settings);
+        // Marked before the write, never after: if the write fails, the change the owner made is
+        // still outstanding and the next refresh has a reason to try again.
+        _settings.MarkChanged();
+
+        try
+        {
+            _store.Save(_settings);
+            SaveError = string.Empty;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            SaveError = $"Settings could not be saved: {ex.Message}. The change is still pending and will be retried.";
+        }
+
         _onApplied();
     }
 

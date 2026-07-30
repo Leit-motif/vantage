@@ -51,14 +51,28 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
         // The only reason to walk into a vendor, dependency, tool, build, or cache tree is a
         // project the owner explicitly opted in down there. Those paths are followed one at a
         // time, so an opt-in never turns an excluded tree into a crawl.
-        var optIns = settings.Projects
+        //
+        // Both forms are kept. An opt-in is usually written the way the owner sees it on disk
+        // ('host\node_modules\companion'), which is not what canonicalizing produces when a
+        // directory along the way is a junction — matching either form is what lets the walk
+        // reach it, while identity stays canonical.
+        var optInPaths = settings.Projects
             .Where(p => p.NestedOptIn && p.Path.Length > 0)
-            .Select(p => Canonicalize(p.Path))
+            .Select(p => (Written: p.Path, Lexical: Lexical(p.Path), Canonical: Canonicalize(p.Path)))
+            .ToList();
+
+        var optIns = optInPaths
+            .SelectMany(p => new[] { p.Lexical, p.Canonical })
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         var found = new List<DiscoveredProject>();
         var diagnostics = new List<Diagnostic>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Every directory actually walked, in both forms, so an unreached opt-in can be told apart
+        // from one that was reached under its other name.
+        var reached = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var scanned = 0;
         var truncated = false;
 
@@ -75,18 +89,23 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                 continue;
             }
 
-            var queue = new Queue<(string Path, int Depth, string? Owner, string? ExcludedLocation)>();
-            queue.Enqueue((Canonicalize(root), 0, null, null));
+            // Lexical is the path as it reads on disk and drives policy and opt-in matching;
+            // canonical resolves links and is the project's identity.
+            var queue = new Queue<(string Lexical, string Path, int Depth, string? Owner, string? ExcludedLocation)>();
+            queue.Enqueue((Lexical(root), Canonicalize(root), 0, null, null));
 
             while (queue.Count > 0)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var (path, depth, owner, excludedLocation) = queue.Dequeue();
+                var (lexical, path, depth, owner, excludedLocation) = queue.Dequeue();
                 if (!visited.Add(path))
                 {
                     continue;
                 }
+
+                reached.Add(lexical);
+                reached.Add(path);
 
                 if (++scanned > settings.MaxDirectoriesScanned || found.Count >= settings.MaxProjects)
                 {
@@ -119,9 +138,9 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                     // Inside an excluded tree nothing is enumerated at all: the walk steps along
                     // the opted-in paths themselves, so a vendor directory with thousands of
                     // siblings costs one directory probe per opted-in segment.
-                    foreach (var next in OptInDescendants(path, optIns))
+                    foreach (var next in OptInDescendants(lexical, path, optIns))
                     {
-                        queue.Enqueue((next, depth + 1, owningProject, excludedLocation));
+                        queue.Enqueue((next, Canonicalize(next), depth + 1, owningProject, excludedLocation));
                     }
 
                     continue;
@@ -137,17 +156,19 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                         continue;
                     }
 
+                    var childLexical = Path.Combine(lexical, name);
+
                     // The policy is about the name the owner sees on disk. Canonicalizing first
                     // would let a junction named 'node_modules' pointing elsewhere escape it.
                     if (!excluded.Contains(name))
                     {
-                        queue.Enqueue((child, depth + 1, owningProject, null));
+                        queue.Enqueue((childLexical, child, depth + 1, owningProject, null));
                         continue;
                     }
 
-                    if (LeadsToOptIn(child, optIns))
+                    if (LeadsToOptIn(childLexical, optIns) || LeadsToOptIn(child, optIns))
                     {
-                        queue.Enqueue((child, depth + 1, owningProject, child));
+                        queue.Enqueue((childLexical, child, depth + 1, owningProject, childLexical));
                     }
                 }
             }
@@ -169,12 +190,12 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
         // An opt-in that discovery never reached would otherwise be silent: no project, no reason.
         if (!truncated)
         {
-            foreach (var optIn in optIns.Where(o => !visited.Contains(o)))
+            foreach (var optIn in optInPaths.Where(o => !reached.Contains(o.Lexical) && !reached.Contains(o.Canonical)))
             {
                 diagnostics.Add(Diagnostic.Warning(
                     DiagnosticCode.ProjectScanFailed,
-                    $"The opted-in project '{optIn}' was not reached: check that the path exists, sits beneath a configured root, and is within the discovery depth.",
-                    optIn));
+                    $"The opted-in project '{optIn.Written}' was not reached: check that the path exists, sits beneath a configured root, and is within the discovery depth.",
+                    optIn.Canonical));
             }
         }
 
@@ -203,6 +224,13 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
 
         return full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
     }
+
+    /// <summary>
+    /// The path as written, normalized but with links left alone — what the owner sees on disk and
+    /// what discovery policy reads. <see cref="Canonicalize"/> is identity; this is navigation.
+    /// </summary>
+    public static string Lexical(string path) =>
+        Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
     private static List<string> DetectMarkers(string path, ICollection<Diagnostic> diagnostics)
     {
@@ -252,31 +280,40 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
     }
 
     /// <summary>
-    /// The next directory below <paramref name="path"/> on the way to each opted-in project, taken
-    /// from the opt-in paths themselves rather than from enumerating the directory.
+    /// The next directory below this one on the way to each opted-in project, taken from the opt-in
+    /// paths themselves rather than from enumerating the directory. Segments are matched against
+    /// both the lexical and canonical form of the current directory and are always returned as
+    /// lexical children of it, so the walk keeps reading the way the owner wrote the opt-in.
     /// </summary>
-    private static IEnumerable<string> OptInDescendants(string path, IReadOnlyList<string> optIns)
+    private static IEnumerable<string> OptInDescendants(
+        string lexical,
+        string canonical,
+        IReadOnlyList<string> optIns)
     {
-        var prefix = path + Path.DirectorySeparatorChar;
         var next = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var optIn in optIns)
+        foreach (var prefix in new[] { lexical, canonical }.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            if (!optIn.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
+            var withSeparator = prefix + Path.DirectorySeparatorChar;
 
-            var remainder = optIn[prefix.Length..];
-            var separator = remainder.IndexOf(Path.DirectorySeparatorChar);
-            var segment = separator < 0 ? remainder : remainder[..separator];
-            if (segment.Length > 0)
+            foreach (var optIn in optIns)
             {
-                next.Add(prefix + segment);
+                if (!optIn.StartsWith(withSeparator, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var remainder = optIn[withSeparator.Length..];
+                var separator = remainder.IndexOf(Path.DirectorySeparatorChar);
+                var segment = separator < 0 ? remainder : remainder[..separator];
+                if (segment.Length > 0)
+                {
+                    next.Add(Path.Combine(lexical, segment));
+                }
             }
         }
 
-        return next.Where(Directory.Exists).Select(Canonicalize);
+        return next.Where(Directory.Exists);
     }
 
     /// <summary>

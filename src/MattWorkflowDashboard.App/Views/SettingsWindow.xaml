@@ -141,6 +141,9 @@
                    Text="Changes are saved atomically as you make them." />
       </StackPanel>
 
+      <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{DynamicResource ErrorBrush}"
+                 Text="{Binding SaveError}" AutomationProperties.Name="Settings save error" />
+
     </StackPanel>
   </ScrollViewer>
 </Window>
