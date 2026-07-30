@@ -147,6 +147,14 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _newRoot = string.Empty;
 
+    /// <summary>
+    /// A project beneath an excluded vendor, dependency, tool, build, or cache location. Discovery
+    /// never walks those trees uninvited, so an intentionally independent project down there is
+    /// named here once and then tracked like any other.
+    /// </summary>
+    [ObservableProperty]
+    private string _newNestedProject = string.Empty;
+
     partial void OnLaunchAtSignInChanged(bool value)
     {
         _settings.LaunchAtSignIn = value;
@@ -179,6 +187,28 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         Roots.Remove(root);
         _settings.Roots.RemoveAll(r => string.Equals(r, root, StringComparison.OrdinalIgnoreCase));
+        Apply();
+    }
+
+    [RelayCommand]
+    public void AddNestedProject()
+    {
+        var path = MattWorkflowDashboard.Infrastructure.Discovery.ProjectDiscovery.Canonicalize(NewNestedProject.Trim());
+        if (NewNestedProject.Trim().Length == 0 || _settings.FindProject(path) is not null)
+        {
+            return;
+        }
+
+        var entry = new ProjectRegistryEntry
+        {
+            Path = path,
+            State = ProjectRegistryState.Enabled,
+            NestedOptIn = true,
+        };
+
+        _settings.Projects.Add(entry);
+        Projects.Add(new ProjectRegistryRow(entry));
+        NewNestedProject = string.Empty;
         Apply();
     }
 

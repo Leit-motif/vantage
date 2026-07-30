@@ -67,21 +67,54 @@ public sealed class DiscoveryTests
     }
 
     [TestMethod]
-    public async Task Excludes_nested_projects_by_default_and_includes_them_once_opted_in()
+    public async Task An_ordinary_nested_project_is_discovered_without_an_opt_in()
     {
         var project = _workspace.NewProject("host");
-        var nested = Path.Combine(project, "tools", "companion");
+        var nested = Path.Combine(project, "sub", "companion");
         _workspace.WriteFile(Path.Combine(nested, "AGENTS.md"), "# nested but independent\n");
 
-        var first = await _harness.RefreshAsync();
-        Assert.AreEqual(1, first.Projects.Count, "A nested project is excluded until it is opted in.");
+        var snapshot = await _harness.RefreshAsync();
 
-        _harness.Settings.FindProject(nested)!.NestedOptIn = true;
+        CollectionAssert.AreEquivalent(
+            new[] { "host", "companion" },
+            snapshot.Projects.Select(p => p.Identity.Name).ToArray(),
+            "Nesting alone is not a vendor, dependency, tool, build, or cache location.");
+    }
+
+    [TestMethod]
+    public async Task A_project_beneath_an_excluded_location_is_discovered_only_once_it_is_opted_in()
+    {
+        var project = _workspace.NewProject("host");
+        var vendored = Path.Combine(project, "node_modules", "companion");
+        _workspace.WriteFile(Path.Combine(vendored, "AGENTS.md"), "# independent, but living under a vendor tree\n");
+
+        var first = await _harness.RefreshAsync();
+        Assert.AreEqual(1, first.Projects.Count, "A project under an excluded location stays out until it is opted in.");
+
+        _harness.Settings.Projects.Add(new ProjectRegistryEntry { Path = vendored, NestedOptIn = true });
         var second = await _harness.RefreshAsync();
 
         CollectionAssert.AreEquivalent(
             new[] { "host", "companion" },
-            second.Projects.Select(p => p.Identity.Name).ToArray());
+            second.Projects.Select(p => p.Identity.Name).ToArray(),
+            "An explicit opt-in must reach a project beneath an excluded location.");
+    }
+
+    [TestMethod]
+    public async Task An_opt_in_does_not_pull_in_its_excluded_neighbours()
+    {
+        var project = _workspace.NewProject("host");
+        var vendored = Path.Combine(project, "node_modules", "companion");
+        _workspace.WriteFile(Path.Combine(vendored, "AGENTS.md"), "# opted in\n");
+        _workspace.WriteFile(Path.Combine(project, "node_modules", "other-dep", "AGENTS.md"), "# still vendored\n");
+
+        _harness.Settings.Projects.Add(new ProjectRegistryEntry { Path = vendored, NestedOptIn = true });
+        var snapshot = await _harness.RefreshAsync();
+
+        CollectionAssert.AreEquivalent(
+            new[] { "host", "companion" },
+            snapshot.Projects.Select(p => p.Identity.Name).ToArray(),
+            "Opting one project in must not turn the excluded tree into a crawl.");
     }
 
     [TestMethod]

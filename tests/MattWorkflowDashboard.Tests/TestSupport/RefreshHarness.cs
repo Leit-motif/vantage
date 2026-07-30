@@ -1,4 +1,5 @@
 using MattWorkflowDashboard.Core.Projection;
+using MattWorkflowDashboard.Infrastructure;
 using MattWorkflowDashboard.Infrastructure.Persistence;
 using MattWorkflowDashboard.Infrastructure.Processes;
 using MattWorkflowDashboard.Infrastructure.Refresh;
@@ -21,11 +22,18 @@ public sealed class RefreshHarness : IDisposable
         Runner = runner ?? new FakeProcessRunner();
         Clock = new FixedTimeProvider(now ?? DateTimeOffset.Parse("2026-07-29T12:00:00Z"));
 
+        Paths = new AppPaths(Path.Combine(workspace.Root, "appdata"));
+        SettingsStore = new SettingsStore(Paths);
+
         Settings = new DashboardSettings
         {
             Roots = [workspace.WorkspacesRoot],
             GitHubEnrichmentEnabled = true,
         };
+
+        // The settings file exists from the start, so a restart re-reads real configuration
+        // rather than falling back to defaults.
+        SettingsStore.Save(Settings);
 
         _cache = DashboardCache.Open(workspace.CacheFile);
     }
@@ -36,7 +44,11 @@ public sealed class RefreshHarness : IDisposable
 
     public FixedTimeProvider Clock { get; }
 
-    public DashboardSettings Settings { get; }
+    public AppPaths Paths { get; }
+
+    public SettingsStore SettingsStore { get; }
+
+    public DashboardSettings Settings { get; private set; }
 
     public DashboardCache Cache => _cache;
 
@@ -50,11 +62,12 @@ public sealed class RefreshHarness : IDisposable
     public Task<DashboardSnapshot> RefreshAsync(CancellationToken cancellationToken = default) =>
         new RefreshService(Settings, Runner, _cache, Clock).RefreshAsync(cancellationToken);
 
-    /// <summary>Reopens the cache, as a restart would.</summary>
+    /// <summary>Reopens the cache and re-reads settings from disk, as a restart would.</summary>
     public void Restart()
     {
         _cache.Dispose();
         _cache = DashboardCache.Open(Workspace.CacheFile);
+        Settings = SettingsStore.Load().Settings;
     }
 
     public void Dispose() => _cache.Dispose();
