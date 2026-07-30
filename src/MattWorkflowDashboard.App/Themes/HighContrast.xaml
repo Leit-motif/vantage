@@ -1,0 +1,31 @@
+<!--
+  Windows high contrast. Every brush defers to the system palette, because in this mode the
+  owner's chosen colours are the accessibility contract and ours are not.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <Color x:Key="SurfaceColor">#000000</Color>
+
+  <SolidColorBrush x:Key="SurfaceBrush" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+  <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+  <SolidColorBrush x:Key="SurfaceOverlayBrush" Color="{DynamicResource {x:Static SystemColors.ControlLightColorKey}}" />
+  <SolidColorBrush x:Key="BorderBrush" Color="{DynamicResource {x:Static SystemColors.ActiveBorderColorKey}}" />
+  <SolidColorBrush x:Key="BorderStrongBrush" Color="{DynamicResource {x:Static SystemColors.ActiveBorderColorKey}}" />
+
+  <SolidColorBrush x:Key="TextPrimaryBrush" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+  <SolidColorBrush x:Key="TextSecondaryBrush" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+  <SolidColorBrush x:Key="TextTertiaryBrush" Color="{DynamicResource {x:Static SystemColors.GrayTextColorKey}}" />
+
+  <SolidColorBrush x:Key="StateInProgressBrush" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+  <SolidColorBrush x:Key="StateReadyBrush" Color="{DynamicResource {x:Static SystemColors.HotTrackColorKey}}" />
+  <SolidColorBrush x:Key="StateBlockedBrush" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+  <SolidColorBrush x:Key="StateIdleBrush" Color="{DynamicResource {x:Static SystemColors.GrayTextColorKey}}" />
+  <SolidColorBrush x:Key="StateCompleteBrush" Color="{DynamicResource {x:Static SystemColors.HotTrackColorKey}}" />
+  <SolidColorBrush x:Key="ConflictBrush" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+  <SolidColorBrush x:Key="ErrorBrush" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+
+  <SolidColorBrush x:Key="TrackBrush" Color="{DynamicResource {x:Static SystemColors.ControlDarkColorKey}}" />
+  <SolidColorBrush x:Key="HoverBrush" Color="{DynamicResource {x:Static SystemColors.ControlLightColorKey}}" />
+
+</ResourceDictionary>

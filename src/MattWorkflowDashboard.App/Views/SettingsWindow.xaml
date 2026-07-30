@@ -1,0 +1,133 @@
+<Window x:Class="MattWorkflowDashboard.App.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:MattWorkflowDashboard.App.ViewModels"
+        Title="Workflow dashboard settings"
+        Width="560" Height="640"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource SurfaceBrush}"
+        Foreground="{DynamicResource TextPrimaryBrush}"
+        AutomationProperties.Name="Workflow dashboard settings">
+
+  <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
+    <StackPanel>
+
+      <TextBlock Style="{StaticResource TitleText}" Text="Appearance" />
+
+      <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+        <TextBlock Style="{StaticResource BodyText}" Width="140" Text="Theme" VerticalAlignment="Center" />
+        <ComboBox Width="160" ItemsSource="{Binding Themes}" SelectedItem="{Binding Theme}"
+                  AutomationProperties.Name="Theme" />
+      </StackPanel>
+
+      <StackPanel Margin="0,10,0,0">
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Style="{StaticResource BodyText}" Width="140" Text="Surface opacity" VerticalAlignment="Center" />
+          <Slider Width="220" Minimum="10" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True"
+                  Value="{Binding SurfaceOpacityPercent}"
+                  AutomationProperties.Name="Surface opacity percent" />
+        </StackPanel>
+        <TextBlock Style="{StaticResource TertiaryText}" Margin="140,4,0,0" Text="{Binding OpacityDescription}" />
+        <TextBlock Style="{StaticResource TertiaryText}" Margin="140,2,0,0" TextWrapping="Wrap"
+                   Text="Higher is more solid. Only the background changes — text and controls stay fully legible." />
+      </StackPanel>
+
+      <CheckBox Margin="140,10,0,0" IsChecked="{Binding EdgeSnap}" Content="Snap to screen edges"
+                Foreground="{DynamicResource TextPrimaryBrush}" />
+      <CheckBox Margin="140,6,0,0" IsChecked="{Binding ReducedMotion}" Content="Reduce motion"
+                Foreground="{DynamicResource TextPrimaryBrush}" />
+
+      <TextBlock Style="{StaticResource TitleText}" Margin="0,20,0,0" Text="Behaviour" />
+
+      <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+        <TextBlock Style="{StaticResource BodyText}" Width="140" Text="Recent window (hours)" VerticalAlignment="Center" />
+        <TextBox Style="{StaticResource SearchBox}" Width="60" Text="{Binding RecentWindowHours}"
+                 AutomationProperties.Name="Recent window in hours" />
+      </StackPanel>
+
+      <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+        <TextBlock Style="{StaticResource BodyText}" Width="140" Text="Discovery depth" VerticalAlignment="Center" />
+        <TextBox Style="{StaticResource SearchBox}" Width="60" Text="{Binding MaxDiscoveryDepth}"
+                 AutomationProperties.Name="Maximum discovery depth" />
+      </StackPanel>
+
+      <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+        <TextBlock Style="{StaticResource BodyText}" Width="140" Text="Click-through hotkey" VerticalAlignment="Center" />
+        <TextBox Style="{StaticResource SearchBox}" Width="160" Text="{Binding ClickThroughHotkey}"
+                 AutomationProperties.Name="Click-through hotkey" />
+      </StackPanel>
+      <TextBlock Style="{StaticResource TertiaryText}" Margin="140,4,0,0" TextWrapping="Wrap"
+                 Text="Optional, and empty by default — for example Ctrl+Alt+D. Click-through is always recoverable from the tray." />
+
+      <CheckBox Margin="140,10,0,0" IsChecked="{Binding GitHubEnrichmentEnabled}"
+                Content="Enrich from my authenticated gh session"
+                Foreground="{DynamicResource TextPrimaryBrush}" />
+      <TextBlock Style="{StaticResource TertiaryText}" Margin="160,2,0,0" TextWrapping="Wrap"
+                 Text="Only repositories associated with a local project are queried. The account is never enumerated." />
+
+      <CheckBox Margin="140,10,0,0" IsChecked="{Binding LaunchAtSignIn}" Content="Launch at sign-in"
+                Foreground="{DynamicResource TextPrimaryBrush}" />
+
+      <TextBlock Style="{StaticResource TitleText}" Margin="0,20,0,0" Text="Discovery roots" />
+      <ItemsControl ItemsSource="{Binding Roots}" Margin="0,8,0,0">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Grid Margin="0,2">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Style="{StaticResource BodyText}" Text="{Binding}" VerticalAlignment="Center" />
+              <Button Grid.Column="1" Style="{StaticResource GlassButton}" Content="Remove"
+                      Command="{Binding DataContext.RemoveRootCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                      CommandParameter="{Binding}" />
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+        <TextBox Style="{StaticResource SearchBox}" Width="360" Text="{Binding NewRoot, UpdateSourceTrigger=PropertyChanged}"
+                 AutomationProperties.Name="New discovery root" />
+        <Button Style="{StaticResource GlassButton}" Margin="6,0,0,0" Content="Add root" Command="{Binding AddRootCommand}" />
+      </StackPanel>
+
+      <TextBlock Style="{StaticResource TitleText}" Margin="0,20,0,0" Text="Projects" />
+      <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap"
+                 Text="Hiding or excluding a project keeps its entry, so the intent is never lost. Nested projects need an explicit opt-in." />
+
+      <ItemsControl ItemsSource="{Binding Projects}" Margin="0,8,0,0">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate DataType="{x:Type vm:ProjectRegistryRow}">
+            <Border BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="0,0,0,1" Padding="0,6">
+              <StackPanel>
+                <TextBlock Style="{StaticResource BodyText}" Text="{Binding Path}" TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                  <ComboBox Width="110" SelectedItem="{Binding State}"
+                            ItemsSource="{Binding Source={x:Static vm:RegistryStates.All}}"
+                            AutomationProperties.Name="Registry state" />
+                  <CheckBox Margin="10,0,0,0" IsChecked="{Binding Pinned}" Content="Pinned"
+                            Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                  <CheckBox Margin="10,0,0,0" IsChecked="{Binding NestedOptIn}" Content="Nested opt-in"
+                            Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                  <TextBlock Style="{StaticResource TertiaryText}" Margin="10,0,0,0" VerticalAlignment="Center"
+                             Text="{Binding Origin}" />
+                  <Button Style="{StaticResource GlassButton}" Margin="8,0,0,0" Content="Confirm relink"
+                          Command="{Binding ConfirmRelinkCommand}"
+                          ToolTip="Adopt the repository's current remote on the next refresh." />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
+        <Button Style="{StaticResource GlassButton}" Content="Apply" Command="{Binding ApplyCommand}" />
+        <TextBlock Style="{StaticResource TertiaryText}" Margin="10,0,0,0" VerticalAlignment="Center"
+                   Text="Changes are saved atomically as you make them." />
+      </StackPanel>
+
+    </StackPanel>
+  </ScrollViewer>
+</Window>

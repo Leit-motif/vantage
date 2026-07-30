@@ -93,7 +93,22 @@ public sealed record ProgressSummary(int Completed, int Total, int Excluded)
 }
 
 /// <summary>Completion counts per pipeline stage, so progress reflects the whole effort.</summary>
-public sealed record PipelineSegment(WorkUnitKind Kind, int Completed, int Total);
+public sealed record PipelineSegment(WorkUnitKind Kind, int Completed, int Total)
+{
+    public int Remaining => Total - Completed;
+
+    public string Label => Kind switch
+    {
+        WorkUnitKind.Planning => "Plan",
+        WorkUnitKind.Research => "Research",
+        WorkUnitKind.Grilling => "Grill",
+        WorkUnitKind.Prototype => "Prototype",
+        WorkUnitKind.Implementation => "Build",
+        WorkUnitKind.Review => "Review",
+        WorkUnitKind.Release => "Release",
+        _ => Kind.ToString(),
+    };
+}
 
 public sealed record TicketView(
     string Id,
