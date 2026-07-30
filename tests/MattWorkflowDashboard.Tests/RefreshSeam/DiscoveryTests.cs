@@ -67,6 +67,57 @@ public sealed class DiscoveryTests
     }
 
     [TestMethod]
+    public async Task Every_excluded_category_keeps_its_nested_projects_out_by_default()
+    {
+        var project = _workspace.NewProject("host");
+
+        // One representative directory per category the policy names.
+        (string Category, string Directory)[] categories =
+        [
+            ("vendor", "vendor"),
+            ("dependency", "node_modules"),
+            ("tool", ".gradle"),
+            ("build", "obj"),
+            ("cache", ".cache"),
+        ];
+
+        foreach (var (category, directory) in categories)
+        {
+            _workspace.WriteFile(
+                Path.Combine(project, directory, $"{category}-project", "AGENTS.md"),
+                $"# a project inside a {category} location\n");
+        }
+
+        var snapshot = await _harness.RefreshAsync();
+
+        CollectionAssert.AreEquivalent(
+            new[] { "host" },
+            snapshot.Projects.Select(p => p.Identity.Name).ToArray(),
+            "Vendor, dependency, tool, build, and cache locations each keep their nested projects out.");
+    }
+
+    [TestMethod]
+    public async Task Every_excluded_category_can_be_opted_back_into()
+    {
+        var project = _workspace.NewProject("host");
+        string[] directories = ["vendor", "node_modules", ".gradle", "obj", ".cache"];
+
+        foreach (var directory in directories)
+        {
+            var nested = Path.Combine(project, directory, "companion");
+            _workspace.WriteFile(Path.Combine(nested, "AGENTS.md"), $"# opted in under {directory}\n");
+            _harness.Settings.Projects.Add(new ProjectRegistryEntry { Path = nested, NestedOptIn = true });
+        }
+
+        var snapshot = await _harness.RefreshAsync();
+
+        Assert.AreEqual(
+            directories.Length + 1,
+            snapshot.Projects.Count,
+            "An opt-in must reach into every excluded category, not only some of them.");
+    }
+
+    [TestMethod]
     public async Task An_ordinary_nested_project_is_discovered_without_an_opt_in()
     {
         var project = _workspace.NewProject("host");

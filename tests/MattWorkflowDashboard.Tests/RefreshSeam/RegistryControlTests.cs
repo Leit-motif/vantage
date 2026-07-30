@@ -100,6 +100,68 @@ public sealed class RegistryControlTests
 
         Assert.AreEqual("returning", snapshot.Project("returning").Identity.Name);
         Assert.AreEqual(ProjectRegistryState.Enabled, PersistedEntry(project).State);
+
+        // Enabling is a choice like any other: it has to survive a restart of its own, not just
+        // affect the refresh that followed it.
+        _harness.Restart();
+        var afterRestart = await _harness.RefreshAsync();
+
+        Assert.AreEqual("returning", afterRestart.Project("returning").Identity.Name, "The enabled choice has to survive a restart too.");
+        Assert.AreEqual(ProjectRegistryState.Enabled, PersistedEntry(project).State);
+    }
+
+    [TestMethod]
+    public async Task Hiding_takes_effect_on_the_next_refresh_before_any_restart()
+    {
+        _workspace.NewProject("visible");
+        var hidden = _workspace.NewProject("hidden");
+        await _harness.RefreshAsync();
+
+        var settings = OpenSettings();
+        settings.Projects.Single(p => p.Path == hidden).State = ProjectRegistryState.Hidden;
+
+        var snapshot = await _harness.RefreshAsync();
+
+        Assert.AreEqual(1, snapshot.Projects.Count, "The choice affects the very next refresh, not only the one after a restart.");
+        Assert.AreEqual("visible", snapshot.Projects[0].Identity.Name);
+    }
+
+    [TestMethod]
+    public async Task An_excluded_choice_takes_effect_on_the_next_refresh_before_any_restart()
+    {
+        _workspace.NewProject("wanted");
+        var excluded = _workspace.NewProject("unwanted");
+        await _harness.RefreshAsync();
+
+        var settings = OpenSettings();
+        settings.Projects.Single(p => p.Path == excluded).State = ProjectRegistryState.Excluded;
+
+        var snapshot = await _harness.RefreshAsync();
+
+        Assert.AreEqual(1, snapshot.Projects.Count);
+        Assert.AreEqual("wanted", snapshot.Projects[0].Identity.Name);
+    }
+
+    [TestMethod]
+    public async Task A_nested_opt_in_takes_effect_on_the_next_refresh_before_any_restart()
+    {
+        var host = _workspace.NewProject("host");
+        var vendored = Path.Combine(host, "node_modules", "companion");
+        _workspace.WriteFile(Path.Combine(vendored, "AGENTS.md"), "# under a vendor tree\n");
+
+        var first = await _harness.RefreshAsync();
+        Assert.AreEqual(1, first.Projects.Count);
+
+        var settings = OpenSettings();
+        settings.NewNestedProject = vendored;
+        settings.AddNestedProjectCommand.Execute(null);
+
+        var second = await _harness.RefreshAsync();
+
+        CollectionAssert.AreEquivalent(
+            new[] { "host", "companion" },
+            second.Projects.Select(p => p.Identity.Name).ToArray(),
+            "The opt-in affects the very next refresh, with no restart in between.");
     }
 
     [TestMethod]
@@ -458,6 +520,73 @@ public sealed class RegistryControlTests
             "The next refresh retries the write rather than losing the choice.");
     }
 
+    /// <summary>
+    /// The interleaving itself: a choice made while a write is already in flight. The atomic write
+    /// stages a temp file first, and its appearance is the signal that the write has begun — so the
+    /// change can be made inside the window without a hook in the product. If the window is missed
+    /// the test reports inconclusive rather than passing on nothing.
+    /// </summary>
+    [TestMethod]
+    public async Task A_choice_made_while_a_write_is_in_flight_is_not_reported_as_written()
+    {
+        var project = _workspace.NewProject("widget");
+        await _harness.RefreshAsync();
+
+        var settings = _harness.Settings;
+        var entry = settings.FindProject(project)!;
+
+        // Enough bulk that staging the file takes long enough to act inside. Only a scalar on an
+        // existing entry is touched later, never the collection a save is enumerating.
+        for (var i = 0; i < 20_000; i++)
+        {
+            settings.Projects.Add(new ProjectRegistryEntry { Path = $@"C:\fixture\filler-{i}" });
+        }
+
+        settings.MarkChanged();
+        _harness.SettingsStore.Save(settings);
+        Assert.IsFalse(settings.HasUnsavedChanges, "Everything is written before the interleaving starts.");
+
+        var staged = _harness.SettingsStore.FilePath + ".tmp";
+        var pinnedBefore = entry.Pinned;
+        var observedWriteInFlight = false;
+
+        var saving = Task.Run(() =>
+        {
+            settings.MarkChanged();
+            _harness.SettingsStore.Save(settings);
+        });
+
+        while (!saving.IsCompleted)
+        {
+            if (File.Exists(staged))
+            {
+                observedWriteInFlight = true;
+                break;
+            }
+        }
+
+        // The choice the owner makes while that write is in flight.
+        entry.Pinned = !pinnedBefore;
+        settings.MarkChanged();
+
+        await saving;
+
+        if (!observedWriteInFlight)
+        {
+            Assert.Inconclusive("The write finished before the change could be made inside it.");
+        }
+
+        Assert.IsTrue(
+            settings.HasUnsavedChanges,
+            "A choice made during a write must stay outstanding: that write did not capture it.");
+
+        _harness.SettingsStore.Save(settings);
+        Assert.AreEqual(
+            entry.Pinned,
+            _harness.SettingsStore.Load().Settings.FindProject(project)!.Pinned,
+            "And the save that follows it does capture it.");
+    }
+
     [TestMethod]
     public async Task A_save_reports_written_only_for_the_revision_it_captured()
     {
@@ -544,5 +673,18 @@ public sealed class RegistryControlTests
         Assert.IsTrue(
             confirmed.HasDiagnostic(DiagnosticCode.OriginChanged),
             "The remote has moved on again, so the next relink is still waiting on the owner.");
+
+        // Refreshing on the confirmed association means querying it: the slug the owner confirmed
+        // is the repository this refresh actually read from.
+        var lastIssueQuery = _runner.Invocations
+            .Where(i => i.FileName == "gh" && i.Arguments.Contains("issue"))
+            .Last()
+            .Arguments
+            .ToList();
+
+        Assert.AreEqual(
+            "someone-else/other",
+            lastIssueQuery[lastIssueQuery.IndexOf("--repo") + 1],
+            "GitHub evidence must be fetched for the confirmed association, not the old one or the pending one.");
     }
 }
