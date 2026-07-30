@@ -16,6 +16,24 @@ activity, conflicts, diagnostics, and full-pipeline progress.
 Every displayed conclusion carries provenance: which source observed it, the raw value as
 written, what kind of timestamp it has, and which refresh produced it.
 
+### Discovery, nesting, and remotes
+
+A project is any directory carrying `.git`, `AGENTS.md`, `docs/agents/issue-tracker.md`, or
+`.scratch`. Nesting alone changes nothing: a project inside another project is discovered like any
+other. Vendor, dependency, tool, build, and cache locations — `node_modules`, `obj`, `.venv`,
+`packages`, and the rest of the configurable list — are the exception. Those trees are never walked
+into uninvited, so name the full path of an intentionally independent project down there under
+**Settings → Projects** to opt it in.
+
+Registry intent is per project and is written the moment it is made: enabled, hidden, or excluded,
+pinned, and nested opt-in all survive a restart, and hiding a project keeps its entry rather than
+forgetting it.
+
+A GitHub origin is an association on the local path, never the identity. The first remote seen is
+recorded; if the remote later changes, the new one is held as *pending* and reported, and the
+dashboard keeps using the confirmed association until you confirm the relink in Settings — which
+adopts the pending origin you were shown, not whatever the remote happens to read by then.
+
 ## What it never does
 
 - Change a workflow file, Git state, a GitHub issue or label, or repository configuration.

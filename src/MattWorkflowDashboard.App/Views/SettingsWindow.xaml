@@ -94,7 +94,7 @@
 
       <TextBlock Style="{StaticResource TitleText}" Margin="0,20,0,0" Text="Projects" />
       <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap"
-                 Text="Hiding or excluding a project keeps its entry, so the intent is never lost. Nested projects need an explicit opt-in." />
+                 Text="Hiding or excluding a project keeps its entry, so the intent is never lost. Ordinary nested projects are discovered on their own; only a project inside a vendor, dependency, tool, build, or cache location needs an opt-in." />
 
       <ItemsControl ItemsSource="{Binding Projects}" Margin="0,8,0,0">
         <ItemsControl.ItemTemplate>
@@ -114,13 +114,26 @@
                              Text="{Binding Origin}" />
                   <Button Style="{StaticResource GlassButton}" Margin="8,0,0,0" Content="Confirm relink"
                           Command="{Binding ConfirmRelinkCommand}"
-                          ToolTip="Adopt the repository's current remote on the next refresh." />
+                          IsEnabled="{Binding HasPendingRelink}"
+                          ToolTip="{Binding RelinkDescription}" />
                 </StackPanel>
+                <TextBlock Style="{StaticResource TertiaryText}" Margin="0,4,0,0" TextWrapping="Wrap"
+                           Text="{Binding RelinkDescription}" />
               </StackPanel>
             </Border>
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
+
+      <TextBlock Style="{StaticResource TertiaryText}" Margin="0,12,0,0" TextWrapping="Wrap"
+                 Text="A project inside an excluded location is never walked into uninvited. Name its full path here to track it." />
+      <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+        <TextBox Style="{StaticResource SearchBox}" Width="360"
+                 Text="{Binding NewNestedProject, UpdateSourceTrigger=PropertyChanged}"
+                 AutomationProperties.Name="Nested project path to opt in" />
+        <Button Style="{StaticResource GlassButton}" Margin="6,0,0,0" Content="Opt in"
+                Command="{Binding AddNestedProjectCommand}" />
+      </StackPanel>
 
       <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
         <Button Style="{StaticResource GlassButton}" Content="Apply" Command="{Binding ApplyCommand}" />

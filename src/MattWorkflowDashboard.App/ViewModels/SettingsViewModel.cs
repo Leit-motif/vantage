@@ -1,12 +1,16 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using MattWorkflowDashboard.Infrastructure.Discovery;
 using MattWorkflowDashboard.Infrastructure.Settings;
 
 namespace MattWorkflowDashboard.App.ViewModels;
 
-/// <summary>One registered project, with the intent the owner has expressed about it.</summary>
-public sealed partial class ProjectRegistryRow(ProjectRegistryEntry entry) : ObservableObject
+/// <summary>
+/// One registered project, with the intent the owner has expressed about it. Every change is
+/// saved as it is made: a registry choice that is not written is a choice the next restart loses.
+/// </summary>
+public sealed partial class ProjectRegistryRow(ProjectRegistryEntry entry, Action onChanged) : ObservableObject
 {
     public ProjectRegistryEntry Entry { get; } = entry;
 
@@ -14,45 +18,60 @@ public sealed partial class ProjectRegistryRow(ProjectRegistryEntry entry) : Obs
 
     public string Origin => Entry.ConfirmedOrigin ?? "—";
 
+    /// <summary>The remote waiting on confirmation, if the repository's origin has moved.</summary>
+    public string? PendingOrigin => Entry.PendingOrigin;
+
+    public bool HasPendingRelink => Entry.PendingOrigin is not null;
+
+    public string RelinkDescription => Entry.PendingOrigin is null
+        ? "The remote matches the confirmed association."
+        : $"The remote now reads {Entry.PendingOrigin}. Confirm to adopt it.";
+
     public ProjectRegistryState State
     {
         get => Entry.State;
-        set
-        {
-            Entry.State = value;
-            OnPropertyChanged();
-        }
+        set => Set(() => Entry.State = value);
     }
 
     public bool Pinned
     {
         get => Entry.Pinned;
-        set
-        {
-            Entry.Pinned = value;
-            OnPropertyChanged();
-        }
+        set => Set(() => Entry.Pinned = value);
     }
 
     public bool NestedOptIn
     {
         get => Entry.NestedOptIn;
-        set
-        {
-            Entry.NestedOptIn = value;
-            OnPropertyChanged();
-        }
+        set => Set(() => Entry.NestedOptIn = value);
     }
 
     /// <summary>
-    /// Clears the confirmed origin so the next refresh adopts the current remote. Relinking is
-    /// deliberate: a remote change must never attach unrelated GitHub work on its own.
+    /// Adopts the pending remote — the one the owner was shown — as the confirmed association.
+    /// Relinking is deliberate: a remote change must never attach unrelated GitHub work on its own.
     /// </summary>
     [RelayCommand]
     public void ConfirmRelink()
     {
-        Entry.ConfirmedOrigin = null;
+        if (Entry.PendingOrigin is null)
+        {
+            return;
+        }
+
+        Entry.ConfirmedOrigin = Entry.PendingOrigin;
+        Entry.PendingOrigin = null;
+
         OnPropertyChanged(nameof(Origin));
+        OnPropertyChanged(nameof(PendingOrigin));
+        OnPropertyChanged(nameof(HasPendingRelink));
+        OnPropertyChanged(nameof(RelinkDescription));
+        onChanged();
+    }
+
+    private void Set(Action mutate, [System.Runtime.CompilerServices.CallerMemberName] string? name = null)
+    {
+        mutate();
+        OnPropertyChanged(name);
+        onChanged();
     }
 }
 
@@ -73,7 +92,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _onApplied = onApplied;
 
         Roots = [.. settings.Roots];
-        Projects = [.. settings.Projects.Select(p => new ProjectRegistryRow(p))];
+        Projects = [.. settings.Projects.Select(p => new ProjectRegistryRow(p, Apply))];
         // Assigned to the backing field: reading the current state must not rewrite it.
         _launchAtSignIn = Shell.StartupRegistration.IsEnabled();
     }
@@ -193,8 +212,24 @@ public sealed partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     public void AddNestedProject()
     {
-        var path = MattWorkflowDashboard.Infrastructure.Discovery.ProjectDiscovery.Canonicalize(NewNestedProject.Trim());
-        if (NewNestedProject.Trim().Length == 0 || _settings.FindProject(path) is not null)
+        var typed = NewNestedProject.Trim();
+        if (typed.Length == 0)
+        {
+            return;
+        }
+
+        string path;
+        try
+        {
+            path = ProjectDiscovery.Canonicalize(typed);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            // A path the owner mistyped is not worth a crash; leave it in the box to be corrected.
+            return;
+        }
+
+        if (_settings.FindProject(path) is not null)
         {
             return;
         }
@@ -207,7 +242,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         };
 
         _settings.Projects.Add(entry);
-        Projects.Add(new ProjectRegistryRow(entry));
+        Projects.Add(new ProjectRegistryRow(entry, Apply));
         NewNestedProject = string.Empty;
         Apply();
     }

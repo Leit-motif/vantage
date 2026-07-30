@@ -60,7 +60,7 @@ public sealed class RefreshHarness : IDisposable
     }
 
     public Task<DashboardSnapshot> RefreshAsync(CancellationToken cancellationToken = default) =>
-        new RefreshService(Settings, Runner, _cache, Clock).RefreshAsync(cancellationToken);
+        new RefreshService(Settings, Runner, _cache, Clock, SettingsStore).RefreshAsync(cancellationToken);
 
     /// <summary>Reopens the cache and re-reads settings from disk, as a restart would.</summary>
     public void Restart()

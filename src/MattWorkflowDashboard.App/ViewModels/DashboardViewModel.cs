@@ -184,8 +184,9 @@ public sealed partial class DashboardViewModel : ObservableObject
         try
         {
             IsRefreshing = true;
-            var service = new RefreshService(_settings, _processRunner, _cache);
-            service.RegistryDiscovered += _ => SaveSettings();
+            // The refresh boundary owns persisting the registry intent it produces: a newly
+            // discovered project, a first-seen remote, or a remote now waiting on confirmation.
+            var service = new RefreshService(_settings, _processRunner, _cache, settingsStore: _settingsStore);
 
             var snapshot = await service.RefreshAsync(token).ConfigureAwait(true);
             Apply(snapshot);

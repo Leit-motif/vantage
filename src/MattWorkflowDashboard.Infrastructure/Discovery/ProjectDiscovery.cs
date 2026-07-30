@@ -9,9 +9,17 @@ public sealed record DiscoveredProject(
     string Name,
     IReadOnlyList<string> Markers,
     bool IsNested,
-    string? ParentProjectPath)
+    string? ParentProjectPath,
+    string? ExcludedLocation = null)
 {
     public bool IsGitRepository => Markers.Contains(ProjectMarkers.Git);
+
+    /// <summary>
+    /// The vendor, dependency, tool, build, or cache directory this project sits beneath, if any.
+    /// Nesting on its own is not exclusion: only a project inside one of these locations needs an
+    /// opt-in before it is tracked.
+    /// </summary>
+    public bool IsBeneathExcludedLocation => ExcludedLocation is not null;
 }
 
 public static class ProjectMarkers
@@ -39,6 +47,15 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
     public DiscoveryResult Discover(CancellationToken cancellationToken)
     {
         var excluded = new HashSet<string>(settings.ExcludedDirectoryNames, StringComparer.OrdinalIgnoreCase);
+
+        // The only reason to walk into a vendor, dependency, tool, build, or cache tree is a
+        // project the owner explicitly opted in down there. Those paths are followed one at a
+        // time, so an opt-in never turns an excluded tree into a crawl.
+        var optIns = settings.Projects
+            .Where(p => p.NestedOptIn && p.Path.Length > 0)
+            .Select(p => Canonicalize(p.Path))
+            .ToList();
+
         var found = new List<DiscoveredProject>();
         var diagnostics = new List<Diagnostic>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -58,14 +75,14 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                 continue;
             }
 
-            var queue = new Queue<(string Path, int Depth, string? Owner)>();
-            queue.Enqueue((Canonicalize(root), 0, null));
+            var queue = new Queue<(string Path, int Depth, string? Owner, string? ExcludedLocation)>();
+            queue.Enqueue((Canonicalize(root), 0, null, null));
 
             while (queue.Count > 0)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var (path, depth, owner) = queue.Dequeue();
+                var (path, depth, owner, excludedLocation) = queue.Dequeue();
                 if (!visited.Add(path))
                 {
                     continue;
@@ -87,7 +104,8 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                         Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar)),
                         markers,
                         IsNested: owner is not null,
-                        ParentProjectPath: owner));
+                        ParentProjectPath: owner,
+                        ExcludedLocation: excludedLocation));
                     owningProject = path;
                 }
 
@@ -96,9 +114,17 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                     continue;
                 }
 
-                foreach (var child in EnumerateChildren(path, excluded, diagnostics))
+                foreach (var child in EnumerateChildren(path, diagnostics))
                 {
-                    queue.Enqueue((child, depth + 1, owningProject));
+                    var childExcludedLocation = excludedLocation
+                        ?? (excluded.Contains(Path.GetFileName(child)) ? child : null);
+
+                    if (childExcludedLocation is not null && !LeadsToOptIn(child, optIns))
+                    {
+                        continue;
+                    }
+
+                    queue.Enqueue((child, depth + 1, owningProject, childExcludedLocation));
                 }
             }
 
@@ -134,7 +160,7 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                 full = Path.GetFullPath(target.FullName);
             }
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // An unreadable link is still a usable path; fall back to the literal one.
         }
@@ -178,9 +204,19 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
         return markers;
     }
 
+    /// <summary>
+    /// True when <paramref name="directory"/> is, or is on the way to, a path the owner opted in.
+    /// </summary>
+    private static bool LeadsToOptIn(string directory, IReadOnlyList<string> optIns)
+    {
+        var prefix = directory + Path.DirectorySeparatorChar;
+        return optIns.Any(optIn =>
+            string.Equals(optIn, directory, StringComparison.OrdinalIgnoreCase)
+            || optIn.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static IEnumerable<string> EnumerateChildren(
         string path,
-        HashSet<string> excludedNames,
         ICollection<Diagnostic> diagnostics)
     {
         string[] children;
@@ -200,7 +236,7 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
         foreach (var child in children)
         {
             var name = Path.GetFileName(child);
-            if (name.Length == 0 || excludedNames.Contains(name))
+            if (name.Length == 0)
             {
                 continue;
             }

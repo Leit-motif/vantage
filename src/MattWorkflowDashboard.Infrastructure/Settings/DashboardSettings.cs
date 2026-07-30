@@ -23,7 +23,10 @@ public sealed class ProjectRegistryEntry
 
     public bool Pinned { get; set; }
 
-    /// <summary>Opts a nested project back in after the default nested exclusion removed it.</summary>
+    /// <summary>
+    /// Opts a project inside a vendor, dependency, tool, build, or cache location back in. Ordinary
+    /// nesting needs no opt-in; only those excluded locations do.
+    /// </summary>
     public bool NestedOptIn { get; set; }
 
     /// <summary>
@@ -31,6 +34,12 @@ public sealed class ProjectRegistryEntry
     /// reported rather than silently adopted, so unrelated remote work cannot attach itself.
     /// </summary>
     public string? ConfirmedOrigin { get; set; }
+
+    /// <summary>
+    /// A remote that differs from the confirmed one and is waiting on the owner. Recording it means
+    /// confirming a relink adopts the origin they were shown, not whatever the remote reads later.
+    /// </summary>
+    public string? PendingOrigin { get; set; }
 }
 
 public sealed class WindowGeometry

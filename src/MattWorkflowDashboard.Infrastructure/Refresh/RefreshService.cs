@@ -23,7 +23,8 @@ public sealed class RefreshService(
     DashboardSettings settings,
     IProcessRunner processRunner,
     DashboardCache cache,
-    TimeProvider? timeProvider = null)
+    TimeProvider? timeProvider = null,
+    SettingsStore? settingsStore = null)
 {
     private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
     private readonly GitAdapter _git = new(processRunner);
@@ -36,19 +37,17 @@ public sealed class RefreshService(
     /// </summary>
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _projectLocks = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Raised when the registry gains a project that settings had not seen before.</summary>
-    public event Action<IReadOnlyList<ProjectRegistryEntry>>? RegistryDiscovered;
-
     public async Task<DashboardSnapshot> RefreshAsync(CancellationToken cancellationToken)
     {
         var refreshId = $"r{_clock.GetUtcNow():yyyyMMddHHmmssfff}";
         var now = _clock.GetUtcNow();
         var diagnostics = new List<Diagnostic>(cache.Diagnostics);
+        var registryChanges = new RegistryChanges();
 
         var discovery = new ProjectDiscovery(settings).Discover(cancellationToken);
         diagnostics.AddRange(discovery.Diagnostics);
 
-        var selected = SelectProjects(discovery.Projects, diagnostics);
+        var selected = SelectProjects(discovery.Projects, diagnostics, registryChanges);
 
         var gitHubAuthenticated = settings.GitHubEnrichmentEnabled
             && await _gitHub.IsAuthenticatedAsync(cancellationToken).ConfigureAwait(false);
@@ -73,12 +72,18 @@ public sealed class RefreshService(
             },
             async (item, token) =>
             {
-                var view = await RefreshProjectAsync(item.entry, refreshId, now, gitHubAuthenticated, failures, token)
+                var view = await RefreshProjectAsync(
+                        item.entry, refreshId, now, gitHubAuthenticated, failures, registryChanges, token)
                     .ConfigureAwait(false);
                 views.Add((item.index, view));
             }).ConfigureAwait(false);
 
         diagnostics.AddRange(failures);
+
+        if (registryChanges.Any)
+        {
+            PersistRegistry(diagnostics);
+        }
 
         var ordered = views
             .OrderBy(v => v.Order)
@@ -107,15 +112,16 @@ public sealed class RefreshService(
     }
 
     /// <summary>
-    /// Applies registry intent to discovery. Nested projects stay out unless the owner opted them
-    /// back in, and hiding or excluding a project preserves the intent rather than forgetting it.
+    /// Applies registry intent to discovery. A project inside a vendor, dependency, tool, build, or
+    /// cache location stays out unless the owner opted it back in; ordinary nesting is no reason to
+    /// suppress a project. Hiding or excluding preserves the intent rather than forgetting it.
     /// </summary>
     private IReadOnlyList<(DiscoveredProject Project, ProjectRegistryEntry Entry)> SelectProjects(
         IReadOnlyList<DiscoveredProject> discovered,
-        ICollection<Diagnostic> diagnostics)
+        ICollection<Diagnostic> diagnostics,
+        RegistryChanges registryChanges)
     {
         var selected = new List<(DiscoveredProject, ProjectRegistryEntry)>();
-        var added = new List<ProjectRegistryEntry>();
 
         foreach (var project in discovered)
         {
@@ -127,8 +133,8 @@ public sealed class RefreshService(
                     Path = project.CanonicalPath,
                     State = ProjectRegistryState.Enabled,
                 };
-                added.Add(entry);
                 settings.Projects.Add(entry);
+                registryChanges.Mark();
             }
 
             if (entry.State != ProjectRegistryState.Enabled)
@@ -136,11 +142,11 @@ public sealed class RefreshService(
                 continue;
             }
 
-            if (project.IsNested && !entry.NestedOptIn)
+            if (project.IsBeneathExcludedLocation && !entry.NestedOptIn)
             {
                 diagnostics.Add(Diagnostic.Info(
                     DiagnosticCode.ProjectScanFailed,
-                    $"'{project.Name}' is nested inside '{project.ParentProjectPath}' and is excluded; opt it in from Settings to track it.",
+                    $"'{project.Name}' sits inside '{project.ExcludedLocation}' and is excluded; opt it in from Settings to track it.",
                     project.CanonicalPath));
                 continue;
             }
@@ -148,12 +154,42 @@ public sealed class RefreshService(
             selected.Add((project, entry));
         }
 
-        if (added.Count > 0)
+        return selected;
+    }
+
+    /// <summary>
+    /// Writes registry intent the refresh itself produced — a newly discovered project, or a
+    /// first-seen or pending remote — so the association the owner sees is the one that comes back
+    /// after a restart.
+    /// </summary>
+    private void PersistRegistry(ICollection<Diagnostic> diagnostics)
+    {
+        if (settingsStore is null)
         {
-            RegistryDiscovered?.Invoke(added);
+            return;
         }
 
-        return selected;
+        try
+        {
+            settingsStore.Save(settings);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(Diagnostic.Warning(
+                DiagnosticCode.SettingsRecovered,
+                $"Registry changes from this refresh could not be saved: {ex.Message}",
+                settingsStore.FilePath));
+        }
+    }
+
+    /// <summary>Tracks whether this refresh changed anything the settings file has to keep.</summary>
+    private sealed class RegistryChanges
+    {
+        private int _changed;
+
+        public bool Any => Volatile.Read(ref _changed) == 1;
+
+        public void Mark() => Interlocked.Exchange(ref _changed, 1);
     }
 
     private async Task<ProjectView> RefreshProjectAsync(
@@ -162,6 +198,7 @@ public sealed class RefreshService(
         DateTimeOffset now,
         bool gitHubAuthenticated,
         ConcurrentBag<Diagnostic> failures,
+        RegistryChanges registryChanges,
         CancellationToken cancellationToken)
     {
         var (project, entry) = item;
@@ -170,7 +207,8 @@ public sealed class RefreshService(
 
         try
         {
-            return await IndexProjectAsync(project, entry, refreshId, now, gitHubAuthenticated, cancellationToken)
+            return await IndexProjectAsync(
+                    project, entry, refreshId, now, gitHubAuthenticated, registryChanges, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -200,6 +238,7 @@ public sealed class RefreshService(
         string refreshId,
         DateTimeOffset now,
         bool gitHubAuthenticated,
+        RegistryChanges registryChanges,
         CancellationToken cancellationToken)
     {
         var diagnostics = new List<Diagnostic>();
@@ -210,7 +249,7 @@ public sealed class RefreshService(
 
         diagnostics.AddRange(git.Diagnostics);
 
-        var origin = ConfirmOrigin(entry, git, diagnostics);
+        var origin = ConfirmOrigin(entry, git, diagnostics, registryChanges);
 
         var index = _indexer.Index(project.CanonicalPath, git.FileFacts, refreshId, cancellationToken);
         diagnostics.AddRange(index.Diagnostics);
@@ -268,13 +307,15 @@ public sealed class RefreshService(
 
     /// <summary>
     /// A remote is an association on the local identity, never the identity itself. A remote that
-    /// differs from the confirmed one is reported and ignored, so a changed origin cannot silently
-    /// attach unrelated GitHub work.
+    /// differs from the confirmed one is recorded as pending and reported, so a changed origin
+    /// cannot silently attach unrelated GitHub work — and so confirming a relink adopts the origin
+    /// the owner was actually shown rather than whatever the remote reads by then.
     /// </summary>
     private static GitHubOrigin? ConfirmOrigin(
         ProjectRegistryEntry entry,
         GitReadResult git,
-        ICollection<Diagnostic> diagnostics)
+        ICollection<Diagnostic> diagnostics,
+        RegistryChanges registryChanges)
     {
         var observed = git.Origin;
 
@@ -283,6 +324,8 @@ public sealed class RefreshService(
             if (observed is not null)
             {
                 entry.ConfirmedOrigin = observed.Slug;
+                entry.PendingOrigin = null;
+                registryChanges.Mark();
             }
 
             return observed;
@@ -290,7 +333,20 @@ public sealed class RefreshService(
 
         if (observed is null || string.Equals(entry.ConfirmedOrigin, observed.Slug, StringComparison.OrdinalIgnoreCase))
         {
+            // The remote agrees with the confirmed association again; there is nothing to confirm.
+            if (entry.PendingOrigin is not null)
+            {
+                entry.PendingOrigin = null;
+                registryChanges.Mark();
+            }
+
             return GitHubOrigin.TryParse($"https://github.com/{entry.ConfirmedOrigin}");
+        }
+
+        if (!string.Equals(entry.PendingOrigin, observed.Slug, StringComparison.OrdinalIgnoreCase))
+        {
+            entry.PendingOrigin = observed.Slug;
+            registryChanges.Mark();
         }
 
         diagnostics.Add(Diagnostic.Warning(
