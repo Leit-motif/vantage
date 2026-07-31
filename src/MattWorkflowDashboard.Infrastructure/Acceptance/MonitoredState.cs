@@ -42,19 +42,33 @@ public sealed record MonitoredStateChange(string ProjectId, string Subject, stri
 public sealed record FingerprintGap(string ProjectId, string Subject);
 
 /// <summary>
+/// What the registry says about a project's repository. The distinction that matters is between a
+/// project the registry knows — whose confirmed association is the only repository that may be
+/// queried — and one it has never seen, which has no confirmed association to contradict and whose
+/// first-observed remote is what the dashboard would itself adopt.
+/// </summary>
+public sealed record ProjectAssociation(bool Registered, string? ConfirmedSlug)
+{
+    public static readonly ProjectAssociation Unregistered = new(false, null);
+}
+
+/// <summary>
 /// Reads the monitored state of a set of projects, before and after, using only commands the
 /// <see cref="ReadOnlyProcessRunner"/> will let through.
 /// </summary>
-/// <param name="confirmedOriginOf">
-/// The repository a project is *confirmed* to be associated with, which is not always the one its
-/// remote currently names. A remote that changed is held pending the owner's confirmation, and
-/// fingerprinting the newly observed one would send queries to a repository they never approved.
+/// <param name="associationOf">
+/// Which repository a project is allowed to be asked about. For a project the registry already
+/// knows, that is its *confirmed* association and never the remote as it currently reads — a
+/// changed remote is held pending the owner's confirmation, and querying it would reach a
+/// repository they never approved. For a project the registry has never seen there is nothing
+/// pending: the first remote observed is what becomes its association, so reading the remote is
+/// both correct and what the dashboard itself would do.
 /// </param>
 public sealed class MonitoredStateReader(
     IProcessRunner runner,
     Func<string, string> identify,
     int maxIssues,
-    Func<string, string?>? confirmedOriginOf = null)
+    Func<string, ProjectAssociation>? associationOf = null)
 {
     /// <summary>
     /// The files this dashboard actually opens in a project. Everything else in a working tree is
@@ -108,10 +122,17 @@ public sealed class MonitoredStateReader(
             refs = await GitDigestAsync(projectPath, ["show-ref"], "git refs", unavailable, cancellationToken).ConfigureAwait(false);
         }
 
-        // The confirmed association, never the remote as it currently reads. A project whose remote
-        // changed is waiting on the owner, and querying the new repository would be the dashboard
-        // reaching somewhere it was not given.
-        var originSlug = confirmedOriginOf?.Invoke(projectPath);
+        var association = associationOf?.Invoke(projectPath) ?? ProjectAssociation.Unregistered;
+
+        // A registered project is asked about only under its confirmed association. An unregistered
+        // one has none to contradict, and reading its remote is what makes the two fingerprints
+        // symmetric: a project the registry learns about between them would otherwise be skipped
+        // before and queried after, and that difference would read as a change in the workspace.
+        var originSlug = association.Registered
+            ? association.ConfirmedSlug
+            : isRepository
+                ? await ObservedRemoteAsync(projectPath, unavailable, cancellationToken).ConfigureAwait(false)
+                : null;
 
         var issues = (Count: 0, Digest: (string?)null);
         var labels = (Count: 0, Digest: (string?)null);
@@ -253,6 +274,32 @@ public sealed class MonitoredStateReader(
                 yield return walk.Current;
             }
         }
+    }
+
+    private async Task<string?> ObservedRemoteAsync(
+        string projectPath,
+        ICollection<string> unavailable,
+        CancellationToken cancellationToken)
+    {
+        var result = await runner.RunAsync(
+            "git",
+            ["-C", projectPath, "remote", "get-url", "origin"],
+            projectPath,
+            cancellationToken).ConfigureAwait(false);
+
+        if (!result.Succeeded)
+        {
+            // A repository with no origin at all is not a gap: there is nothing to enrich it with.
+            return null;
+        }
+
+        var slug = Core.Workflow.GitHubOrigin.TryParse(result.StandardOutput.Trim())?.Slug;
+        if (slug is null && result.StandardOutput.Trim().Length > 0)
+        {
+            unavailable.Add("a remote that is not a GitHub origin");
+        }
+
+        return slug;
     }
 
     private async Task<string?> GitDigestAsync(

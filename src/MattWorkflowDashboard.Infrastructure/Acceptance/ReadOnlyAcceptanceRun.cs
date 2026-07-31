@@ -63,10 +63,16 @@ public sealed record OfflineEvidence(
     int StaleProjects,
     long ElapsedMilliseconds);
 
+/// <summary>
+/// Projects and repositories are counted separately on purpose: several projects can share one
+/// repository — a worktree, a second clone — so a count of distinct slugs is not a count of
+/// projects, and comparing the two would look like an inconsistency.
+/// </summary>
 public sealed record AssociationEvidence(
     int Projects,
     int GitRepositories,
-    int WithConfirmedAssociation,
+    int ProjectsWithAssociation,
+    int DistinctRepositoriesAssociated,
     int AssociationMatchesObservedRemote,
     int AssociationDiffersFromObservedRemote,
     int RemoteUnreadable,
@@ -203,7 +209,7 @@ public sealed class ReadOnlyAcceptanceRun(
             runner,
             Identify,
             settings.MaxGitHubIssuesPerRepository,
-            ConfirmedOriginOf);
+            AssociationOf);
 
         var before = await stateReader
             .ReadAsync(projectPaths, settings.GitHubEnrichmentEnabled, cancellationToken)
@@ -472,6 +478,7 @@ public sealed class ReadOnlyAcceptanceRun(
         return new AssociationEvidence(
             snapshot.Projects.Count,
             discovered.Count(d => d.IsGitRepository),
+            snapshot.Projects.Count(p => p.Origin is not null),
             associated.Count,
             matches,
             differs,
@@ -488,8 +495,10 @@ public sealed class ReadOnlyAcceptanceRun(
     /// Not the remote as it currently reads: a changed remote is held pending the owner's
     /// confirmation, and the fingerprint must not query a repository they have not approved.
     /// </summary>
-    private string? ConfirmedOriginOf(string projectPath) =>
-        settings.FindProject(projectPath)?.ConfirmedOrigin;
+    private ProjectAssociation AssociationOf(string projectPath) =>
+        settings.FindProject(projectPath) is { } entry
+            ? new ProjectAssociation(true, entry.ConfirmedOrigin)
+            : ProjectAssociation.Unregistered;
 
     /// <summary>
     /// A stable identifier for a path or a repository within one report, and nothing outside it.

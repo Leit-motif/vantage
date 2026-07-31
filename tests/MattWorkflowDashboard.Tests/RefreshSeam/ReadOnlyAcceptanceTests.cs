@@ -276,7 +276,7 @@ public sealed class ReadOnlyAcceptanceTests
             runner,
             path => path.ToLowerInvariant(),
             200,
-            confirmedOriginOf: _ => "acme/confirmed");
+            associationOf: _ => new ProjectAssociation(Registered: true, ConfirmedSlug: "acme/confirmed"));
 
         await reader.ReadAsync([project], includeGitHub: true, CancellationToken.None);
 
@@ -284,6 +284,38 @@ public sealed class ReadOnlyAcceptanceTests
             new[] { "acme/confirmed" },
             runner.RepositoriesQueried.ToArray(),
             "Only the confirmed association may be queried, never the remote that is awaiting confirmation.");
+    }
+
+    /// <summary>
+    /// The other side of the same rule. A project the registry has never seen has no confirmed
+    /// association to contradict, and the first remote observed is the one the dashboard itself
+    /// would adopt — so skipping it would make the two fingerprints asymmetric and turn a project
+    /// the registry learned about mid-run into a reported change in the workspace.
+    /// </summary>
+    [TestMethod]
+    public async Task A_project_the_registry_has_never_seen_is_fingerprinted_under_its_own_remote()
+    {
+        var project = _workspace.NewProject("repo");
+        _workspace.InitGitRepository(project, "https://github.com/acme/first-seen.git");
+
+        var inner = new FakeProcessRunner()
+            .GhIssues("[]")
+            .When((name, args) => name == "gh" && args.Contains("label"), () => FakeProcessRunner.Ok("[]"));
+
+        inner.Fallback = new BoundedProcessRunner(4, TimeSpan.FromSeconds(30));
+
+        var runner = new ReadOnlyProcessRunner(inner);
+        var reader = new MonitoredStateReader(
+            runner,
+            path => path.ToLowerInvariant(),
+            200,
+            associationOf: _ => ProjectAssociation.Unregistered);
+
+        await reader.ReadAsync([project], includeGitHub: true, CancellationToken.None);
+
+        CollectionAssert.AreEquivalent(
+            new[] { "acme/first-seen" },
+            runner.RepositoriesQueried.ToArray());
     }
 
     [TestMethod]
