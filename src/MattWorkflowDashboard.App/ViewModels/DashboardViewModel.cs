@@ -208,7 +208,12 @@ public sealed partial class DashboardViewModel : ObservableObject
         {
             IsRefreshing = true;
 
-            var snapshot = await _refresh.RefreshAsync(token).ConfigureAwait(true);
+            // Handed to the thread pool rather than started here. A refresh is mostly filesystem
+            // and process work, and only some of it ever awaits: discovery walks the roots
+            // synchronously, and a project with nothing to wait on is indexed inline. Started on
+            // the dispatcher, all of that runs on the dispatcher, and the window stops answering
+            // the owner for as long as the scan lasts.
+            var snapshot = await Task.Run(() => _refresh.RefreshAsync(token), token).ConfigureAwait(true);
             Apply(snapshot);
         }
         catch (OperationCanceledException)
