@@ -121,6 +121,13 @@ public sealed class ReadOnlyAcceptanceRun(
     /// </summary>
     private static readonly TimeSpan WaitForIndexing = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// How far into indexing the cancellation pass gets before it is stopped. One command in flight
+    /// is already past discovery, but it is the first thing the scan does; this is far enough in for
+    /// several projects to be under way at once, which is the state worth interrupting.
+    /// </summary>
+    private const int CommandsBeforeCancelling = 20;
+
     private readonly byte[] _salt = RandomNumberGenerator.GetBytes(32);
 
     public async Task<AcceptanceReport> ExecuteAsync(CancellationToken cancellationToken)
@@ -248,7 +255,7 @@ public sealed class ReadOnlyAcceptanceRun(
         // roots before anything is indexed, and a pass cancelled during that walk stops promptly for
         // reasons that say nothing about stopping a scan already talking to git and gh.
         var waiting = Stopwatch.StartNew();
-        while (runner.Issued.Values.Sum() == commandsBefore
+        while (runner.Issued.Values.Sum() - commandsBefore < CommandsBeforeCancelling
             && !refresh.IsCompleted
             && waiting.Elapsed < WaitForIndexing)
         {
