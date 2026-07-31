@@ -366,6 +366,15 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        // Anything the session left outstanding — where the window came to rest, registry intent a
+        // refresh produced — is written before the process goes away. The tray's Exit has already
+        // flushed the window's own geometry by the time it gets here; this covers the ways out that
+        // do not go through it, such as Windows ending the session.
+        if (_settings is not null && _settings.HasUnsavedChanges)
+        {
+            SaveSettings();
+        }
+
         _journalSample?.Stop();
         _journal?.Record("exit");
         _journal?.Dispose();

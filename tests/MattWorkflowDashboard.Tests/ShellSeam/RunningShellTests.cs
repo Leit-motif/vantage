@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using MattWorkflowDashboard.App.Shell;
 using MattWorkflowDashboard.App.ViewModels;
+using MattWorkflowDashboard.App.Views;
 using MattWorkflowDashboard.Infrastructure;
 using MattWorkflowDashboard.Infrastructure.Persistence;
 using MattWorkflowDashboard.Infrastructure.Settings;
@@ -306,6 +307,108 @@ public sealed class RunningShellTests
             _settings.Ui.Geometry.DpiScale,
             "Without the scale it was written under, a saved position cannot be read on another display.");
     }
+
+    /// <summary>
+    /// A place well inside the primary display's working area, in the running window's own layout
+    /// units. Well inside deliberately: a position that had to be rescued from being off-screen
+    /// would prove the recovery path rather than that the owner's own choice came back.
+    /// </summary>
+    private static (double Left, double Top) SomewhereOnScreen(RunningShell shell, double inset)
+    {
+        var scale = WpfTestHost.Run(() => VisualTreeHelper.GetDpi(shell.Window).DpiScaleX);
+        var area = WindowInterop.InDeviceIndependentUnits(
+            System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea,
+            scale);
+
+        return (area.Left + inset, area.Top + inset);
+    }
+
+    [TestMethod]
+    public void A_drag_is_written_once_it_stops_rather_than_once_per_frame_of_the_movement()
+    {
+        using var shell = Start();
+        shell.LetGeometrySettle();
+
+        var (left, top) = SomewhereOnScreen(shell, 160);
+        var before = shell.SettingsSaves;
+
+        // A drag reaches the window as a run of LocationChanged, one per frame of the movement.
+        for (var step = 0; step < 10; step++)
+        {
+            shell.MoveTo(left + step, top + step);
+        }
+
+        Assert.AreEqual(
+            before,
+            shell.SettingsSaves,
+            "Every save rewrites the settings file and swaps it into place; a drag must not cost one per frame.");
+
+        RunningShell.PumpUntil(
+            () => shell.SettingsSaves > before,
+            DashboardWindow.GeometrySettleDelay * 8);
+
+        Assert.AreEqual(
+            before + 1,
+            shell.SettingsSaves,
+            "Once the movement stops, the whole of it has to coalesce into exactly one save.");
+        Assert.AreEqual(
+            left + 9,
+            _settings.Ui.Geometry.Left!.Value,
+            1d,
+            "And what is written is where the drag ended, not somewhere it passed through.");
+        Assert.AreEqual(top + 9, _settings.Ui.Geometry.Top!.Value, 1d);
+    }
+
+    [TestMethod]
+    public void Where_the_owner_left_the_window_is_where_it_opens_next_time()
+    {
+        var store = new SettingsStore(new AppPaths(Path.Combine(_workspace.Root, "durable-geometry")));
+
+        var firstSession = new DashboardSettings { Roots = [_workspace.WorkspacesRoot] };
+        var shell = RunningShell.Start(
+            ViewModelOver(firstSession),
+            firstSession,
+            _startup,
+            () => store.Save(firstSession));
+
+        shell.LetGeometrySettle();
+        var before = shell.SettingsSaves;
+
+        var (left, top) = SomewhereOnScreen(shell, 180);
+        shell.MoveTo(left, top);
+
+        Assert.AreEqual(before, shell.SettingsSaves, "The move is still waiting to be written when the owner exits.");
+
+        // The one gesture that ends a session, and the only thing this session changes: no
+        // click-through, no launch-at-sign-in, nothing whose save could carry the position for it.
+        shell.ClickTray("Exit");
+        shell.Dispose();
+
+        Assert.AreEqual(
+            before + 1,
+            shell.SettingsSaves,
+            "Exiting has to write what the owner's last move left outstanding.");
+
+        // Read back the way the next launch reads it: from the file, into a fresh settings object.
+        var nextSession = store.Load().Settings;
+
+        Assert.AreEqual(left, nextSession.Ui.Geometry.Left!.Value, 1d, "The position has to have reached the file.");
+        Assert.AreEqual(top, nextSession.Ui.Geometry.Top!.Value, 1d);
+
+        using var reopened = RunningShell.Start(ViewModelOver(nextSession), nextSession, _startup);
+        var (restoredLeft, restoredTop) = WpfTestHost.Run(() => (reopened.Window.Left, reopened.Window.Top));
+
+        Assert.AreEqual(left, restoredLeft, 1d, "The dashboard has to come back where the owner left it.");
+        Assert.AreEqual(top, restoredTop, 1d);
+    }
+
+    /// <summary>A view model over a settings object of the test's own, for the sessions above.</summary>
+    private DashboardViewModel ViewModelOver(DashboardSettings settings) =>
+        new(
+            settings,
+            new SettingsStore(new AppPaths(Path.Combine(_workspace.Root, "appdata"))),
+            _cache,
+            new FakeProcessRunner());
 
     [TestMethod]
     public void The_running_window_is_laid_out_in_device_independent_units_and_scaled_by_its_monitor()
