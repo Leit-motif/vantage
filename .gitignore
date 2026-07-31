@@ -28,8 +28,10 @@ logs/
 .env.*
 !.env.example
 
-# Local agent scratch and session state. This project tracks its planning in GitHub Issues, so
-# anything appearing here is machine-local working material rather than evidence.
-.scratch/
+# Local agent session state. Machine-local working material rather than evidence.
+#
+# `.scratch/` is deliberately NOT here: this project tracks its own specs and tickets as files
+# under it, so they are evidence and belong in history like any other source. It is also the
+# grammar this dashboard reads, which means Vantage can see its own project.
 .agents/
 .codex/
