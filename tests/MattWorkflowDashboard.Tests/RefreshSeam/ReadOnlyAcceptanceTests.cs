@@ -72,6 +72,112 @@ public sealed class ReadOnlyAcceptanceTests
     }
 
     /// <summary>
+    /// A verb allowlist is not structural. Each of these reads by verb and writes a file, or points
+    /// git at configuration that can name a program to run.
+    /// </summary>
+    [TestMethod]
+    public async Task An_option_that_writes_is_refused_even_when_the_verb_only_reads()
+    {
+        var inner = new FakeProcessRunner();
+        var runner = new ReadOnlyProcessRunner(inner);
+
+        string[][] disguised =
+        [
+            ["-C", "repo", "log", "--output=C:\\evidence\\planted.txt", "-1"],
+            ["-C", "repo", "log", "--output", "C:\\evidence\\planted.txt"],
+            ["-c", "core.fsmonitor=C:\\hostile.exe", "-C", "repo", "status", "--porcelain"],
+            ["-c", "alias.status=!C:\\hostile.exe", "-C", "repo", "status"],
+            ["--git-dir", "C:\\elsewhere\\.git", "rev-parse", "HEAD"],
+        ];
+
+        foreach (var arguments in disguised)
+        {
+            var result = await runner.RunAsync("git", arguments, null, CancellationToken.None);
+            Assert.IsFalse(result.Succeeded, $"'git {string.Join(' ', arguments)}' was allowed through.");
+        }
+
+        Assert.AreEqual(0, inner.Invocations.Count);
+    }
+
+    /// <summary>
+    /// A refusal is the moment a command line is most likely to hold a private path, and the record
+    /// of it is committed. It has to describe the refusal without reproducing it.
+    /// </summary>
+    [TestMethod]
+    public async Task A_refusal_records_what_was_attempted_without_recording_the_workspace()
+    {
+        var runner = new ReadOnlyProcessRunner(new FakeProcessRunner());
+        var secret = @"C:\Users\Example\Workspaces\a-private-client-project";
+
+        await runner.RunAsync("git", ["-C", secret, "commit", "-m", "in " + secret], null, CancellationToken.None);
+
+        var refused = runner.Refused.Single();
+        var serialized = System.Text.Json.JsonSerializer.Serialize(refused);
+
+        Assert.IsFalse(
+            serialized.Contains("a-private-client-project", StringComparison.OrdinalIgnoreCase),
+            $"A refusal must not carry the workspace into committed evidence: {serialized}");
+
+        Assert.AreEqual("git commit", refused.Shape, "It still has to say what was attempted.");
+        Assert.AreEqual(5, refused.ArgumentCount);
+        Assert.AreNotEqual(string.Empty, refused.ArgumentsDigest, "Two different refusals have to be tellable apart.");
+    }
+
+    /// <summary>
+    /// The output of a run must not land inside what the run is observing. A cache written under a
+    /// monitored root is a change to that workspace — and one present in *both* fingerprints, so the
+    /// comparison would report that nothing moved.
+    /// </summary>
+    [TestMethod]
+    public void An_output_directory_inside_a_monitored_root_is_refused()
+    {
+        var roots = new[] { _workspace.WorkspacesRoot };
+
+        Assert.IsNotNull(
+            ReadOnlyAcceptanceRun.RejectOutputInsideARoot(
+                Path.Combine(_workspace.WorkspacesRoot, "repo", "scan"),
+                roots),
+            "Writing the run's own state into a monitored project must be refused.");
+
+        Assert.IsNotNull(
+            ReadOnlyAcceptanceRun.RejectOutputInsideARoot(_workspace.WorkspacesRoot, roots));
+
+        Assert.IsNull(
+            ReadOnlyAcceptanceRun.RejectOutputInsideARoot(Path.Combine(_workspace.Root, "scan"), roots),
+            "Somewhere outside every root is exactly what the run is for.");
+    }
+
+    /// <summary>
+    /// Two absent digests compare equal. Without saying so, a source that was never read would be
+    /// indistinguishable from one read twice and found identical — and the report would be at its
+    /// most reassuring when it had observed the least.
+    /// </summary>
+    [TestMethod]
+    public async Task A_source_that_could_not_be_read_is_reported_rather_than_counted_as_unchanged()
+    {
+        var project = _workspace.NewProject("repo");
+        _workspace.NewEffort(project, "feature");
+        Directory.CreateDirectory(Path.Combine(project, ".git"));
+
+        // A directory named .git with nothing in it: every git read against it fails, exactly as an
+        // unreadable or broken repository would.
+        using var bounded = new BoundedProcessRunner(4, TimeSpan.FromSeconds(30));
+        var reader = new MonitoredStateReader(
+            new ReadOnlyProcessRunner(bounded),
+            path => path.ToLowerInvariant(),
+            200);
+
+        var before = await reader.ReadAsync([project], includeGitHub: false, CancellationToken.None);
+        var after = await reader.ReadAsync([project], includeGitHub: false, CancellationToken.None);
+
+        Assert.AreEqual(0, MonitoredStateReader.Diff(before, after).Count, "Nothing was observed to change.");
+
+        var gaps = MonitoredStateReader.Gaps(before, after);
+        Assert.IsTrue(gaps.Count > 0, "But nothing was observed at all, and that is not the same thing.");
+        Assert.IsTrue(gaps.Any(g => g.Subject == "git status"));
+    }
+
+    /// <summary>
     /// The other half, and the half that makes the first one mean anything: a boundary that
     /// refuses everything would also report that nothing was written.
     /// </summary>
@@ -105,7 +211,7 @@ public sealed class ReadOnlyAcceptanceTests
             CancellationToken.None);
         await runner.RunAsync("gh", ["label", "list", "--repo", "acme/widget", "--json", "name"], null, CancellationToken.None);
 
-        Assert.AreEqual(0, runner.Refused.Count, $"Refused: {string.Join("; ", runner.Refused.Select(r => $"{r.FileName} {r.Arguments}"))}");
+        Assert.AreEqual(0, runner.Refused.Count, $"Refused: {string.Join("; ", runner.Refused.Select(r => r.Shape))}");
         Assert.AreEqual(reads.Length + 3, inner.Invocations.Count);
 
         CollectionAssert.AreEquivalent(
@@ -146,6 +252,38 @@ public sealed class ReadOnlyAcceptanceTests
         Assert.IsTrue(
             changes.Any(c => c.Subject == "git status"),
             "The working tree moving has to show up too.");
+    }
+
+    /// <summary>
+    /// A project whose remote changed is waiting on the owner to confirm the relink. Fingerprinting
+    /// the newly observed remote would send issue and label queries to a repository they never
+    /// approved — the exact boundary story 11 draws.
+    /// </summary>
+    [TestMethod]
+    public async Task The_fingerprint_queries_the_confirmed_association_and_not_the_current_remote()
+    {
+        var project = _workspace.NewProject("repo");
+        _workspace.InitGitRepository(project, "https://github.com/someone-else/unapproved.git");
+
+        var inner = new FakeProcessRunner()
+            .GhIssues("[]")
+            .When((name, args) => name == "gh" && args.Contains("label"), () => FakeProcessRunner.Ok("[]"));
+
+        inner.Fallback = new BoundedProcessRunner(4, TimeSpan.FromSeconds(30));
+
+        var runner = new ReadOnlyProcessRunner(inner);
+        var reader = new MonitoredStateReader(
+            runner,
+            path => path.ToLowerInvariant(),
+            200,
+            confirmedOriginOf: _ => "acme/confirmed");
+
+        await reader.ReadAsync([project], includeGitHub: true, CancellationToken.None);
+
+        CollectionAssert.AreEquivalent(
+            new[] { "acme/confirmed" },
+            runner.RepositoriesQueried.ToArray(),
+            "Only the confirmed association may be queried, never the remote that is awaiting confirmation.");
     }
 
     [TestMethod]

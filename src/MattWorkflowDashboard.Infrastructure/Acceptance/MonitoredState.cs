@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using MattWorkflowDashboard.Infrastructure.Processes;
 
 namespace MattWorkflowDashboard.Infrastructure.Acceptance;
@@ -11,6 +12,11 @@ namespace MattWorkflowDashboard.Infrastructure.Acceptance;
 /// <para>
 /// Every field is a digest rather than a value. The comparison only ever asks whether something
 /// changed, so the evidence never has to carry the contents of a private workspace to answer.
+/// </para>
+/// <para>
+/// <see cref="Unavailable"/> is what keeps a blind spot from reading as a clean result. A source
+/// that could not be read has no digest, and two absent digests compare equal — so the sources that
+/// were never observed are named rather than left to look unchanged.
 /// </para>
 /// </summary>
 public sealed record MonitoredProjectState(
@@ -26,22 +32,44 @@ public sealed record MonitoredProjectState(
     int GitHubIssueCount,
     string? GitHubIssuesDigest,
     int GitHubLabelCount,
-    string? GitHubLabelsDigest);
+    string? GitHubLabelsDigest,
+    IReadOnlyList<string> Unavailable);
 
 /// <summary>One thing that did not survive the run untouched.</summary>
 public sealed record MonitoredStateChange(string ProjectId, string Subject, string Before, string After);
+
+/// <summary>A source the comparison could not see, and so cannot vouch for either way.</summary>
+public sealed record FingerprintGap(string ProjectId, string Subject);
 
 /// <summary>
 /// Reads the monitored state of a set of projects, before and after, using only commands the
 /// <see cref="ReadOnlyProcessRunner"/> will let through.
 /// </summary>
-public sealed class MonitoredStateReader(IProcessRunner runner, Func<string, string> identify, int maxIssues)
+/// <param name="confirmedOriginOf">
+/// The repository a project is *confirmed* to be associated with, which is not always the one its
+/// remote currently names. A remote that changed is held pending the owner's confirmation, and
+/// fingerprinting the newly observed one would send queries to a repository they never approved.
+/// </param>
+public sealed class MonitoredStateReader(
+    IProcessRunner runner,
+    Func<string, string> identify,
+    int maxIssues,
+    Func<string, string?>? confirmedOriginOf = null)
 {
     /// <summary>
     /// The files this dashboard actually opens in a project. Everything else in a working tree is
     /// covered by the Git status and ref digests instead.
     /// </summary>
     private static readonly string[] MarkerFiles = ["AGENTS.md", Path.Combine("docs", "agents", "issue-tracker.md")];
+
+    /// <summary>
+    /// Bounds on the fingerprint itself. The acceptance command has to complete as reliably as the
+    /// scan it measures: an accidentally huge <c>.scratch</c> tree must truncate visibly rather than
+    /// exhaust memory before the measured refresh has even started.
+    /// </summary>
+    private const int MaxWorkflowFiles = 20_000;
+
+    private const long MaxWorkflowFileBytes = 8L * 1024 * 1024;
 
     public async Task<IReadOnlyList<MonitoredProjectState>> ReadAsync(
         IEnumerable<string> projectPaths,
@@ -64,21 +92,26 @@ public sealed class MonitoredStateReader(IProcessRunner runner, Func<string, str
         bool includeGitHub,
         CancellationToken cancellationToken)
     {
-        var (fileCount, contentDigest) = WorkflowDigest(projectPath);
+        var unavailable = new List<string>();
+        var (fileCount, contentDigest) = WorkflowDigest(projectPath, unavailable, cancellationToken);
 
         var isRepository = Directory.Exists(Path.Combine(projectPath, ".git"))
             || File.Exists(Path.Combine(projectPath, ".git"));
 
-        string? head = null, status = null, config = null, refs = null, originSlug = null;
+        string? head = null, status = null, config = null, refs = null;
 
         if (isRepository)
         {
-            head = await GitDigestAsync(projectPath, ["rev-parse", "HEAD"], cancellationToken).ConfigureAwait(false);
-            status = await GitDigestAsync(projectPath, ["status", "--porcelain"], cancellationToken).ConfigureAwait(false);
-            config = await GitDigestAsync(projectPath, ["config", "--list", "--local"], cancellationToken).ConfigureAwait(false);
-            refs = await GitDigestAsync(projectPath, ["show-ref"], cancellationToken).ConfigureAwait(false);
-            originSlug = await OriginSlugAsync(projectPath, cancellationToken).ConfigureAwait(false);
+            head = await GitDigestAsync(projectPath, ["rev-parse", "HEAD"], "git HEAD", unavailable, cancellationToken).ConfigureAwait(false);
+            status = await GitDigestAsync(projectPath, ["status", "--porcelain"], "git status", unavailable, cancellationToken).ConfigureAwait(false);
+            config = await GitDigestAsync(projectPath, ["config", "--list", "--local"], "git config", unavailable, cancellationToken).ConfigureAwait(false);
+            refs = await GitDigestAsync(projectPath, ["show-ref"], "git refs", unavailable, cancellationToken).ConfigureAwait(false);
         }
+
+        // The confirmed association, never the remote as it currently reads. A project whose remote
+        // changed is waiting on the owner, and querying the new repository would be the dashboard
+        // reaching somewhere it was not given.
+        var originSlug = confirmedOriginOf?.Invoke(projectPath);
 
         var issues = (Count: 0, Digest: (string?)null);
         var labels = (Count: 0, Digest: (string?)null);
@@ -87,11 +120,17 @@ public sealed class MonitoredStateReader(IProcessRunner runner, Func<string, str
         {
             issues = await GitHubDigestAsync(
                 ["issue", "list", "--repo", originSlug, "--state", "all", "--limit", maxIssues.ToString(),
-                 "--json", "number,title,state,labels,assignees,body,closedAt"],
+                 "--json", "number,title,state,labels,assignees,body,closedAt,updatedAt,comments"],
+                "github issues",
+                unavailable,
                 cancellationToken).ConfigureAwait(false);
 
+            // gh returns thirty labels unasked; a repository with more would have its later labels
+            // silently outside the comparison.
             labels = await GitHubDigestAsync(
-                ["label", "list", "--repo", originSlug, "--json", "name,color,description"],
+                ["label", "list", "--repo", originSlug, "--limit", "500", "--json", "name,color,description"],
+                "github labels",
+                unavailable,
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -108,22 +147,45 @@ public sealed class MonitoredStateReader(IProcessRunner runner, Func<string, str
             issues.Count,
             issues.Digest,
             labels.Count,
-            labels.Digest);
+            labels.Digest,
+            unavailable);
     }
 
     /// <summary>
     /// A digest over every workflow file the dashboard reads: the markers that make a directory a
     /// project, and the whole <c>.scratch</c> tree. Names are included, so a rename is a change.
     /// </summary>
-    private static (int Count, string Digest) WorkflowDigest(string projectPath)
+    private static (int Count, string Digest) WorkflowDigest(
+        string projectPath,
+        ICollection<string> unavailable,
+        CancellationToken cancellationToken)
     {
         var builder = new StringBuilder();
         var count = 0;
 
-        foreach (var file in MonitoredFiles(projectPath).OrderBy(f => f, StringComparer.Ordinal))
+        foreach (var file in MonitoredFiles(projectPath, unavailable).OrderBy(f => f, StringComparer.Ordinal))
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (count >= MaxWorkflowFiles)
+            {
+                unavailable.Add("workflow files beyond the fingerprint bound");
+                break;
+            }
+
             try
             {
+                var info = new FileInfo(file);
+                if (info.Length > MaxWorkflowFileBytes)
+                {
+                    // Too big to hold, but its size and name still change when it does.
+                    builder.Append(Path.GetRelativePath(projectPath, file)).Append('|')
+                        .Append(info.Length).Append("|oversized\n");
+                    unavailable.Add("content of a file past the size bound");
+                    count++;
+                    continue;
+                }
+
                 var bytes = File.ReadAllBytes(file);
                 builder.Append(Path.GetRelativePath(projectPath, file)).Append('|')
                     .Append(bytes.Length).Append('|')
@@ -132,9 +194,8 @@ public sealed class MonitoredStateReader(IProcessRunner runner, Func<string, str
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // A file that cannot be read cannot be compared; record that fact rather than
-                // silently dropping it, so an unreadable file is not mistaken for an absent one.
                 builder.Append(Path.GetRelativePath(projectPath, file)).Append("|unreadable\n");
+                unavailable.Add("an unreadable workflow file");
                 count++;
             }
         }
@@ -142,7 +203,7 @@ public sealed class MonitoredStateReader(IProcessRunner runner, Func<string, str
         return (count, Digest(builder.ToString()));
     }
 
-    private static IEnumerable<string> MonitoredFiles(string projectPath)
+    private static IEnumerable<string> MonitoredFiles(string projectPath, ICollection<string> unavailable)
     {
         foreach (var marker in MarkerFiles)
         {
@@ -159,25 +220,46 @@ public sealed class MonitoredStateReader(IProcessRunner runner, Func<string, str
             yield break;
         }
 
-        IEnumerable<string> scratchFiles;
+        IEnumerator<string> walk;
         try
         {
-            scratchFiles = Directory.EnumerateFiles(scratch, "*", SearchOption.AllDirectories);
+            walk = Directory.EnumerateFiles(scratch, "*", SearchOption.AllDirectories).GetEnumerator();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            unavailable.Add("the .scratch tree");
             yield break;
         }
 
-        foreach (var file in scratchFiles)
+        // Enumerated one at a time rather than materialized: the walk itself can fail part-way
+        // through on a tree the owner has no rights to, and that is a gap to report, not a crash.
+        using (walk)
         {
-            yield return file;
+            while (true)
+            {
+                try
+                {
+                    if (!walk.MoveNext())
+                    {
+                        break;
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    unavailable.Add("part of the .scratch tree");
+                    break;
+                }
+
+                yield return walk.Current;
+            }
         }
     }
 
     private async Task<string?> GitDigestAsync(
         string projectPath,
         IReadOnlyList<string> verb,
+        string subject,
+        ICollection<string> unavailable,
         CancellationToken cancellationToken)
     {
         var result = await runner.RunAsync(
@@ -186,29 +268,25 @@ public sealed class MonitoredStateReader(IProcessRunner runner, Func<string, str
             projectPath,
             cancellationToken).ConfigureAwait(false);
 
-        return result.Succeeded ? Digest(result.StandardOutput) : null;
-    }
+        if (result.Succeeded)
+        {
+            return Digest(result.StandardOutput);
+        }
 
-    private async Task<string?> OriginSlugAsync(string projectPath, CancellationToken cancellationToken)
-    {
-        var result = await runner.RunAsync(
-            "git",
-            ["-C", projectPath, "remote", "get-url", "origin"],
-            projectPath,
-            cancellationToken).ConfigureAwait(false);
-
-        return result.Succeeded
-            ? Core.Workflow.GitHubOrigin.TryParse(result.StandardOutput.Trim())?.Slug
-            : null;
+        unavailable.Add(subject);
+        return null;
     }
 
     private async Task<(int Count, string? Digest)> GitHubDigestAsync(
         IReadOnlyList<string> arguments,
+        string subject,
+        ICollection<string> unavailable,
         CancellationToken cancellationToken)
     {
         var result = await runner.RunAsync("gh", arguments, null, cancellationToken).ConfigureAwait(false);
         if (!result.Succeeded)
         {
+            unavailable.Add(subject);
             return (0, null);
         }
 
@@ -217,13 +295,13 @@ public sealed class MonitoredStateReader(IProcessRunner runner, Func<string, str
 
         try
         {
-            using var document = System.Text.Json.JsonDocument.Parse(json);
-            if (document.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind == JsonValueKind.Array)
             {
                 count = document.RootElement.GetArrayLength();
             }
         }
-        catch (System.Text.Json.JsonException)
+        catch (JsonException)
         {
             // The digest still compares; only the count is unavailable.
         }
@@ -279,6 +357,18 @@ public sealed class MonitoredStateReader(IProcessRunner runner, Func<string, str
 
         return changes;
     }
+
+    /// <summary>
+    /// Every source that could not be read on either side. Two absent digests compare equal, so
+    /// without this a source that was never observed would be indistinguishable in the report from
+    /// one that was observed twice and found identical.
+    /// </summary>
+    public static IReadOnlyList<FingerprintGap> Gaps(
+        IReadOnlyList<MonitoredProjectState> before,
+        IReadOnlyList<MonitoredProjectState> after) =>
+        [.. before.Concat(after)
+            .SelectMany(state => state.Unavailable.Select(subject => new FingerprintGap(state.ProjectId, subject)))
+            .DistinctBy(gap => (gap.ProjectId, gap.Subject))];
 
     private static string Digest(string value) =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..16];

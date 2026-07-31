@@ -153,6 +153,33 @@ public sealed class ResilienceTests
             "A stale item must still offer the disagreement it is the subject of.");
     }
 
+    /// <summary>
+    /// A project associated with a repository that could not be read is showing only its local half.
+    /// Its counts are not wrong, but they are not the whole answer, and a view that says nothing is
+    /// indistinguishable from a complete one.
+    /// </summary>
+    [TestMethod]
+    public async Task A_project_missing_its_github_half_says_so_rather_than_looking_complete()
+    {
+        var project = _workspace.NewProject("repo");
+        var effort = _workspace.NewEffort(project, "feature");
+        _workspace.WriteTicket(effort, "001.md", Fixtures.Ticket("Work", "ready"));
+        _workspace.InitGitRepository(project, "https://github.com/acme/widget.git");
+        _workspace.Commit(project, "add planning");
+
+        using var online = NewHarness(new FakeProcessRunner().GhAuthenticated().GhIssues(Fixtures.GhIssues())).WithRealGit();
+        var connected = (await online.RefreshAsync()).Project("repo");
+        Assert.IsFalse(connected.IsStale, "Nothing is missing while the session is good.");
+        online.Dispose();
+
+        using var lost = NewHarness(new FakeProcessRunner().GhUnauthenticated()).WithRealGit();
+        var view = (await lost.RefreshAsync()).Project("repo");
+
+        Assert.AreEqual(1, view.Progress.Total, "The local half is still shown.");
+        Assert.IsTrue(view.IsStale, "And it is marked as not being the whole picture.");
+        Assert.IsTrue(view.HasDiagnostic(DiagnosticCode.GitHubUnavailable));
+    }
+
     [TestMethod]
     public async Task One_broken_project_does_not_blank_the_others()
     {

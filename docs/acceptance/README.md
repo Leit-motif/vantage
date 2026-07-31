@@ -8,31 +8,52 @@ real, private, and messier than any fixture.
 ## Reproducing it
 
 ```bash
-dotnet run -c Release --project src/MattWorkflowDashboard.App -- --acceptance ./scan --stamp $(git rev-parse HEAD)
+dotnet run -c Release --project src/MattWorkflowDashboard.App -- --acceptance "$env:TEMP/mwd-scan" --stamp $(git rev-parse HEAD)
 ```
+
+**The output directory must be outside every configured root**, and the run refuses to start
+otherwise. Its own cache and report are files, and files written under a monitored root are changes
+to a workspace the run is supposed to be observing — worse, changes present in *both* fingerprints,
+so the comparison would report that nothing moved. This repository is itself beneath a configured
+root, so `./scan` is exactly the wrong answer.
 
 Development-only instrumentation, reached only by that switch. It builds no UI. It reads the real
 `settings.json` for the roots and registry intent, but everything it writes — cache, settings,
 the `gh` configuration used for the offline pass — lives under the output directory, so an
 acceptance run leaves the owner's dashboard state as untouched as it leaves their workspaces.
 
-Exit code `0` means nothing monitored changed and nothing was refused; `3` means something did.
+Exit code `0` means nothing monitored changed, nothing was refused, **and nothing went unobserved**;
+`3` means one of those failed.
 
 ## What it does
 
 1. Fingerprints every discovered project: workflow file names and contents, `HEAD`, working-tree
-   status, local config, refs, and the repository's GitHub issues and labels.
+   status, local config, refs, and the GitHub issues and labels of the repository the project is
+   **confirmed** to be associated with — never the remote as it currently reads, because a changed
+   remote is waiting on the owner and must not be queried before they confirm it.
 2. Refreshes cold, then warm.
-3. Starts a third refresh, waits until twenty external commands are in flight — past discovery,
-   with several projects being indexed at once — then cancels it and times how long it keeps going.
+3. Starts a third refresh, waits until twenty external commands have been submitted — past
+   discovery, with several projects being indexed — then cancels it and times how long it keeps
+   going. It records both the number submitted and the number of child processes actually alive at
+   that moment; only the second says anything about interrupting work in progress.
 4. Refreshes again with the real `gh` pointed at an empty configuration directory and every
    inherited token removed from the child's environment, so the tool itself decides it has no
    session.
-5. Fingerprints everything a second time and reports the difference.
+5. Fingerprints everything a second time and reports the difference — **and separately reports every
+   source it could not read**. Two absent digests compare equal, so without that a source never
+   observed would look exactly like one observed twice and found identical, and the report would be
+   at its most reassuring when it had seen the least.
 
 Throughout, every external command passes a boundary that refuses anything outside the four `gh`
 reads and the handful of `git` reads the dashboard actually makes. `gh repo list` and `gh api` are
-refused even though both only read, because each is a way to enumerate an account.
+refused even though both only read, because each is a way to enumerate an account. The check is not
+by verb alone: `git log --output=<path>` reads by verb and writes a file, and `-c` injects
+configuration that can name a program to run, so options like those are refused wherever they appear.
+
+Separately, every child process runs with `core.fsmonitor` and `diff.external` forced off through
+the configuration environment. Both name a program that git runs, and both are set by the
+repository being observed — monitored content is data, and a repository's own configuration is
+monitored content.
 
 ## What is in the file, and what is not
 

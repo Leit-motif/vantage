@@ -48,7 +48,8 @@ public sealed record AcceptancePass(
 /// </summary>
 public sealed record CancellationEvidence(
     long WaitedForIndexingMilliseconds,
-    int ExternalCommandsBeforeCancelling,
+    int ExternalCommandsSubmittedBeforeCancelling,
+    int ChildProcessesRunningWhenCancelled,
     bool StillRunningWhenCancelled,
     double LatencyMilliseconds,
     bool StoppedByCancellation);
@@ -65,8 +66,10 @@ public sealed record OfflineEvidence(
 public sealed record AssociationEvidence(
     int Projects,
     int GitRepositories,
-    int WithRemote,
-    int AssociationMatchesRemote,
+    int WithConfirmedAssociation,
+    int AssociationMatchesObservedRemote,
+    int AssociationDiffersFromObservedRemote,
+    int RemoteUnreadable,
     int AssociationAwaitingRelink,
     int ProjectsCarryingGitHubEvidence,
     int GitHubEvidenceFromAnotherRepository,
@@ -76,6 +79,7 @@ public sealed record AssociationEvidence(
 public sealed record SafetyEvidence(
     int ProjectsFingerprinted,
     IReadOnlyList<MonitoredStateChange> MonitoredStateChanges,
+    IReadOnlyList<FingerprintGap> FingerprintGaps,
     IReadOnlyList<RefusedCommand> RefusedCommands,
     IReadOnlyDictionary<string, int> CommandsIssued);
 
@@ -93,9 +97,16 @@ public sealed record AcceptanceReport(
     AssociationEvidence Associations,
     SafetyEvidence Safety)
 {
+    /// <summary>
+    /// A clean result, and a complete one. A source that could not be read is not evidence that it
+    /// is unchanged, so a gap fails this just as a change does — otherwise the strongest possible
+    /// report would be the one produced by observing nothing at all.
+    /// </summary>
     [JsonIgnore]
     public bool NothingWasChanged =>
-        Safety.MonitoredStateChanges.Count == 0 && Safety.RefusedCommands.Count == 0;
+        Safety.MonitoredStateChanges.Count == 0
+        && Safety.RefusedCommands.Count == 0
+        && Safety.FingerprintGaps.Count == 0;
 }
 
 /// <summary>
@@ -130,8 +141,38 @@ public sealed class ReadOnlyAcceptanceRun(
 
     private readonly byte[] _salt = RandomNumberGenerator.GetBytes(32);
 
+    /// <summary>
+    /// Refuses to run when the run's own output would land inside something it is about to observe.
+    /// A cache and a report written under a monitored root are changes to that workspace, and worse,
+    /// they are changes present in *both* fingerprints — so the run would mutate a live project and
+    /// then report that nothing moved.
+    /// </summary>
+    public static string? RejectOutputInsideARoot(string outputDirectory, IEnumerable<string> roots)
+    {
+        var output = ProjectDiscovery.CanonicalizeFully(outputDirectory);
+
+        foreach (var root in roots)
+        {
+            var canonical = ProjectDiscovery.CanonicalizeFully(root);
+            if (string.Equals(output, canonical, StringComparison.OrdinalIgnoreCase)
+                || output.StartsWith(canonical + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                return $"The output directory is inside the configured root '{root}'. "
+                    + "Choose somewhere outside every monitored root: writing there would change a "
+                    + "workspace this run is supposed to observe, in a way the comparison could not see.";
+            }
+        }
+
+        return null;
+    }
+
     public async Task<AcceptanceReport> ExecuteAsync(CancellationToken cancellationToken)
     {
+        if (RejectOutputInsideARoot(isolatedState.Root, settings.Roots) is { } rejection)
+        {
+            throw new InvalidOperationException(rejection);
+        }
+
         isolatedState.EnsureCreated();
 
         var timeout = TimeSpan.FromSeconds(settings.ExternalProcessTimeoutSeconds);
@@ -158,7 +199,12 @@ public sealed class ReadOnlyAcceptanceRun(
         var discovered = new ProjectDiscovery(settings).Discover(cancellationToken).Projects;
         var projectPaths = discovered.Select(p => p.CanonicalPath).ToList();
 
-        var stateReader = new MonitoredStateReader(runner, Identify, settings.MaxGitHubIssuesPerRepository);
+        var stateReader = new MonitoredStateReader(
+            runner,
+            Identify,
+            settings.MaxGitHubIssuesPerRepository,
+            ConfirmedOriginOf);
+
         var before = await stateReader
             .ReadAsync(projectPaths, settings.GitHubEnrichmentEnabled, cancellationToken)
             .ConfigureAwait(false);
@@ -173,12 +219,12 @@ public sealed class ReadOnlyAcceptanceRun(
             await PassAsync("warm", service, bounded, cancellationToken).ConfigureAwait(false),
         };
 
-        var cancellation = await CancellationPassAsync(service, runner, cancellationToken).ConfigureAwait(false);
+        var cancellation = await CancellationPassAsync(service, runner, bounded, cancellationToken).ConfigureAwait(false);
 
         // Associations are read off a settled pass rather than the cancelled one: a cancelled pass
         // has no complete answer to be right or wrong about.
         var settled = await service.RefreshAsync(cancellationToken).ConfigureAwait(false);
-        var associations = Associations(settled, discovered, runner);
+        var associations = await AssociationsAsync(settled, discovered, runner, cancellationToken).ConfigureAwait(false);
 
         var (offline, offlineRunner) = await OfflinePassAsync(cache, store, timeout, cancellationToken)
             .ConfigureAwait(false);
@@ -205,6 +251,7 @@ public sealed class ReadOnlyAcceptanceRun(
             new SafetyEvidence(
                 before.Count,
                 MonitoredStateReader.Diff(before, after),
+                MonitoredStateReader.Gaps(before, after),
                 [.. runner.Refused, .. offlineRunner.Refused],
                 issued));
     }
@@ -244,6 +291,7 @@ public sealed class ReadOnlyAcceptanceRun(
     private static async Task<CancellationEvidence> CancellationPassAsync(
         RefreshService service,
         ReadOnlyProcessRunner runner,
+        BoundedProcessRunner bounded,
         CancellationToken cancellationToken)
     {
         var commandsBefore = runner.Issued.Values.Sum();
@@ -263,7 +311,12 @@ public sealed class ReadOnlyAcceptanceRun(
         }
 
         waiting.Stop();
+
+        // Two different numbers, and only the second says anything about interrupting real work.
+        // `Issued` counts calls submitted to the boundary over the pass's lifetime; with a cap of
+        // four, twenty of them were never running at once.
         var issuedAtCancel = runner.Issued.Values.Sum() - commandsBefore;
+        var childrenAtCancel = bounded.ActiveProcesses;
         var stillRunning = !refresh.IsCompleted;
 
         var latency = Stopwatch.StartNew();
@@ -284,6 +337,7 @@ public sealed class ReadOnlyAcceptanceRun(
         return new CancellationEvidence(
             waiting.ElapsedMilliseconds,
             issuedAtCancel,
+            childrenAtCancel,
             stillRunning,
             latency.Elapsed.TotalMilliseconds,
             stopped);
@@ -340,10 +394,11 @@ public sealed class ReadOnlyAcceptanceRun(
             runner);
     }
 
-    private AssociationEvidence Associations(
+    private async Task<AssociationEvidence> AssociationsAsync(
         Core.Projection.DashboardSnapshot snapshot,
         IReadOnlyList<DiscoveredProject> discovered,
-        ReadOnlyProcessRunner runner)
+        ReadOnlyProcessRunner runner,
+        CancellationToken cancellationToken)
     {
         var associated = snapshot.Projects
             .Where(p => p.Origin is not null)
@@ -352,6 +407,42 @@ public sealed class ReadOnlyAcceptanceRun(
 
         var awaitingRelink = snapshot.Projects
             .Count(p => p.Diagnostics.Any(d => d.Code == DiagnosticCode.OriginChanged));
+
+        // Each association is compared against the remote read independently here, rather than
+        // inferred from the absence of a diagnostic. A remote that cannot be read, or one that was
+        // removed, produces no diagnostic at all — so counting the projects the refresh did not
+        // complain about would report agreement it never established.
+        var matches = 0;
+        var differs = 0;
+        var unreadable = 0;
+
+        foreach (var project in snapshot.Projects.Where(p => p.Origin is not null))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var result = await runner.RunAsync(
+                "git",
+                ["-C", project.Identity.CanonicalPath, "remote", "get-url", "origin"],
+                project.Identity.CanonicalPath,
+                cancellationToken).ConfigureAwait(false);
+
+            var observed = result.Succeeded
+                ? Core.Workflow.GitHubOrigin.TryParse(result.StandardOutput.Trim())?.Slug
+                : null;
+
+            if (observed is null)
+            {
+                unreadable++;
+            }
+            else if (string.Equals(observed, project.Origin!.Slug, StringComparison.OrdinalIgnoreCase))
+            {
+                matches++;
+            }
+            else
+            {
+                differs++;
+            }
+        }
 
         var withGitHubEvidence = 0;
         var foreignEvidence = 0;
@@ -382,16 +473,23 @@ public sealed class ReadOnlyAcceptanceRun(
             snapshot.Projects.Count,
             discovered.Count(d => d.IsGitRepository),
             associated.Count,
-
-            // The confirmed association and the remote agree unless the refresh said otherwise:
-            // a disagreement is exactly what the pending-relink diagnostic reports.
-            associated.Count - awaitingRelink,
+            matches,
+            differs,
+            unreadable,
             awaitingRelink,
             withGitHubEvidence,
             foreignEvidence,
             runner.RepositoriesQueried.Count,
             runner.RepositoriesQueried.Count(r => !associated.Contains(r)));
     }
+
+    /// <summary>
+    /// The repository a project is confirmed to be associated with, as the registry records it.
+    /// Not the remote as it currently reads: a changed remote is held pending the owner's
+    /// confirmation, and the fingerprint must not query a repository they have not approved.
+    /// </summary>
+    private string? ConfirmedOriginOf(string projectPath) =>
+        settings.FindProject(projectPath)?.ConfirmedOrigin;
 
     /// <summary>
     /// A stable identifier for a path or a repository within one report, and nothing outside it.

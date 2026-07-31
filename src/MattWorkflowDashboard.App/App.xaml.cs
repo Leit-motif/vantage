@@ -168,9 +168,19 @@ public partial class App : Application
 
         try
         {
+            var settings = new SettingsStore(new AppPaths()).Load().Settings;
+
+            // Checked before the directory is created, not after: creating it is already the first
+            // change to a workspace this run is supposed to leave alone.
+            if (ReadOnlyAcceptanceRun.RejectOutputInsideARoot(outputDirectory, settings.Roots) is { } rejection)
+            {
+                await Console.Error.WriteLineAsync(rejection);
+                Shutdown(ExitCodeAcceptanceViolated);
+                return;
+            }
+
             Directory.CreateDirectory(outputDirectory);
 
-            var settings = new SettingsStore(new AppPaths()).Load().Settings;
             var run = new ReadOnlyAcceptanceRun(
                 settings,
                 new AppPaths(Path.Combine(outputDirectory, "state")),
