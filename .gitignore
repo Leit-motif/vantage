@@ -1,6 +1,35 @@
+# Build output
 bin/
 obj/
-*.user
-.vs/
 publish/
 artifacts/
+TestResults/
+
+# IDE
+*.user
+.vs/
+
+# Runtime instrumentation output. `--capture` and `--acceptance` write here; only the reviewed
+# frames and records under docs/acceptance are committed, and they are put there deliberately.
+captures/
+
+# Application state. The dashboard writes these under %LOCALAPPDATA%, never into a repository,
+# but a stray copy from a redirected run must not become a commit: cache.db can hold indexed
+# content from monitored projects, and logs can hold their paths.
+*.db
+*.db-shm
+*.db-wal
+*.log
+logs/
+
+# Local secrets. Nothing in this project reads one today; the rule is here so that adding one
+# later cannot quietly publish it.
+.env
+.env.*
+!.env.example
+
+# Local agent scratch and session state. This project tracks its planning in GitHub Issues, so
+# anything appearing here is machine-local working material rather than evidence.
+.scratch/
+.agents/
+.codex/
