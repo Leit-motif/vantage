@@ -141,7 +141,12 @@ public sealed partial class DashboardViewModel : ObservableObject
         ? _settings.Ui.Geometry.ExpandedWidth
         : _settings.Ui.Geometry.CompactWidth;
 
-    public bool ReducedMotion => _settings.Ui.ReducedMotion;
+    /// <summary>
+    /// The owner's own preference, and Windows' when they have not expressed one: an accessibility
+    /// setting made in Windows has to reach the dashboard without being set a second time here.
+    /// </summary>
+    public bool ReducedMotion =>
+        _settings.Ui.ReducedMotion || !System.Windows.SystemParameters.ClientAreaAnimation;
 
     public IReadOnlyList<Diagnostic> Diagnostics => _snapshot.Diagnostics;
 

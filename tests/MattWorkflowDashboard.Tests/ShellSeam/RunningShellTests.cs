@@ -1,0 +1,447 @@
+using System.Windows;
+using System.Windows.Automation.Peers;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using MattWorkflowDashboard.App.Shell;
+using MattWorkflowDashboard.App.ViewModels;
+using MattWorkflowDashboard.Infrastructure;
+using MattWorkflowDashboard.Infrastructure.Persistence;
+using MattWorkflowDashboard.Infrastructure.Settings;
+using MattWorkflowDashboard.Tests.TestSupport;
+
+// WinForms is referenced for the tray icon; here the WPF types are meant.
+using Application = System.Windows.Application;
+using Border = System.Windows.Controls.Border;
+using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
+using Color = System.Windows.Media.Color;
+using SystemColors = System.Windows.SystemColors;
+
+namespace MattWorkflowDashboard.Tests.ShellSeam;
+
+/// <summary>
+/// The running Windows shell. Every claim here is made against a real window with a real HWND and
+/// the real notification-area icon, driven by the commands the owner uses, and read back from
+/// Windows itself — a view model that agreed to be topmost is not evidence that the overlay is.
+/// </summary>
+[TestClass]
+public sealed class RunningShellTests
+{
+    /// <summary>
+    /// Launch-at-sign-in is proven against a scratch key, never the real Run key: a test must not
+    /// change what starts on the owner's machine.
+    /// </summary>
+    private const string ScratchRunKey = @"Software\MattWorkflowDashboard\ShellSeamTests\Run";
+
+    private WorkspaceFixture _workspace = null!;
+    private DashboardCache _cache = null!;
+    private DashboardSettings _settings = null!;
+    private DashboardViewModel _viewModel = null!;
+    private StartupRegistration _startup = null!;
+
+    [TestInitialize]
+    public void SetUp()
+    {
+        _workspace = new WorkspaceFixture();
+        _cache = DashboardCache.Open(_workspace.CacheFile);
+        _settings = new DashboardSettings { Roots = [_workspace.WorkspacesRoot] };
+
+        var paths = new AppPaths(Path.Combine(_workspace.Root, "appdata"));
+        _viewModel = new DashboardViewModel(_settings, new SettingsStore(paths), _cache, new FakeProcessRunner());
+        _startup = new StartupRegistration(ScratchRunKey, "ShellSeamTest");
+    }
+
+    [TestCleanup]
+    public void TearDown()
+    {
+        _startup.Set(false, string.Empty);
+        Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(ScratchRunKey, throwOnMissingSubKey: false);
+        _cache.Dispose();
+        _workspace.Dispose();
+    }
+
+    private RunningShell Start() => RunningShell.Start(_viewModel, _settings, _startup);
+
+    // ---- Topmost, focus, and the honest limits of both -------------------------------------
+
+    [TestMethod]
+    public void The_running_overlay_is_topmost_stays_out_of_the_taskbar_and_never_takes_activation()
+    {
+        using var shell = Start();
+        var handle = shell.Handle;
+
+        Assert.IsTrue(Win32Window.Exists(handle), "The shell must be a real window before anything else is claimed.");
+        Assert.IsTrue(
+            Win32Window.HasExtendedStyle(handle, Win32Window.WsExTopmost),
+            "The dashboard has to stay visible over ordinary and borderless-windowed applications.");
+        Assert.IsTrue(
+            Win32Window.HasExtendedStyle(handle, Win32Window.WsExToolWindow),
+            "A tool window keeps the overlay out of the taskbar and the Alt-Tab list.");
+        Assert.IsTrue(
+            Win32Window.HasExtendedStyle(handle, Win32Window.WsExNoActivate),
+            "A refresh must never be able to interrupt typing or gameplay.");
+    }
+
+    [TestMethod]
+    public void Showing_the_dashboard_leaves_the_owner_s_focus_exactly_where_it_was()
+    {
+        var before = Win32Window.Foreground();
+
+        using var shell = Start();
+        var handle = shell.Handle;
+
+        Assert.AreNotEqual(handle, Win32Window.Foreground(), "The overlay must not become the foreground window.");
+        Assert.AreEqual(before, Win32Window.Foreground(), "Showing the dashboard must not move focus at all.");
+    }
+
+    // ---- Close-to-hide versus a real exit ---------------------------------------------------
+
+    [TestMethod]
+    public void Closing_the_window_hides_it_to_the_tray_and_leaves_the_session_running()
+    {
+        using var shell = Start();
+        var handle = shell.Handle;
+
+        Assert.IsTrue(Win32Window.IsVisible(handle), "The shell starts on screen.");
+
+        WpfTestHost.Run(() => shell.Window.Close());
+        RunningShell.Pump();
+
+        Assert.IsFalse(Win32Window.IsVisible(handle), "Closing must hide the dashboard.");
+        Assert.IsTrue(Win32Window.Exists(handle), "Closing must not end the session — the tray still owns the dashboard.");
+    }
+
+    [TestMethod]
+    public void Only_the_tray_s_Exit_really_ends_the_session()
+    {
+        var shell = Start();
+        var handle = shell.Handle;
+
+        shell.ClickTray("Exit");
+
+        Assert.IsFalse(Win32Window.Exists(handle), "Exit is the one command that actually destroys the window.");
+        Assert.AreEqual(1, shell.ExitRequests, "Exit must also ask the application to shut down.");
+
+        shell.Dispose();
+    }
+
+    // ---- Click-through, and getting back from it --------------------------------------------
+
+    [TestMethod]
+    public void Click_through_is_off_until_asked_for_and_the_tray_always_takes_it_back()
+    {
+        using var shell = Start();
+        var handle = shell.Handle;
+
+        Assert.IsFalse(
+            Win32Window.HasExtendedStyle(handle, Win32Window.WsExTransparent),
+            "Click-through is off by default: a window that ignores the mouse is hard to recover.");
+
+        shell.ClickTray("Click-through");
+        Assert.IsTrue(
+            Win32Window.HasExtendedStyle(handle, Win32Window.WsExTransparent),
+            "The tray command has to actually stop the window taking the mouse.");
+        Assert.IsTrue(shell.TrayItemIsChecked("Click-through"), "The tray has to show that it is on.");
+
+        shell.ClickTray("Click-through");
+        Assert.IsFalse(
+            Win32Window.HasExtendedStyle(handle, Win32Window.WsExTransparent),
+            "Recovery is the whole reason the toggle lives in the tray.");
+        Assert.IsFalse(shell.TrayItemIsChecked("Click-through"));
+    }
+
+    // ---- The notification area ---------------------------------------------------------------
+
+    [TestMethod]
+    public void Every_lifecycle_command_the_owner_needs_is_reachable_from_the_notification_area()
+    {
+        using var shell = Start();
+        var commands = shell.TrayCommands();
+
+        foreach (var expected in new[]
+                 {
+                     "Hide", "Expand", "Click-through", "Refresh now", "Settings…", "Open logs folder",
+                     "Launch at sign-in", "Exit",
+                 })
+        {
+            Assert.IsTrue(
+                commands.Contains(expected),
+                $"The tray must offer '{expected}'. It offers: {string.Join(", ", commands)}");
+        }
+    }
+
+    [TestMethod]
+    public void The_tray_hides_and_restores_the_running_window()
+    {
+        using var shell = Start();
+        var handle = shell.Handle;
+
+        shell.ClickTray("Hide");
+        Assert.IsFalse(Win32Window.IsVisible(handle));
+        Assert.AreEqual("Show", shell.TrayLabelStartingWith("Show"), "The tray has to offer the way back.");
+
+        shell.ClickTray("Show");
+        Assert.IsTrue(Win32Window.IsVisible(handle));
+        Assert.AreNotEqual(handle, Win32Window.Foreground(), "Coming back must not steal focus either.");
+    }
+
+    [TestMethod]
+    public void The_tray_switches_the_running_window_between_compact_and_expanded()
+    {
+        _settings.Ui.Geometry.CompactWidth = 380;
+        _settings.Ui.Geometry.ExpandedWidth = 720;
+        _viewModel.IsExpanded = false;
+
+        using var shell = Start();
+        var handle = shell.Handle;
+        var scale = WpfTestHost.Run(() => VisualTreeHelper.GetDpi(shell.Window).DpiScaleX);
+
+        Assert.AreEqual(380 * scale, Win32Window.BoundsOf(handle).Width, 2d, "The compact shell is the width the owner chose.");
+
+        shell.ClickTray("Expand");
+
+        Assert.IsTrue(_viewModel.IsExpanded);
+        Assert.AreEqual(720 * scale, Win32Window.BoundsOf(handle).Width, 2d, "Expanding has to resize the real window.");
+        Assert.AreEqual("Compact", shell.TrayLabelStartingWith("Compact"), "The tray now offers the way back.");
+    }
+
+    [TestMethod]
+    public void The_tray_refresh_command_actually_refreshes_the_dashboard()
+    {
+        using var shell = Start();
+        var before = _viewModel.RefreshId;
+
+        shell.ClickTray("Refresh now");
+        _viewModel.RefreshCommand.ExecutionTask!.GetAwaiter().GetResult();
+
+        Assert.AreNotEqual(before, _viewModel.RefreshId, "A refresh produces a new refresh identity.");
+    }
+
+    [TestMethod]
+    public void Settings_and_logs_stay_reachable_from_the_tray_even_when_the_overlay_ignores_the_mouse()
+    {
+        using var shell = Start();
+
+        shell.ClickTray("Click-through");
+        shell.ClickTray("Settings…");
+        shell.ClickTray("Open logs folder");
+
+        Assert.AreEqual(1, shell.SettingsWindowRequests, "Settings must open from the tray.");
+        Assert.AreEqual(1, shell.LogsRequests, "The logs folder must open from the tray.");
+    }
+
+    // ---- Geometry, displays, and DPI ----------------------------------------------------------
+
+    [TestMethod]
+    public void Geometry_saved_on_a_monitor_that_is_no_longer_there_comes_back_on_screen()
+    {
+        _settings.Ui.Geometry.Left = -40_000;
+        _settings.Ui.Geometry.Top = -40_000;
+
+        using var shell = Start();
+        var bounds = Win32Window.BoundsOf(shell.Handle);
+
+        Assert.IsTrue(
+            System.Windows.Forms.Screen.AllScreens.Any(s => s.WorkingArea.IntersectsWith(
+                new System.Drawing.Rectangle(bounds.Left, bounds.Top, Math.Max(bounds.Width, 1), Math.Max(bounds.Height, 1)))),
+            "A display that went away must never strand the running window off-screen.");
+    }
+
+    [TestMethod]
+    public void Geometry_the_owner_chose_on_a_display_that_is_still_there_is_restored_untouched()
+    {
+        var area = System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
+        _settings.Ui.Geometry.Left = area.Left + 120;
+        _settings.Ui.Geometry.Top = area.Top + 90;
+
+        using var shell = Start();
+
+        var (left, top) = WpfTestHost.Run(() => (shell.Window.Left, shell.Window.Top));
+        Assert.AreEqual(area.Left + 120, left, 1d);
+        Assert.AreEqual(area.Top + 90, top, 1d);
+    }
+
+    [TestMethod]
+    public void The_running_window_is_laid_out_in_device_independent_units_and_scaled_by_its_monitor()
+    {
+        using var shell = Start();
+        var handle = shell.Handle;
+
+        var (dip, scale) = WpfTestHost.Run(() =>
+            (shell.Window.ActualWidth, VisualTreeHelper.GetDpi(shell.Window).DpiScaleX));
+
+        Assert.IsTrue(scale > 0, "The window has to report a real DPI scale.");
+        Assert.AreEqual(
+            dip * scale,
+            Win32Window.BoundsOf(handle).Width,
+            2d,
+            $"Physical pixels must be the layout size scaled by the monitor's DPI (scale {scale}).");
+    }
+
+    // ---- Theme transitions on the running window ----------------------------------------------
+
+    [TestMethod]
+    public void Dark_light_and_system_themes_restyle_the_running_window_without_a_restart()
+    {
+        using var shell = Start();
+        var themes = WpfTestHost.Run(() => new ThemeManager(Application.Current, highContrast: () => false));
+
+        var dark = SurfaceColourAfter(shell, themes, AppTheme.Dark);
+        var light = SurfaceColourAfter(shell, themes, AppTheme.Light);
+        var system = SurfaceColourAfter(shell, themes, AppTheme.System);
+
+        Assert.AreNotEqual(dark, light, "Switching theme has to change what the running window renders.");
+        Assert.IsTrue(
+            system == dark || system == light,
+            "System has to resolve to whichever appearance Windows is actually using.");
+    }
+
+    [TestMethod]
+    public void Windows_high_contrast_hands_the_palette_to_the_system()
+    {
+        using var shell = Start();
+
+        var ordinary = SurfaceColourAfter(
+            shell,
+            WpfTestHost.Run(() => new ThemeManager(Application.Current, highContrast: () => false)),
+            AppTheme.Dark);
+
+        var contrast = SurfaceColourAfter(
+            shell,
+            WpfTestHost.Run(() => new ThemeManager(Application.Current, highContrast: () => true)),
+            AppTheme.Dark);
+
+        Assert.AreNotEqual(ordinary, contrast, "High contrast must not leave the dashboard's own palette in place.");
+        Assert.AreEqual(
+            SystemColors.WindowColor,
+            contrast,
+            "Under high contrast the dashboard defers to the colours Windows was told to use.");
+    }
+
+    private static Color SurfaceColourAfter(RunningShell shell, ThemeManager themes, AppTheme theme) =>
+        WpfTestHost.Run(() =>
+        {
+            themes.Apply(theme);
+            shell.Window.UpdateLayout();
+
+            var root = (Border)shell.Window.FindName("GlassRoot");
+            return ((SolidColorBrush)root.Background).Color;
+        });
+
+    // ---- Launch at sign-in ---------------------------------------------------------------------
+
+    [TestMethod]
+    public void Launch_at_sign_in_is_off_until_asked_for_explicitly_and_is_reversible()
+    {
+        using var shell = Start();
+
+        Assert.IsFalse(_startup.IsEnabled(), "Installing the dashboard must not change what starts at sign-in.");
+
+        shell.ClickTray("Launch at sign-in");
+        Assert.IsTrue(_startup.IsEnabled(), "The owner asked for it, so it has to actually be registered.");
+        Assert.IsTrue(shell.TrayItemIsChecked("Launch at sign-in"));
+
+        shell.ClickTray("Launch at sign-in");
+        Assert.IsFalse(_startup.IsEnabled(), "It has to be reversible from the same command.");
+        Assert.IsFalse(shell.TrayItemIsChecked("Launch at sign-in"));
+    }
+
+    // ---- Hotkey ----------------------------------------------------------------------------------
+
+    [TestMethod]
+    public void No_global_shortcut_is_claimed_until_the_owner_configures_one()
+    {
+        using var shell = Start();
+        var handle = shell.Handle;
+
+        using var hotkey = WpfTestHost.Run(() => new GlobalHotkey(handle, () => { }));
+
+        Assert.IsFalse(WpfTestHost.Run(() => hotkey.Bind(_settings.Ui.ClickThroughHotkey)),
+            "There is no default binding, so binding the default must claim nothing.");
+        Assert.IsTrue(WpfTestHost.Run(() => hotkey.Bind("Ctrl+Alt+F9")),
+            "A gesture the owner configured has to register with Windows against the real window.");
+
+        WpfTestHost.Run(hotkey.Unbind);
+    }
+
+    // ---- Keyboard and screen readers ---------------------------------------------------------------
+
+    [TestMethod]
+    public void Every_control_the_owner_can_tab_to_announces_itself()
+    {
+        using var shell = Start();
+
+        // What a screen reader reads is the automation peer's name, not the explicit property:
+        // a button whose content is already a word announces that word without being told to.
+        var unnamed = WpfTestHost.Run(() =>
+            WpfTestHost.Descendants<ButtonBase>(shell.Window)
+                .Where(b => b.Focusable && b.IsTabStop && WpfTestHost.IsRendered(b))
+                .Where(b => string.IsNullOrWhiteSpace(
+                    UIElementAutomationPeer.CreatePeerForElement(b)?.GetName()))
+                .Select(b => b.GetType().Name)
+                .ToList());
+
+        Assert.AreEqual(
+            0,
+            unnamed.Count,
+            $"A control a screen reader can land on has to have something to say: {string.Join(", ", unnamed)}");
+    }
+
+    [TestMethod]
+    public void The_keyboard_can_move_between_the_running_window_s_controls()
+    {
+        using var shell = Start();
+
+        var moved = WpfTestHost.Run(() =>
+        {
+            var buttons = WpfTestHost.Descendants<ButtonBase>(shell.Window)
+                .Where(b => b.Focusable && b.IsTabStop && WpfTestHost.IsRendered(b))
+                .ToList();
+
+            if (buttons.Count < 2)
+            {
+                return false;
+            }
+
+            buttons[0].Focus();
+            var first = Keyboard.FocusedElement;
+
+            buttons[0].MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
+            return !ReferenceEquals(first, Keyboard.FocusedElement);
+        });
+
+        Assert.IsTrue(moved, "Tab has to reach the next control in the running window.");
+    }
+
+    // ---- Reduced motion ------------------------------------------------------------------------------
+
+    [TestMethod]
+    public void The_running_shell_honours_the_owner_s_and_Windows_own_reduced_motion_choice()
+    {
+        _settings.Ui.ReducedMotion = false;
+        using var shell = Start();
+
+        Assert.AreEqual(
+            !SystemParameters.ClientAreaAnimation,
+            _viewModel.ReducedMotion,
+            "With no preference of its own the dashboard has to follow the Windows animation setting.");
+
+        _settings.Ui.ReducedMotion = true;
+        _viewModel.NotifyAppearanceChanged();
+
+        Assert.IsTrue(_viewModel.ReducedMotion, "The owner's own choice always reduces motion.");
+    }
+
+    [TestMethod]
+    public void The_running_shell_animates_nothing_so_there_is_no_motion_to_suppress()
+    {
+        using var shell = Start();
+
+        var animated = WpfTestHost.Run(() =>
+            WpfTestHost.Descendants<FrameworkElement>(shell.Window)
+                .Count(e => e.Triggers.Any(t => t.EnterActions.OfType<BeginStoryboard>().Any()
+                    || t.ExitActions.OfType<BeginStoryboard>().Any())));
+
+        Assert.AreEqual(0, animated, "Nothing in the shell animates, so reduced motion has nothing left to disable.");
+    }
+}

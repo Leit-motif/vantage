@@ -117,17 +117,23 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly DashboardSettings _settings;
     private readonly SettingsStore _store;
     private readonly Action _onApplied;
+    private readonly Shell.StartupRegistration _startup;
 
-    public SettingsViewModel(DashboardSettings settings, SettingsStore store, Action onApplied)
+    public SettingsViewModel(
+        DashboardSettings settings,
+        SettingsStore store,
+        Action onApplied,
+        Shell.StartupRegistration? startup = null)
     {
         _settings = settings;
         _store = store;
         _onApplied = onApplied;
+        _startup = startup ?? new Shell.StartupRegistration();
 
         Roots = [.. settings.Roots];
         Projects = [.. settings.Projects.Select(p => new ProjectRegistryRow(p, Apply))];
         // Assigned to the backing field: reading the current state must not rewrite it.
-        _launchAtSignIn = Shell.StartupRegistration.IsEnabled();
+        _launchAtSignIn = _startup.IsEnabled();
     }
 
     public ObservableCollection<string> Roots { get; }
@@ -210,7 +216,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     partial void OnLaunchAtSignInChanged(bool value)
     {
         _settings.LaunchAtSignIn = value;
-        Shell.StartupRegistration.Set(value, Environment.ProcessPath ?? string.Empty);
+        _startup.Set(value, Environment.ProcessPath ?? string.Empty);
         Apply();
     }
 
