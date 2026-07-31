@@ -198,6 +198,20 @@ public partial class App : Application
                 Path.Combine(outputDirectory, "acceptance-report.json"),
                 ReadOnlyAcceptanceRun.Serialize(report));
 
+            // Written beside the report and never committed: the report says a workspace moved
+            // without saying whose, which is unusable exactly when it matters. Only the projects
+            // with something to answer for are named, and only here.
+            if (run.AffectedProjects.Count > 0)
+            {
+                await File.WriteAllLinesAsync(
+                    Path.Combine(outputDirectory, "affected-projects.local.txt"),
+                    [
+                        "# Local only. Names the projects behind the identifiers in the report.",
+                        "# Do not commit this file.",
+                        .. run.AffectedProjects.Select(pair => $"{pair.Key}  {pair.Value}"),
+                    ]);
+            }
+
             exitCode = report.NothingWasChanged
                 ? report.ObservationWasComplete ? 0 : ExitCodeObservationIncomplete
                 : ExitCodeAcceptanceViolated;

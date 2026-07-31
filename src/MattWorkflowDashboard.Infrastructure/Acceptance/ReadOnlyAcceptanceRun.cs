@@ -176,6 +176,15 @@ public sealed class ReadOnlyAcceptanceRun(
         return null;
     }
 
+    /// <summary>
+    /// Which project each identifier in the last report stands for, but only for the ones a reader
+    /// would need to act on. A sanitized report says a workspace moved without saying whose, which
+    /// is unusable exactly when it matters most — so the names are kept here, in memory, for the
+    /// caller to write somewhere local and never commit.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> AffectedProjects { get; private set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
     public async Task<AcceptanceReport> ExecuteAsync(CancellationToken cancellationToken)
     {
         if (RejectOutputInsideARoot(isolatedState.Root, settings.Roots) is { } rejection)
@@ -251,6 +260,17 @@ public sealed class ReadOnlyAcceptanceRun(
             issued[shape] = issued.GetValueOrDefault(shape) + count;
         }
 
+        var changes = MonitoredStateReader.Diff(before, after);
+        var gaps = MonitoredStateReader.Gaps(before, after);
+
+        var affected = changes.Select(c => c.ProjectId)
+            .Concat(gaps.Select(g => g.ProjectId))
+            .ToHashSet(StringComparer.Ordinal);
+
+        AffectedProjects = projectPaths
+            .Where(path => affected.Contains(Identify(path)))
+            .ToDictionary(Identify, path => path, StringComparer.Ordinal);
+
         return new AcceptanceReport(
             environment,
             bounds,
@@ -260,8 +280,8 @@ public sealed class ReadOnlyAcceptanceRun(
             associations,
             new SafetyEvidence(
                 before.Count,
-                MonitoredStateReader.Diff(before, after),
-                MonitoredStateReader.Gaps(before, after),
+                changes,
+                gaps,
                 [.. runner.Refused, .. offlineRunner.Refused],
                 issued));
     }

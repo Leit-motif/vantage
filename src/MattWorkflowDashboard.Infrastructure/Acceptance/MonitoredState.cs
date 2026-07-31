@@ -342,7 +342,11 @@ public sealed class MonitoredStateReader(
             return Digest(result.StandardOutput);
         }
 
-        if (emptyWhenReadable && result.StandardOutput.Trim().Length == 0 && !result.TimedOut && !result.NotFound)
+        // Not conditioned on empty output: `git rev-parse HEAD` against an unborn HEAD echoes the
+        // argument back on stdout and reports the failure on stderr, so a test for silence would
+        // miss exactly the case this is for. A repository whose status could be read is readable,
+        // and a read that then fails has nothing to return rather than being unable to return it.
+        if (emptyWhenReadable && !result.TimedOut && !result.NotFound)
         {
             return Digest("<nothing yet>");
         }
