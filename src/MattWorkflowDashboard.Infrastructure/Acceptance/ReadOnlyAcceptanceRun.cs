@@ -402,9 +402,17 @@ public sealed class ReadOnlyAcceptanceRun(
 
         var runner = new ReadOnlyProcessRunner(blinded);
 
-        var probe = await runner
-            .RunAsync("gh", ["auth", "status"], null, cancellationToken)
-            .ConfigureAwait(false);
+        // With enrichment off, the dashboard never asks gh anything, so there is no session to
+        // probe for — asking anyway would be the one gh call a local-only default run must not
+        // make. Reported as "no session" because none is in use either way.
+        var ghReportedNoSession = true;
+        if (settings.GitHubEnrichmentEnabled)
+        {
+            var probe = await runner
+                .RunAsync("gh", ["auth", "status"], null, cancellationToken)
+                .ConfigureAwait(false);
+            ghReportedNoSession = !probe.Succeeded;
+        }
 
         var offlineService = new RefreshService(settings, runner, cache, settingsStore: store);
 
@@ -414,7 +422,7 @@ public sealed class ReadOnlyAcceptanceRun(
 
         return (
             new OfflineEvidence(
-                !probe.Succeeded,
+                ghReportedNoSession,
                 snapshot.Offline,
                 snapshot.Projects.Count,
                 snapshot.Projects.Count(p => p.Progress.Total > 0),
