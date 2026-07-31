@@ -8,6 +8,7 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <!-- Required by the LibraryImport source generator used for the Win32 overlay calls. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
