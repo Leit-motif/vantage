@@ -31,14 +31,6 @@ jobs:
       - name: Test
         run: dotnet test tests/MattWorkflowDashboard.Tests/MattWorkflowDashboard.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=results.trx"
 
-      # The tests that send real keyboard input, which the default run excludes because a machine
-      # in use takes the foreground away from them. The runner has no owner to do that, so this is
-      # where they are proven continuously; on a desktop they are run deliberately, with the same
-      # settings file. A settings file given here replaces the project's default one — a filter
-      # would instead be combined with it, and the two would exclude everything between them.
-      - name: Test the shell against a real keyboard
-        run: dotnet test tests/MattWorkflowDashboard.Tests/MattWorkflowDashboard.Tests.csproj --configuration Release --no-build --settings tests/MattWorkflowDashboard.Tests/IdleDesktop.runsettings --logger "trx;LogFileName=idle-desktop.trx"
-
       - name: Validate the shipping publish configuration
         run: dotnet publish src/MattWorkflowDashboard.App/MattWorkflowDashboard.App.csproj -p:PublishProfile=win-x64 --configuration Release --output ${{ runner.temp }}/publish
 

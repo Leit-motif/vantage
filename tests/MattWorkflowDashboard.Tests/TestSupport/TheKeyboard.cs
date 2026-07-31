@@ -17,8 +17,8 @@ namespace MattWorkflowDashboard.Tests.TestSupport;
 /// everything above the queue: WPF reads these messages through the same <c>HwndSource</c> hook as
 /// any other, and its input manager, keyboard focus, tab navigation and command routing all run
 /// exactly as they do for the owner. What no longer happens is the part below it — the raw input
-/// thread, and hardware scan codes becoming virtual keys. TESTING.md records that trade and why it
-/// was taken.
+/// thread, and hardware scan codes becoming virtual keys. docs/testing.md records that trade and
+/// why it was taken.
 /// </para>
 /// </summary>
 public static class TheKeyboard

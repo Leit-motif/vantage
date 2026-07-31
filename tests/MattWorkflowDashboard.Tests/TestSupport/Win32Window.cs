@@ -131,7 +131,7 @@ public static class Win32Window
     /// desktop has no input to make it with — so the grant Windows would have performed is
     /// performed here instead, and the window sees the same <c>WM_ACTIVATE</c> either way. What
     /// this does not stand in for is the dashboard's own request for the foreground: that is a
-    /// call into Windows that a desktop with no input queue refuses. See TESTING.md.
+    /// call into Windows that a desktop with no input queue refuses. See docs/testing.md.
     /// </para>
     /// </summary>
     public static void Activate(nint handle) => SetActiveWindow(handle);

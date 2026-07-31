@@ -8,12 +8,6 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-
-    <!--
-      Applied to every run of this project, however it is started — `dotnet test` on the project or
-      on the solution, and the IDE's own runner. See the file for what it excludes and why.
-    -->
-    <RunSettingsFilePath>$(MSBuildProjectDirectory)\MattWorkflowDashboard.Tests.runsettings</RunSettingsFilePath>
   </PropertyGroup>
 
   <ItemGroup>

@@ -511,7 +511,7 @@ public sealed class RunningShellTests
     /// The grant that follows is stood in for too: the shell does ask Windows for the keyboard,
     /// and a desktop with no input queue refuses, so the activation is performed alongside it.
     /// Everything the shell then does — lifting its refusal, moving focus inside itself, restoring
-    /// the refusal when it is deactivated — is its own, driven by the real messages. TESTING.md
+    /// the refusal when it is deactivated — is its own, driven by the real messages. docs/testing.md
     /// records what that leaves unproven.
     /// </para>
     /// </summary>

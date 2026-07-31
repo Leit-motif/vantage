@@ -57,18 +57,10 @@ adopts the pending origin you were shown, not whatever the remote happens to rea
 dotnet test MattWorkflowDashboard.slnx
 ```
 
-Five shell tests are not in that run. They send real keyboard input to the running dashboard, and
-Windows delivers keystrokes to whatever window is in front — so using the machine while they run
-sends the keystrokes elsewhere and fails them for a reason that has nothing to do with the
-dashboard. They are excluded by default and run deliberately, on a desktop nobody is using:
-
-```bash
-dotnet test tests/MattWorkflowDashboard.Tests --settings tests/MattWorkflowDashboard.Tests/IdleDesktop.runsettings
-```
-
-Leave the machine alone for the few seconds that takes. If something does take the foreground, the
-affected test reports itself inconclusive and names the window that took it, rather than failing.
-CI runs both halves on every push.
+That is the whole suite, including the shell tests that drive a real window with a real keyboard.
+They run on a Windows desktop of their own, so they neither appear on your screen nor take the
+keyboard from what you are doing, and you can carry on working through them. See
+[docs/testing.md](docs/testing.md) for what those tests prove and what they deliberately do not.
 
 ```bash
 dotnet run --project src/MattWorkflowDashboard.App
