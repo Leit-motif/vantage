@@ -22,8 +22,16 @@ Development-only instrumentation, reached only by that switch. It builds no UI. 
 the `gh` configuration used for the offline pass — lives under the output directory, so an
 acceptance run leaves the owner's dashboard state as untouched as it leaves their workspaces.
 
-Exit code `0` means nothing monitored changed, nothing was refused, **and nothing went unobserved**;
-`3` means one of those failed.
+Exit codes: `0` clean and complete; `3` something monitored changed or a command was refused —
+a safety failure; `4` nothing changed but something could not be read. The last is kept apart on
+purpose. A private or deleted repository is an ordinary fact of a real workspace, not a safety
+failure, but it is also not evidence that anything is unchanged — folding the two together would
+either make a clean run impossible or let the least observant run look the strongest.
+
+When a run does report a change, the report names the project only as a salted identifier. The real
+paths for the affected projects alone are written beside it as `affected-projects.local.txt`, which
+is local and must never be committed — a sanitized report that cannot tell you *whose* workspace
+moved is unusable exactly when it matters.
 
 ## What it does
 
@@ -66,3 +74,9 @@ The instrument itself is covered by `ReadOnlyAcceptanceTests`: the boundary is s
 writes *and* to pass the reads the adapters really issue, and the before/after comparison is shown
 to notice an edited file and a renamed one. A boundary that refused everything, or a comparison
 that noticed nothing, would produce the same clean report.
+
+It has also discriminated on live data. An earlier run of this same instrument reported one
+project's working tree as changed; the named project turned out to be one another agent on the machine
+was writing to at that moment, in file types the dashboard has no code path to touch. A comparison
+that had simply always been green would not have caught that, and would not have been worth
+believing when it was.
