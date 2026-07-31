@@ -98,11 +98,16 @@ public static class Win32Window
     /// Presses Tab as the owner's keyboard would, through Windows rather than through WPF. It
     /// goes wherever the foreground window is, so a caller must have established that first.
     /// </summary>
-    public static void PressTab()
+    public static void PressTab() => PressKey(VkTab);
+
+    /// <summary>Presses and releases one key, through Windows, wherever the foreground is.</summary>
+    public static void PressKey(byte key)
     {
-        keybd_event(VkTab, 0, 0, 0);
-        keybd_event(VkTab, 0, KeyEventKeyUp, 0);
+        keybd_event(key, 0, 0, 0);
+        keybd_event(key, 0, KeyEventKeyUp, 0);
     }
+
+    public const byte VkSpace = 0x20;
 
     public static Rect BoundsOf(nint handle) =>
         GetWindowRect(handle, out var rect) ? rect : throw new InvalidOperationException("The window has no bounds.");

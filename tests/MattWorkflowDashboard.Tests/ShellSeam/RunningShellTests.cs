@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Automation.Peers;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -566,6 +567,42 @@ public sealed class RunningShellTests
             before,
             after,
             "Pressing Tab has to move to the next control in the running window.");
+    }
+
+    [TestMethod]
+    public void A_control_reached_by_keyboard_can_be_operated_by_keyboard()
+    {
+        using var shell = Start();
+        using var hotkey = FocusByPressingTheOwner_s_Gesture(shell);
+
+        Assert.AreEqual(shell.Handle, Win32Window.Foreground(), "The keystroke has to land in the dashboard.");
+
+        // Reaching a control is only half of operable; the owner has to be able to act on it.
+        var focused = WpfTestHost.Run(() =>
+        {
+            var refresh = WpfTestHost.Descendants<ButtonBase>(shell.Window)
+                .FirstOrDefault(b => AutomationProperties.GetName(b) == "Refresh now");
+
+            return refresh is not null && refresh.Focus();
+        });
+
+        Assert.IsTrue(focused, "The refresh command has to be reachable from the keyboard at all.");
+
+        var before = _viewModel.RefreshId;
+        Win32Window.PressKey(Win32Window.VkSpace);
+
+        for (var attempt = 0; attempt < 50 && _viewModel.RefreshCommand.ExecutionTask is null; attempt++)
+        {
+            RunningShell.Pump();
+            Thread.Sleep(20);
+        }
+
+        _viewModel.RefreshCommand.ExecutionTask?.GetAwaiter().GetResult();
+
+        Assert.AreNotEqual(
+            before,
+            _viewModel.RefreshId,
+            "Pressing space on the focused command has to actually run it.");
     }
 
     [TestMethod]
