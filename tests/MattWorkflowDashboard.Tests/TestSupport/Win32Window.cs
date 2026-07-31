@@ -59,6 +59,49 @@ public static class Win32Window
 
     public static nint Foreground() => GetForegroundWindow();
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int GetWindowTextW(nint hWnd, char[] lpString, int nMaxCount);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);
+
+    /// <summary>
+    /// A window as a person would recognise it — its title and the process behind it. A test that
+    /// gives up because something else has the foreground has to say what that something was, or
+    /// the report is indistinguishable from the dashboard failing.
+    /// </summary>
+    public static string Describe(nint handle)
+    {
+        if (!Exists(handle))
+        {
+            return handle == 0 ? "no window at all" : $"a window that no longer exists (0x{handle:X})";
+        }
+
+        var buffer = new char[512];
+        var length = GetWindowTextW(handle, buffer, buffer.Length);
+        var title = length > 0 ? new string(buffer, 0, length) : "(untitled)";
+
+        var process = "an unknown process";
+        if (GetWindowThreadProcessId(handle, out var processId) != 0)
+        {
+            try
+            {
+                using var owner = System.Diagnostics.Process.GetProcessById((int)processId);
+                process = $"{owner.ProcessName} ({processId})";
+            }
+            catch (ArgumentException)
+            {
+                process = $"a process that has since exited ({processId})";
+            }
+            catch (InvalidOperationException)
+            {
+                process = $"a process that has since exited ({processId})";
+            }
+        }
+
+        return $"'{title}' in {process}";
+    }
+
     [DllImport("user32.dll")]
     private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, nint dwExtraInfo);
 

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What `dotnet test` runs when nobody says otherwise.
+
+  A few shell-seam tests send real keyboard input and so need the dashboard to genuinely hold the
+  Windows foreground. Windows delivers keystrokes to whatever is in front, so any use of the
+  machine during the run sends them somewhere else and the tests fail for a reason that is nothing
+  to do with the dashboard. They are excluded here rather than weakened, and run deliberately
+  against a desktop nobody is using, by passing a filter of TestCategory=RequiresIdleDesktop on
+  the command line. A filter given there replaces this one, which is what makes that work.
+
+  CI runs both halves: the default suite, then the excluded tests in their own step, where the
+  runner has no owner to take the foreground away. See TestCategories.RequiresIdleDesktop.
+-->
+<RunSettings>
+  <RunConfiguration>
+    <TestCaseFilter>TestCategory!=RequiresIdleDesktop</TestCaseFilter>
+  </RunConfiguration>
+</RunSettings>

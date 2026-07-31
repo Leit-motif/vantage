@@ -84,6 +84,7 @@ public sealed class RunningShellTests
     }
 
     [TestMethod]
+    [TestCategory(TestCategories.RequiresIdleDesktop)]
     public void Showing_the_dashboard_leaves_the_owner_s_focus_exactly_where_it_was()
     {
         var before = Win32Window.Foreground();
@@ -91,8 +92,17 @@ public sealed class RunningShellTests
         using var shell = Start();
         var handle = shell.Handle;
 
-        Assert.AreNotEqual(handle, Win32Window.Foreground(), "The overlay must not become the foreground window.");
-        Assert.AreEqual(before, Win32Window.Foreground(), "Showing the dashboard must not move focus at all.");
+        var after = Win32Window.Foreground();
+
+        // True however the desktop is being used: whatever else may have taken the foreground,
+        // it must not have been us.
+        Assert.AreNotEqual(handle, after, "The overlay must not become the foreground window.");
+
+        // Only the owner can move focus somewhere the test never looked, so a foreground that
+        // went to a third window says nothing about the dashboard.
+        TheDesktop.StopIfSomethingElseTookTheForeground(handle, before, after, "the dashboard was being shown");
+
+        Assert.AreEqual(before, after, "Showing the dashboard must not move focus at all.");
     }
 
     // ---- Close-to-hide versus a real exit ---------------------------------------------------
@@ -482,32 +492,111 @@ public sealed class RunningShellTests
     }
 
     /// <summary>
+    /// A focus gesture that landed, and what it takes to know the dashboard has kept the keyboard
+    /// since. Everything a test asserts after the gesture — that the refusal was lifted, that a
+    /// keystroke reached a control — is only true of a window that is still the one Windows is
+    /// sending input to, so each such claim is checked against this first.
+    /// </summary>
+    private readonly record struct FocusHeldByGesture(RunningShell Shell, GlobalHotkey Hotkey, int Deactivations)
+        : IDisposable
+    {
+        /// <summary>
+        /// Requires the dashboard to still hold the keyboard it was just given, and ends the test
+        /// as inconclusive if the desktop took it back. Both halves matter: the foreground can be
+        /// handed back before the question is asked, so the shell's own deactivation is what
+        /// actually records that the owner was here.
+        /// </summary>
+        public void RequireTheDashboardStillHasTheKeyboard(string what)
+        {
+            // A window learns it was deactivated through its message queue, so the interruption
+            // has to be allowed to arrive before the question can be answered.
+            RunningShell.Pump();
+
+            if (Shell.Deactivations != Deactivations || Win32Window.Foreground() != Shell.Handle)
+            {
+                TheDesktop.StopBecauseTheDashboardLostTheKeyboard(Shell.Handle, what);
+            }
+        }
+
+        public void Dispose() => Hotkey.Dispose();
+    }
+
+    /// <summary>
     /// The focus gesture as the owner performs it: a global hotkey they configured, bound against
     /// the real window and pressed on the real keyboard. Driving <c>FocusForKeyboard</c> directly
     /// would not do — Windows only lets a process take the foreground when it has been given a
     /// reason to, and receiving a hotkey is that reason. A test that skipped the keystroke would
     /// be testing a path the owner does not have.
+    /// <para>
+    /// The gesture is pressed more than once before it is given up on. A hotkey registered against
+    /// a real window is delivered whatever is in front, so a press overtaken by the owner clicking
+    /// elsewhere is not a different gesture when it is pressed again — it is the same one, on a
+    /// desktop that has settled. What is never retried away is the dashboard's own failure to act
+    /// on it: a foreground that never moved at all is reported as the failure it is.
+    /// </para>
     /// </summary>
-    private static GlobalHotkey FocusByPressingTheOwner_s_Gesture(RunningShell shell)
+    private static FocusHeldByGesture FocusByPressingTheOwner_s_Gesture(RunningShell shell)
     {
         var hotkey = WpfTestHost.Run(() =>
             new GlobalHotkey(shell.Handle, shell.Window.FocusForKeyboard, GlobalHotkey.FocusId));
 
         Assert.IsTrue(WpfTestHost.Run(() => hotkey.Bind("Ctrl+Shift+F9")), "The gesture has to register with Windows.");
 
-        Win32Window.PressChord([Win32Window.VkControl, Win32Window.VkShift], Win32Window.VkF9);
+        var before = Win32Window.Foreground();
 
-        // The keystroke travels through Windows, so it arrives on its own schedule.
-        for (var attempt = 0; attempt < 50 && Win32Window.Foreground() != shell.Handle; attempt++)
+        for (var press = 0; press < 4; press++)
         {
+            var interruptions = shell.Deactivations;
+
+            Win32Window.PressChord([Win32Window.VkControl, Win32Window.VkShift], Win32Window.VkF9);
+
+            // The keystroke travels through Windows, so it arrives on its own schedule.
+            for (var attempt = 0; attempt < 50 && Win32Window.Foreground() != shell.Handle; attempt++)
+            {
+                RunningShell.Pump();
+                Thread.Sleep(20);
+            }
+
             RunningShell.Pump();
-            Thread.Sleep(20);
+
+            // Holding the foreground is not enough. A window that was given the keyboard, lost it
+            // to the owner, and had it handed back is in a different state from one the gesture
+            // just reached: the shell restored its refusal on the way out and nothing has asked it
+            // to lift that again. So the gesture has to be the most recent thing that happened,
+            // and it is simply pressed again until it is.
+            if (Win32Window.Foreground() == shell.Handle && shell.Deactivations == interruptions)
+            {
+                return new FocusHeldByGesture(shell, hotkey, shell.Deactivations);
+            }
         }
 
-        return hotkey;
+        // Every press was either overtaken or interrupted. Which of the three that was decides
+        // whether this is the dashboard's failure or the desktop's noise.
+        var now = Win32Window.Foreground();
+
+        TheDesktop.StopIfSomethingElseTookTheForeground(
+            shell.Handle,
+            before,
+            now,
+            "the owner's focus gesture was pressed");
+
+        if (now == shell.Handle)
+        {
+            TheDesktop.StopBecauseTheDashboardLostTheKeyboard(
+                shell.Handle,
+                "the owner's focus gesture was pressed");
+        }
+
+        Assert.Fail(
+            "The owner's focus gesture has to actually hand the dashboard the keyboard. The "
+            + $"foreground stayed on {Win32Window.Describe(now)}, and nothing else on the desktop "
+            + "competed for it.");
+
+        throw new InvalidOperationException("Assert.Fail always throws; this satisfies the compiler.");
     }
 
     [TestMethod]
+    [TestCategory(TestCategories.RequiresIdleDesktop)]
     public void The_dashboard_takes_the_keyboard_only_when_the_owner_asks_for_it()
     {
         using var shell = Start();
@@ -518,12 +607,12 @@ public sealed class RunningShellTests
             "Until asked, the overlay refuses activation so a refresh cannot interrupt typing.");
         Assert.AreNotEqual(handle, Win32Window.Foreground());
 
-        using var hotkey = FocusByPressingTheOwner_s_Gesture(shell);
+        // Getting here at all means the gesture handed the dashboard the keyboard: the helper
+        // fails the test otherwise. The shell restores its refusal the moment it is deactivated,
+        // so both claims below are about a window that still has the keyboard.
+        using var focus = FocusByPressingTheOwner_s_Gesture(shell);
+        focus.RequireTheDashboardStillHasTheKeyboard("the dashboard's activation was read back");
 
-        Assert.AreEqual(
-            handle,
-            Win32Window.Foreground(),
-            "The owner's focus gesture has to actually hand the dashboard the keyboard.");
         Assert.IsFalse(
             Win32Window.HasExtendedStyle(handle, Win32Window.WsExNoActivate),
             "A window that still refuses activation cannot hold the keyboard.");
@@ -534,16 +623,12 @@ public sealed class RunningShellTests
     }
 
     [TestMethod]
+    [TestCategory(TestCategories.RequiresIdleDesktop)]
     public void Tab_moves_between_the_running_window_s_controls()
     {
         using var shell = Start();
-        var handle = shell.Handle;
 
-        using var hotkey = FocusByPressingTheOwner_s_Gesture(shell);
-
-        // Real keyboard input goes to whatever Windows has in front, so this is only a fair test
-        // if the dashboard genuinely holds the foreground first.
-        Assert.AreEqual(handle, Win32Window.Foreground(), "The dashboard has to hold the keyboard before Tab means anything.");
+        using var focus = FocusByPressingTheOwner_s_Gesture(shell);
 
         var before = WpfTestHost.Run(() => Keyboard.FocusedElement);
         Win32Window.PressTab();
@@ -563,6 +648,10 @@ public sealed class RunningShellTests
             Thread.Sleep(20);
         }
 
+        // Real keyboard input goes wherever Windows has in front, so a Tab that moved nothing is
+        // only evidence about the dashboard if the dashboard is where the Tab went.
+        focus.RequireTheDashboardStillHasTheKeyboard("Tab was pressed");
+
         Assert.AreNotEqual(
             before,
             after,
@@ -570,12 +659,11 @@ public sealed class RunningShellTests
     }
 
     [TestMethod]
+    [TestCategory(TestCategories.RequiresIdleDesktop)]
     public void A_control_reached_by_keyboard_can_be_operated_by_keyboard()
     {
         using var shell = Start();
-        using var hotkey = FocusByPressingTheOwner_s_Gesture(shell);
-
-        Assert.AreEqual(shell.Handle, Win32Window.Foreground(), "The keystroke has to land in the dashboard.");
+        using var focus = FocusByPressingTheOwner_s_Gesture(shell);
 
         // Reaching a control is only half of operable; the owner has to be able to act on it.
         var focused = WpfTestHost.Run(() =>
@@ -597,6 +685,9 @@ public sealed class RunningShellTests
             Thread.Sleep(20);
         }
 
+        // A space that ran nothing is only evidence about the command if the space reached it.
+        focus.RequireTheDashboardStillHasTheKeyboard("space was pressed on the focused command");
+
         _viewModel.RefreshCommand.ExecutionTask?.GetAwaiter().GetResult();
 
         Assert.AreNotEqual(
@@ -606,12 +697,19 @@ public sealed class RunningShellTests
     }
 
     [TestMethod]
+    [TestCategory(TestCategories.RequiresIdleDesktop)]
     public void The_overlay_goes_back_to_refusing_focus_once_the_owner_moves_on()
     {
         using var shell = Start();
         var handle = shell.Handle;
 
-        using var hotkey = FocusByPressingTheOwner_s_Gesture(shell);
+        using var focus = FocusByPressingTheOwner_s_Gesture(shell);
+
+        // This half of the test needs the dashboard to still be the window the owner is on: the
+        // refusal it asserts is absent is restored by anything else taking the foreground, which
+        // would turn an interrupted run into the exact failure the test exists to catch.
+        focus.RequireTheDashboardStillHasTheKeyboard("the lifted refusal was read back");
+
         Assert.IsFalse(Win32Window.HasExtendedStyle(handle, Win32Window.WsExNoActivate));
 
         // Whatever the owner turns to next takes the foreground, and the overlay must let go.

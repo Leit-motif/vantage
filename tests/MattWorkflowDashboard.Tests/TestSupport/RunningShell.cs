@@ -16,6 +16,7 @@ public sealed class RunningShell : IDisposable
     private readonly DashboardWindow _window;
     private readonly TrayIcon _tray;
     private readonly ShellController _controller;
+    private int _deactivations;
     private bool _disposed;
 
     private RunningShell(DashboardWindow window, TrayIcon tray, ShellController controller)
@@ -33,6 +34,15 @@ public sealed class RunningShell : IDisposable
     public int SettingsWindowRequests { get; private set; }
 
     public int LogsRequests { get; private set; }
+
+    /// <summary>
+    /// How many times Windows has taken the keyboard away from the shell. This is the honest
+    /// signal that the machine was in use during a test that needed the dashboard in front:
+    /// asking who holds the foreground answers only for the instant it is asked, and by then the
+    /// shell has already reacted to having lost it — the no-activate refusal it restores on
+    /// deactivation is exactly what such a test goes on to assert about.
+    /// </summary>
+    public int Deactivations => Volatile.Read(ref _deactivations);
 
     public DashboardWindow Window => _window;
 
@@ -57,6 +67,8 @@ public sealed class RunningShell : IDisposable
             var controller = new ShellController(window, tray, viewModel, settings, startup, () => shell.SettingsSaves++);
 
             shell = new RunningShell(window, tray, controller);
+
+            window.Deactivated += (_, _) => Interlocked.Increment(ref shell._deactivations);
 
             controller.SettingsRequested += () => shell.SettingsWindowRequests++;
             controller.LogsRequested += () => shell.LogsRequests++;
