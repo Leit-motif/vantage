@@ -1,0 +1,85 @@
+{
+  "commit": "c7d885d2d1f58a25d60fafb60983804c2afbf190",
+  "recordedUtc": "2026-07-31T15:54:57.6219703Z",
+  "ticket": 6,
+  "ownerApproval": "Frames captured and committed with the owner explicitly approving each one before commit.",
+  "data": {
+    "source": "Sanitized fixture, built by tools/VisualFixture/New-VisualFixture.ps1",
+    "workspaceRoot": "C:\\Users\\Public\\mwd-visual-fixture\\workspaces",
+    "note": "Under the public profile on purpose: the expanded layout prints a project path, and a fixture under a personal profile would put the account name into every wide frame.",
+    "projectsDiscovered": 5,
+    "privateDataInFrames": "none - no real project, repository, path or account name appears"
+  },
+  "appearance": {
+    "theme": "Dark",
+    "surfaceOpacityPercentSetting": 80,
+    "surfaceOpacityMeasuredFromFrame": 0.793,
+    "measurementMethod": "Two bands of the same target content, one under the overlay base surface and one beside it: (1-alpha) = (inside range) / (outside range). Residual against the 80% setting is sRGB gamma and 8-bit rounding.",
+    "surfaceColor": "#FF121213",
+    "neutralCharcoalNotBlueGlass": true
+  },
+  "display": {
+    "windows": "Microsoft Windows 11 Pro 10.0.26200 (build 26200)",
+    "device": "\\\\.\\DISPLAY1",
+    "physical": "3440x1440",
+    "scalePercent": 125,
+    "dpiScale": 1.25
+  },
+  "targets": {
+    "ordinaryApplication": {
+      "application": "VLC media player, showing a generated neutral backdrop",
+      "rectPhysical": "(0,0)-(3440,1400)",
+      "style": "0x96CF0000",
+      "wsCaption": true,
+      "note": "A titled, ordinary desktop window."
+    },
+    "borderlessWindowed": {
+      "application": "VLC media player in fullscreen",
+      "rectPhysical": "(0,0)-(3440,1440)",
+      "style": "0x96080000",
+      "wsCaption": false,
+      "wsPopup": true,
+      "note": "Caption cleared, popup set, covering the whole display - a borderless-windowed target."
+    }
+  },
+  "frames": [
+    {
+      "file": "frames/01-compact-over-application.png",
+      "layout": "compact",
+      "logical": "380x520",
+      "target": "ordinaryApplication",
+      "shows": "Idle, Ready and In progress state labels with their icons and accents; pipeline segments; the target legible through the surface"
+    },
+    {
+      "file": "frames/02-expanded-over-application.png",
+      "layout": "expanded",
+      "logical": "720x520",
+      "target": "ordinaryApplication",
+      "shows": "Two-pane hierarchy with the detail pane - next action, efforts, recent activity, diagnostics - and all four active state labels in one frame"
+    },
+    {
+      "file": "frames/03-compact-over-borderless-windowed.png",
+      "layout": "compact",
+      "logical": "380x520",
+      "target": "borderlessWindowed",
+      "shows": "Topmost over a borderless-windowed application"
+    },
+    {
+      "file": "frames/04-narrow-over-borderless-windowed.png",
+      "layout": "narrow",
+      "logical": "320x520",
+      "target": "borderlessWindowed",
+      "shows": "Responsive narrow hierarchy: the filter chips wrap to a second row and pipeline stage labels truncate"
+    }
+  ],
+  "observations": [
+    "Content layers stay legible independently of the base surface: the cards are opaque enough to read while the base surface is not.",
+    "Accents are a third cue only - each row carries a written state label and a glyph as well as colour.",
+    "Every frame carries a 'Diagnostics 5' badge because the fixture uses the status 'Idle', which the parser does not recognise. That is the fixture's doing, not the product's, and the frames were approved with it visible.",
+    "Frames are captured from the composited screen rather than rendered from the window visual tree, because what sits behind a translucent surface is not part of the window and the ticket is about exactly that."
+  ],
+  "notClaimed": [
+    "Exclusive-fullscreen applications and other topmost windows. The overlay makes no claim over either, and none was tested.",
+    "Any display scale other than 125%, and any theme other than Dark."
+  ]
+}

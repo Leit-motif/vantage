@@ -1,9 +1,9 @@
 # Runtime acceptance
 
-Three records, each answering a question the fixtures cannot: whether the dashboard stays
-read-only against the owner's real workspaces, whether the test suite stays off the owner's
-keyboard, and what the running shell does when Windows itself moves underneath it. All are made on
-the live machine, and all record their evidence here.
+Four records, each answering a question the fixtures cannot: whether the dashboard stays read-only
+against the owner's real workspaces, whether the test suite stays off the owner's keyboard, what
+the running shell does when Windows itself moves underneath it, and what the overlay actually looks
+like on a real desktop. All are made on the live machine, and all record their evidence here.
 
 ---
 
@@ -239,3 +239,50 @@ known state.
 Windows app light/dark mode; a Windows contrast theme; the display scale on `\.\DISPLAY1`; the
 dashboard's Run value; and — from the mis-aimed first attempt — the dashboard's own theme and
 surface opacity. Every one was restored, and the file records each with its restoration.
+
+---
+
+# The runtime frames
+
+`visual-acceptance.json` and `frames/` are the evidence for ticket #6: the built overlay
+photographed on the real desktop at the confirmed default of 80% opacity, rather than inferred
+from a mockup or from the window's own visual tree.
+
+The distinction matters more than it sounds. `--capture` renders the window's visual tree, which
+cannot show what sits behind a translucent surface, because what sits behind it is not part of the
+window. These frames are cut out of the composited screen instead, so the surface is photographed
+doing the one thing the ticket is about.
+
+## Reproducing it
+
+```bash
+pwsh tools/VisualFixture/New-VisualFixture.ps1
+dotnet run -c Release --project src/MattWorkflowDashboard.App -- --state "$env:PUBLIC/mwd-visual-fixture/state"
+pwsh tools/VisualFixture/Save-Frame.ps1 -Rect 725,113,775,950 -Path frame.png
+```
+
+The fixture is invented and lives under the **public** profile, not the owner's. The expanded
+layout prints a project's full path in its detail pane, so a fixture under a personal profile would
+put the account name into every wide frame — which is the one thing these frames must not carry.
+`--state` keeps the run's settings, cache and logs out of the owner's own dashboard state.
+
+## What the frames show
+
+Compact, expanded, and narrow, over an ordinary titled window and over a borderless-windowed one.
+The target's window style is recorded beside each frame rather than argued from the picture:
+`WS_CAPTION` set at `0x96CF0000` for the ordinary case, cleared at `0x96080000` with `WS_POPUP` set
+and the whole display covered for the borderless one.
+
+The opacity is measured rather than asserted. Comparing the same target content under the base
+surface against the same content beside it gives **79.3%** against a setting of 80%, the residual
+being sRGB gamma and 8-bit rounding. A frame that merely came from a run configured at 80% would
+prove the configuration; this proves the pixels.
+
+## What is deliberately not claimed
+
+Exclusive-fullscreen applications and other topmost windows — the overlay makes no promise about
+either, and neither was tested. Only 125% scaling and only the Dark palette were photographed.
+
+Every frame also carries a `Diagnostics 5` badge, because the fixture uses the status `Idle`, which
+the parser does not recognise. That is the fixture's doing rather than the product's, and the frames
+were approved with it visible rather than quietly re-shot.

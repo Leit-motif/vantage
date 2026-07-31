@@ -17,13 +17,17 @@
 .PARAMETER Root
   Where the fixture workspace is created. Removed and rebuilt on each run.
 
+  It defaults under the public profile rather than the owner's, because the expanded layout prints
+  a project's full path in its detail pane. A fixture under a personal profile would put the
+  owner's account name into every wide frame, which is the one thing these frames must not carry.
+
 .PARAMETER StateDirectory
   Where the fixture's own settings, cache, and logs live. Must not be the owner's real state.
 #>
 [CmdletBinding()]
 param(
-    [string] $Root = (Join-Path $env:TEMP 'mwd-visual-fixture\workspaces'),
-    [string] $StateDirectory = (Join-Path $env:TEMP 'mwd-visual-fixture\state')
+    [string] $Root = (Join-Path $env:PUBLIC 'mwd-visual-fixture\workspaces'),
+    [string] $StateDirectory = (Join-Path $env:PUBLIC 'mwd-visual-fixture\state')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -88,34 +92,41 @@ function New-FixtureProject {
 if (Test-Path $Root) { Remove-Item $Root -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $Root | Out-Null
 
+# `Type` is what drives the pipeline segments — `Stage` is read but does not group them — so the
+# types below are chosen to exercise the whole pipeline rather than collapsing into one segment.
 New-FixtureProject -Name 'harbour-lantern' -Effort 'lantern-rewrite' -Tickets @(
-    @{ Title = 'Chart the signal path';        Status = 'Complete';    Stage = 'Research' }
-    @{ Title = 'Grill the retention model';    Status = 'Complete';    Stage = 'Grill' }
-    @{ Title = 'Prototype the lamp housing';   Status = 'Complete';    Stage = 'Prototype' }
-    @{ Title = 'Build the keeper schedule';    Status = 'In progress'; Stage = 'Build' }
-    @{ Title = 'Tune the beam interval';       Status = 'Ready';       Stage = 'Build' }
-    @{ Title = 'Publish the keeper handbook';  Status = 'Ready';       Stage = 'Build' }
+    @{ Title = 'Chart the signal path';        Status = 'Complete';    Type = 'research';  Stage = 'Research' }
+    @{ Title = 'Grill the retention model';    Status = 'Complete';    Type = 'grill';     Stage = 'Grill' }
+    @{ Title = 'Prototype the lamp housing';   Status = 'Complete';    Type = 'prototype'; Stage = 'Prototype' }
+    @{ Title = 'Build the keeper schedule';    Status = 'In progress'; Type = 'feature';   Stage = 'Build' }
+    @{ Title = 'Tune the beam interval';       Status = 'Ready';       Type = 'feature';   Stage = 'Build' }
+    @{ Title = 'Review the keeper handbook';   Status = 'Ready';       Type = 'review';    Stage = 'Review' }
+    @{ Title = 'Ship the first light';         Status = 'Ready';       Type = 'release';   Stage = 'Release' }
 )
 
 New-FixtureProject -Name 'copper-kettle' -Effort 'kettle-intake' -Tickets @(
-    @{ Title = 'Describe the intake shape';    Status = 'Ready';       Stage = 'Research' }
-    @{ Title = 'Name the pouring states';      Status = 'Ready';       Stage = 'Research' }
+    @{ Title = 'Describe the intake shape';    Status = 'Ready';       Type = 'research';  Stage = 'Research' }
+    @{ Title = 'Name the pouring states';      Status = 'Ready';       Type = 'prototype'; Stage = 'Prototype' }
+    @{ Title = 'Fit the pouring spout';        Status = 'Ready';       Type = 'feature';   Stage = 'Build' }
 )
 
 New-FixtureProject -Name 'paper-anemone' -Effort 'anemone-drift' -Tickets @(
-    @{ Title = 'Settle the drift vocabulary';  Status = 'Complete';    Stage = 'Research' }
-    @{ Title = 'Model the tidal window';       Status = 'Blocked';     Stage = 'Prototype'; BlockedBy = 'Settle the drift vocabulary'; Labels = 'needs-decision' }
-    @{ Title = 'Wire the drift telemetry';     Status = 'Blocked';     Stage = 'Build';     BlockedBy = 'Model the tidal window' }
+    @{ Title = 'Settle the drift vocabulary';  Status = 'Complete';    Type = 'research';  Stage = 'Research' }
+    @{ Title = 'Model the tidal window';       Status = 'Blocked';     Type = 'prototype'; Stage = 'Prototype'; BlockedBy = 'Settle the drift vocabulary'; Labels = 'needs-decision' }
+    @{ Title = 'Wire the drift telemetry';     Status = 'Blocked';     Type = 'feature';   Stage = 'Build';     BlockedBy = 'Model the tidal window' }
+    @{ Title = 'Audit the drift readings';     Status = 'Blocked';     Type = 'review';    Stage = 'Review';    BlockedBy = 'Wire the drift telemetry' }
 )
 
 New-FixtureProject -Name 'salt-marsh-atlas' -Effort 'atlas-first-pass' -Tickets @(
-    @{ Title = 'Survey the marsh sections';    Status = 'Complete';    Stage = 'Research' }
-    @{ Title = 'Draw the section plates';      Status = 'Complete';    Stage = 'Prototype' }
-    @{ Title = 'Bind the first pass';          Status = 'Complete';    Stage = 'Build' }
+    @{ Title = 'Survey the marsh sections';    Status = 'Complete';    Type = 'research';  Stage = 'Research' }
+    @{ Title = 'Draw the section plates';      Status = 'Complete';    Type = 'prototype'; Stage = 'Prototype' }
+    @{ Title = 'Bind the first pass';          Status = 'Complete';    Type = 'feature';   Stage = 'Build' }
+    @{ Title = 'Release the first pass';       Status = 'Complete';    Type = 'release';   Stage = 'Release' }
 )
 
 New-FixtureProject -Name 'tin-whistle-registry' -Effort 'whistle-catalogue' -Tickets @(
-    @{ Title = 'Collect the whistle makers';   Status = 'Idle';        Stage = 'Research' }
+    @{ Title = 'Collect the whistle makers';   Status = 'Idle';        Type = 'research';  Stage = 'Research' }
+    @{ Title = 'Catalogue the bore sizes';     Status = 'Idle';        Type = 'feature';   Stage = 'Build' }
 )
 
 # The state directory the app is pointed at. Roots names only the fixture tree, and GitHub
