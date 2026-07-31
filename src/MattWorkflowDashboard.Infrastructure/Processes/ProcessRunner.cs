@@ -35,13 +35,23 @@ public sealed class BoundedProcessRunner : IProcessRunner, IDisposable
 {
     private readonly SemaphoreSlim _slots;
     private readonly TimeSpan _timeout;
+    private readonly IReadOnlyDictionary<string, string?> _environment;
     private int _running;
     private int _peak;
 
-    public BoundedProcessRunner(int maxConcurrent, TimeSpan timeout)
+    /// <param name="environment">
+    /// Extra environment for every child, applied after the runner's own settings. A null value
+    /// removes the variable, which is how a tool can be asked to run without a credential it would
+    /// otherwise inherit.
+    /// </param>
+    public BoundedProcessRunner(
+        int maxConcurrent,
+        TimeSpan timeout,
+        IReadOnlyDictionary<string, string?>? environment = null)
     {
         _slots = new SemaphoreSlim(Math.Max(1, maxConcurrent));
         _timeout = timeout;
+        _environment = environment ?? new Dictionary<string, string?>();
     }
 
     /// <summary>
@@ -111,6 +121,18 @@ public sealed class BoundedProcessRunner : IProcessRunner, IDisposable
         startInfo.Environment["GH_NO_UPDATE_NOTIFIER"] = "1";
         startInfo.Environment["GH_PROMPT_DISABLED"] = "1";
         startInfo.Environment["NO_COLOR"] = "1";
+
+        foreach (var (name, value) in _environment)
+        {
+            if (value is null)
+            {
+                startInfo.Environment.Remove(name);
+            }
+            else
+            {
+                startInfo.Environment[name] = value;
+            }
+        }
 
         using var process = new Process { StartInfo = startInfo };
 

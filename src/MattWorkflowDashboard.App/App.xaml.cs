@@ -6,6 +6,7 @@ using MattWorkflowDashboard.App.Shell;
 using MattWorkflowDashboard.App.ViewModels;
 using MattWorkflowDashboard.App.Views;
 using MattWorkflowDashboard.Infrastructure;
+using MattWorkflowDashboard.Infrastructure.Acceptance;
 using MattWorkflowDashboard.Infrastructure.Logging;
 using MattWorkflowDashboard.Infrastructure.Persistence;
 using MattWorkflowDashboard.Infrastructure.Processes;
@@ -31,6 +32,9 @@ public partial class App : Application
 
     private const int ExitCodeAlreadyRunning = 2;
 
+    /// <summary>Something the run was supposed to leave alone did not survive it.</summary>
+    private const int ExitCodeAcceptanceViolated = 3;
+
     private SingleInstanceGuard? _instance;
     private Logger? _logger;
     private AppPaths _paths = null!;
@@ -53,6 +57,14 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Before the instance guard: an acceptance run observes the same roots the running
+        // dashboard does, and has no business displacing it or being displaced by it.
+        if (Argument(e.Args, "--acceptance") is { } acceptanceDirectory)
+        {
+            _ = RunAcceptanceAsync(acceptanceDirectory, Argument(e.Args, "--stamp") ?? "unstamped");
+            return;
+        }
+
         // One overlay, one indexer: a second instance would compete for the same cache.
         _instance = new SingleInstanceGuard();
 
@@ -132,6 +144,53 @@ public partial class App : Application
         {
             _ = CaptureFramesAsync(e.Args[captureIndex + 1]);
         }
+    }
+
+    private static string? Argument(string[] args, string name)
+    {
+        var index = Array.FindIndex(args, a => a.Equals(name, StringComparison.OrdinalIgnoreCase));
+        return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
+    }
+
+    /// <summary>
+    /// Development-only: reads the owner's real configuration, scans the real roots read-only, and
+    /// writes the sanitized evidence that nothing it observed was changed. No UI is built.
+    /// <para>
+    /// The dashboard's own state for this run lives under the output directory rather than under
+    /// <c>%LOCALAPPDATA%</c>, so an acceptance run leaves the owner's settings, cache, and logs as
+    /// untouched as it leaves their workspaces. The roots and registry intent it reads are the real
+    /// ones; only the writing end is redirected.
+    /// </para>
+    /// </summary>
+    private async Task RunAcceptanceAsync(string outputDirectory, string commit)
+    {
+        var exitCode = 0;
+
+        try
+        {
+            Directory.CreateDirectory(outputDirectory);
+
+            var settings = new SettingsStore(new AppPaths()).Load().Settings;
+            var run = new ReadOnlyAcceptanceRun(
+                settings,
+                new AppPaths(Path.Combine(outputDirectory, "state")),
+                commit);
+
+            var report = await run.ExecuteAsync(CancellationToken.None);
+
+            await File.WriteAllTextAsync(
+                Path.Combine(outputDirectory, "acceptance-report.json"),
+                ReadOnlyAcceptanceRun.Serialize(report));
+
+            exitCode = report.NothingWasChanged ? 0 : ExitCodeAcceptanceViolated;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            await Console.Error.WriteLineAsync($"The acceptance run could not complete: {ex.Message}");
+            exitCode = ExitCodeAcceptanceViolated;
+        }
+
+        Shutdown(exitCode);
     }
 
     /// <summary>
