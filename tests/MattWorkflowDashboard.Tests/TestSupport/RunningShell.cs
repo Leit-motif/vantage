@@ -53,18 +53,30 @@ public sealed class RunningShell : IDisposable
     /// <summary>The real window handle Windows knows this shell by.</summary>
     public nint Handle => WpfTestHost.Run(() => WindowInterop.HandleOf(_window));
 
+    /// <param name="save">
+    /// What the shell's request to persist settings actually does. Counted either way; supply a
+    /// real <see cref="SettingsStore"/> write when the test is about what survives the session,
+    /// because only a completed save records which revision it captured.
+    /// </param>
     public static RunningShell Start(
         DashboardViewModel viewModel,
         DashboardSettings settings,
-        StartupRegistration startup)
+        StartupRegistration startup,
+        Action? save = null)
     {
         RunningShell shell = null!;
 
         WpfTestHost.Run(() =>
         {
-            var window = new DashboardWindow(viewModel, settings, () => shell.SettingsSaves++);
+            void Save()
+            {
+                shell.SettingsSaves++;
+                save?.Invoke();
+            }
+
+            var window = new DashboardWindow(viewModel, settings, Save);
             var tray = new TrayIcon();
-            var controller = new ShellController(window, tray, viewModel, settings, startup, () => shell.SettingsSaves++);
+            var controller = new ShellController(window, tray, viewModel, settings, startup, Save);
 
             shell = new RunningShell(window, tray, controller);
 
@@ -105,8 +117,59 @@ public sealed class RunningShell : IDisposable
     public IReadOnlyList<string> TrayCommands() => WpfTestHost.Run(() =>
         (IReadOnlyList<string>)TrayItems().Select(i => i.Text ?? string.Empty).ToList());
 
+    /// <summary>
+    /// Moves the running window, as the owner's drag does. The drag itself cannot be performed
+    /// here — the suite's windows are on a desktop with no pointer, see <see cref="IsolatedDesktop"/>
+    /// — but what the shell answers is the same thing either way: the window's own
+    /// <c>LocationChanged</c>, raised once per step of the movement.
+    /// </summary>
+    public void MoveTo(double left, double top)
+    {
+        WpfTestHost.Run(() =>
+        {
+            _window.Left = left;
+            _window.Top = top;
+        });
+
+        Pump();
+    }
+
     /// <summary>Lets queued shell work — showing, restyling, restoring geometry — actually run.</summary>
     public static void Pump() => WpfTestHost.Drain();
+
+    /// <summary>
+    /// Keeps the shell running for a while. Not everything it does is immediate: the geometry
+    /// write deliberately waits for a move to stop, so a test that read straight after the move
+    /// would be reading the pause rather than the result.
+    /// </summary>
+    public static void PumpFor(TimeSpan duration)
+    {
+        var deadline = Environment.TickCount64 + (long)duration.TotalMilliseconds;
+
+        while (Environment.TickCount64 < deadline)
+        {
+            Thread.Sleep(20);
+            Pump();
+        }
+    }
+
+    /// <summary>Keeps the shell running until something it does on its own has happened.</summary>
+    public static void PumpUntil(Func<bool> done, TimeSpan within)
+    {
+        var deadline = Environment.TickCount64 + (long)within.TotalMilliseconds;
+
+        while (!done() && Environment.TickCount64 < deadline)
+        {
+            Thread.Sleep(20);
+            Pump();
+        }
+    }
+
+    /// <summary>
+    /// Waits out any geometry write the shell already had outstanding, so a test about the next
+    /// one starts from a shell with nothing in flight rather than in the middle of it.
+    /// </summary>
+    public void LetGeometrySettle() => PumpFor(DashboardWindow.GeometrySettleDelay * 3);
 
     private ToolStripMenuItem? TrayItem(string text) =>
         TrayItems().FirstOrDefault(i => string.Equals(i.Text, text, StringComparison.Ordinal));

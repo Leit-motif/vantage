@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using MattWorkflowDashboard.App.Shell;
 using MattWorkflowDashboard.App.ViewModels;
 using MattWorkflowDashboard.Infrastructure.Settings;
@@ -15,9 +16,19 @@ namespace MattWorkflowDashboard.App.Views;
 /// </summary>
 public partial class DashboardWindow : Window
 {
+    /// <summary>
+    /// How long a move or a resize has to stop for before where it ended up is written. A drag
+    /// raises <see cref="Window.LocationChanged"/> for every frame of the movement and each save
+    /// rewrites the settings file and swaps it into place, so the write follows the gesture rather
+    /// than each frame of it. Long enough to coalesce a drag, short enough that a crash between
+    /// the gesture and the write loses only the last moment of it.
+    /// </summary>
+    public static readonly TimeSpan GeometrySettleDelay = TimeSpan.FromMilliseconds(750);
+
     private readonly DashboardViewModel _viewModel;
     private readonly DashboardSettings _settings;
     private readonly Action _saveSettings;
+    private readonly DispatcherTimer _geometrySettling;
     private bool _reallyExiting;
 
     public DashboardWindow(DashboardViewModel viewModel, DashboardSettings settings, Action saveSettings)
@@ -28,6 +39,12 @@ public partial class DashboardWindow : Window
 
         InitializeComponent();
         DataContext = viewModel;
+
+        _geometrySettling = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = GeometrySettleDelay,
+        };
+        _geometrySettling.Tick += (_, _) => FlushGeometry();
 
         SourceInitialized += OnSourceInitialized;
         LocationChanged += (_, _) => PersistGeometry();
@@ -65,6 +82,11 @@ public partial class DashboardWindow : Window
 
     public void ExitForReal()
     {
+        // The session is ending, so a move or resize still waiting out its settling delay has no
+        // later to be written at. This is the one path that reliably runs before the window goes
+        // away; the application saves again on the way out for the ways it does not.
+        FlushGeometry();
+
         _reallyExiting = true;
         Close();
     }
@@ -171,6 +193,11 @@ public partial class DashboardWindow : Window
         Top = top;
     }
 
+    /// <summary>
+    /// Records where the window now is. This only reaches settings.json through
+    /// <see cref="FlushGeometry"/>: it is raised for every frame of a drag, and the owner's
+    /// position would otherwise cost one rewrite-and-swap of the settings file per frame.
+    /// </summary>
     private void PersistGeometry()
     {
         if (!IsLoaded || WindowState != WindowState.Normal)
@@ -179,6 +206,8 @@ public partial class DashboardWindow : Window
         }
 
         var geometry = _settings.Ui.Geometry;
+        var before = Describe(geometry);
+
         geometry.Left = Left;
         geometry.Top = Top;
         geometry.Height = Height;
@@ -199,6 +228,41 @@ public partial class DashboardWindow : Window
         geometry.DpiScale = scale;
         geometry.MonitorDeviceName = System.Windows.Forms.Screen
             .FromPoint(new System.Drawing.Point((int)(Left * scale), (int)(Top * scale))).DeviceName;
+
+        // Layout raises these events for reasons that leave the geometry exactly as it was — the
+        // first arrange of the session among them. Only a real move or resize is worth a write.
+        if (Describe(geometry) == before)
+        {
+            return;
+        }
+
+        _settings.MarkChanged();
+
+        // Restarted rather than left running: the delay is measured from the last change, so a
+        // drag that keeps going keeps pushing the write out ahead of it.
+        _geometrySettling.Stop();
+        _geometrySettling.Start();
+    }
+
+    /// <summary>Everything about a saved geometry that a move or a resize can change.</summary>
+    private static (double?, double?, double, double, double, double?, string?) Describe(WindowGeometry geometry) =>
+        (geometry.Left, geometry.Top, geometry.Height, geometry.CompactWidth, geometry.ExpandedWidth,
+            geometry.DpiScale, geometry.MonitorDeviceName);
+
+    /// <summary>
+    /// Writes the geometry the window has come to rest at, if anything is outstanding. Asking the
+    /// settings rather than the timer is what makes this safe to call from either end: a save the
+    /// owner triggered some other way in the meantime — click-through, the settings window — has
+    /// already carried the position, and there is nothing left to write.
+    /// </summary>
+    private void FlushGeometry()
+    {
+        _geometrySettling.Stop();
+
+        if (_settings.HasUnsavedChanges)
+        {
+            _saveSettings();
+        }
     }
 
     /// <summary>Re-applies the size the owner chose for the mode they just switched into.</summary>
