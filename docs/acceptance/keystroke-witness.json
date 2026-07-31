@@ -1,0 +1,11 @@
+{
+  "StartedUtc": "2026-07-31T12:50:13.8199051+00:00",
+  "Stamp": "d12a93b0d90cad3dbd5fd53193757222723f7c4d",
+  "Command": "dotnet test tests/MattWorkflowDashboard.Tests --configuration Release --no-build",
+  "CommandExitCode": 0,
+  "WatchedSeconds": 49.4,
+  "ControlObserved": true,
+  "SyntheticKeystrokes": [],
+  "RealKeyEventsSeenAndDiscarded": 1,
+  "Verdict": "clean: nothing synthetic reached the interactive desktop"
+}

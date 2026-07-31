@@ -73,6 +73,12 @@ against.
 linked into the test assembly again, and if the host thread is ever found sharing the input
 desktop.
 
+**Watched from outside.** None of the above is taken on trust. `tools/KeystrokeWitness` hooks the
+interactive desktop and watches a full suite run from the other side, calibrated first against a
+keystroke it must be able to see. The evidence is in
+[docs/acceptance](acceptance/README.md#the-keystroke-witness): zero synthetic keystrokes across 224
+tests, on a machine that was in use at the time.
+
 ## What is no longer proven
 
 This is the part worth being blunt about. The tests are safe now, and they prove less than they
