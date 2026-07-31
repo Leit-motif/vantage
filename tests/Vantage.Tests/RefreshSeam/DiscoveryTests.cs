@@ -35,6 +35,29 @@ public sealed class DiscoveryTests
         Assert.IsFalse(snapshot.Projects[0].GitAvailable, "A non-repository should report Git as unavailable, not fail.");
     }
 
+    /// <summary>
+    /// A fresh install must not walk a directory nobody named. The shipped default is empty, and the
+    /// first refresh has to say so rather than presenting an empty dashboard as a finished scan.
+    /// </summary>
+    [TestMethod]
+    public async Task A_fresh_install_scans_nothing_and_says_why()
+    {
+        Assert.AreEqual(
+            0,
+            new DashboardSettings().Roots.Count,
+            "The shipped default must not name a directory on the author's machine.");
+
+        _workspace.NewProject("would-have-been-found");
+        _harness.Settings.Roots.Clear();
+
+        var snapshot = await _harness.RefreshAsync();
+
+        Assert.AreEqual(0, snapshot.Projects.Count);
+        Assert.IsTrue(
+            snapshot.Diagnostics.Any(d => d.Code == Core.DiagnosticCode.NoRootsConfigured),
+            "Scanning nothing has to be explained, not shown as an empty workspace.");
+    }
+
     [TestMethod]
     public async Task Recognizes_every_candidate_marker()
     {

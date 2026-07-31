@@ -95,6 +95,14 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
         var scanned = 0;
         var truncated = false;
 
+        if (settings.Roots.Count == 0)
+        {
+            diagnostics.Add(Diagnostic.Info(
+                DiagnosticCode.NoRootsConfigured,
+                "No roots are configured, so nothing was scanned. Add one under Settings → Projects.",
+                "settings.Roots"));
+        }
+
         foreach (var root in settings.Roots)
         {
             cancellationToken.ThrowIfCancellationRequested();

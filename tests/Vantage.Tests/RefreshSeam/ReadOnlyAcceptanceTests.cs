@@ -107,7 +107,7 @@ public sealed class ReadOnlyAcceptanceTests
     public async Task A_refusal_records_what_was_attempted_without_recording_the_workspace()
     {
         var runner = new ReadOnlyProcessRunner(new FakeProcessRunner());
-        var secret = @"C:\Users\Example\Workspaces\a-private-client-project";
+        var secret = @"C:\Users\someone\Workspaces\a-private-client-project";
 
         await runner.RunAsync("git", ["-C", secret, "commit", "-m", "in " + secret], null, CancellationToken.None);
 

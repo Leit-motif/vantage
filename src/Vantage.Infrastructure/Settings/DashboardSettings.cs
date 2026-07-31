@@ -118,11 +118,12 @@ public sealed class DashboardSettings
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
-    public List<string> Roots { get; set; } =
-    [
-        @"C:\Users\Example\Workspaces",
-        @"D:\Projects",
-    ];
+    /// <summary>
+    /// Empty on a fresh install. There is no directory this application can guess correctly, and a
+    /// guess that happens to exist would be walked without the owner ever having named it. The first
+    /// refresh reports that nothing is configured; <c>Settings → Projects</c> is where roots are added.
+    /// </summary>
+    public List<string> Roots { get; set; } = [];
 
     public List<ProjectRegistryEntry> Projects { get; set; } = [];
 
