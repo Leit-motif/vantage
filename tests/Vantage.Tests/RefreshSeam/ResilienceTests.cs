@@ -272,6 +272,27 @@ public sealed class ResilienceTests
     }
 
     [TestMethod]
+    public void A_settings_file_written_before_the_ribbon_opens_in_the_view_its_owner_left()
+    {
+        var paths = new AppPaths(Path.Combine(_workspace.Root, "appdata"));
+        paths.EnsureCreated();
+        File.WriteAllText(
+            paths.SettingsFile,
+            """{ "SchemaVersion": 1, "Ui": { "StartCompact": false, "SurfaceOpacityPercent": 55 } }""");
+
+        var store = new SettingsStore(paths);
+        var migrated = store.Load().Settings;
+
+        Assert.AreEqual(DashboardViewMode.Expanded, migrated.Ui.ViewMode, "The old flag still chooses the view.");
+        Assert.AreEqual(55, migrated.Ui.SurfaceOpacityPercent, "Nothing else about the file changes.");
+
+        store.Save(migrated);
+        Assert.IsFalse(
+            File.ReadAllText(paths.SettingsFile).Contains("StartCompact", StringComparison.Ordinal),
+            "The superseded flag is not written back once the mode has been read out of it.");
+    }
+
+    [TestMethod]
     public void Settings_round_trip_through_an_atomic_write()
     {
         var paths = new AppPaths(Path.Combine(_workspace.Root, "appdata"));

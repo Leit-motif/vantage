@@ -1,5 +1,6 @@
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
+using Vantage.Infrastructure.Settings;
 
 namespace Vantage.App.Shell;
 
@@ -78,10 +79,19 @@ public sealed class TrayIcon : IDisposable
 
     public event Action? ExitRequested;
 
-    public void UpdateState(bool visible, bool expanded, bool clickThrough, bool launchAtSignIn)
+    public void UpdateState(bool visible, DashboardViewMode mode, bool clickThrough, bool launchAtSignIn)
     {
         _showHide.Text = visible ? "Hide" : "Show";
-        _compactExpand.Text = expanded ? "Compact" : "Expand";
+
+        // Named for what the command does next rather than for the mode it is in. From the ribbon
+        // that is not a step in the cycle but a way back out of it, and the label has to say so.
+        _compactExpand.Text = mode switch
+        {
+            DashboardViewMode.Ribbon => "Open the dashboard",
+            DashboardViewMode.Expanded => "Compact",
+            _ => "Expand",
+        };
+
         _clickThrough.Checked = clickThrough;
         _launchAtSignIn.Checked = launchAtSignIn;
     }

@@ -93,6 +93,15 @@ public sealed class SettingsStore(AppPaths paths)
             return settings;
         }
 
+        // Before the ribbon there were two views and one flag to choose between them. Keyed off the
+        // flag rather than off the schema version: the flag is only ever written by a build that
+        // predates modes, so its presence identifies the file more reliably than a version does.
+        if (settings.Ui.StartCompact is { } startCompact)
+        {
+            settings.Ui.ViewMode = startCompact ? DashboardViewMode.Compact : DashboardViewMode.Expanded;
+            settings.Ui.StartCompact = null;
+        }
+
         settings.SchemaVersion = DashboardSettings.CurrentSchemaVersion;
         return settings;
     }

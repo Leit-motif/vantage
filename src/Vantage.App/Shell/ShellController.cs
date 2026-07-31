@@ -80,7 +80,10 @@ public sealed class ShellController : IDisposable
     }
 
     /// <summary>Flipping the mode is enough: the window follows the view model's own change.</summary>
-    public void ToggleExpanded() => _viewModel.IsExpanded = !_viewModel.IsExpanded;
+    public void ToggleExpanded() => _viewModel.CycleViewMode();
+
+    /// <summary>Folds the dashboard down to its one line, and back out to where the owner was.</summary>
+    public void ToggleRibbon() => _viewModel.ToggleRibbon();
 
     /// <summary>
     /// Click-through is always recoverable: the tray owns the same toggle, so the overlay can
@@ -111,13 +114,13 @@ public sealed class ShellController : IDisposable
     }
 
     public void UpdateTrayState() =>
-        _tray.UpdateState(_window.IsVisible, _viewModel.IsExpanded, _settings.Ui.ClickThrough, _startup.IsEnabled());
+        _tray.UpdateState(_window.IsVisible, _viewModel.Mode, _settings.Ui.ClickThrough, _startup.IsEnabled());
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(DashboardViewModel.IsExpanded))
+        if (e.PropertyName == nameof(DashboardViewModel.Mode))
         {
-            _window.ApplyModeWidth();
+            _window.ApplyMode();
             UpdateTrayState();
         }
 

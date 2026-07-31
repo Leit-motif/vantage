@@ -47,13 +47,78 @@ public sealed class ShellBehaviourTests
         _viewModel.IsExpanded = false;
         Assert.AreEqual(380, _viewModel.ShellWidth);
 
-        _viewModel.ToggleExpandedCommand.Execute(null);
+        _viewModel.CycleViewModeCommand.Execute(null);
         Assert.IsTrue(_viewModel.IsExpanded);
         Assert.AreEqual(720, _viewModel.ShellWidth);
+
+        // The ribbon is the compact view folded down, so it keeps that view's width: only height
+        // was ever the thing standing in the owner's way.
+        _viewModel.ToggleRibbonCommand.Execute(null);
+        Assert.AreEqual(380, _viewModel.ShellWidth);
     }
 
     [TestMethod]
-    public void The_compact_view_shows_at_most_three_rows_and_the_expanded_view_shows_them_all()
+    public void The_ribbon_carries_one_project_and_the_chevron_puts_the_owner_back_where_they_were()
+    {
+        SixProjects();
+
+        _viewModel.Filter = DashboardFilter.AllRemaining;
+        Refresh();
+
+        _viewModel.Mode = DashboardViewMode.Expanded;
+        _viewModel.ToggleRibbonCommand.Execute(null);
+
+        Assert.AreEqual(DashboardViewMode.Ribbon, _viewModel.Mode);
+        Assert.AreEqual(1, _viewModel.VisibleProjects.Count, "A ribbon is one line, so it is one project.");
+        Assert.IsTrue(_viewModel.HasRibbonProject);
+
+        _viewModel.ToggleRibbonCommand.Execute(null);
+        Assert.AreEqual(
+            DashboardViewMode.Expanded,
+            _viewModel.Mode,
+            "Coming back out of the ribbon has to land where the owner left, not at a default.");
+    }
+
+    [TestMethod]
+    public void The_ribbon_shows_the_pinned_project_ahead_of_the_one_that_moved_most_recently()
+    {
+        SixProjects();
+        _viewModel.Filter = DashboardFilter.AllRemaining;
+        Refresh();
+
+        _viewModel.Mode = DashboardViewMode.Ribbon;
+        var byRecency = _viewModel.RibbonProject;
+        Assert.IsNotNull(byRecency, "With nothing pinned the ribbon still has to say something.");
+
+        // Pin whichever project recency did not already choose, so the assertion is about the
+        // priority rule rather than about the order the fixture happened to produce.
+        var toPin = _viewModel.Projects.First(p => p.Path != byRecency.Path);
+        _settings.FindProject(toPin.Path)!.Pinned = true;
+        Refresh();
+
+        Assert.AreEqual(
+            toPin.Path,
+            _viewModel.RibbonProject?.Path,
+            "A pin is the owner naming the project that matters; recency does not outrank it.");
+        Assert.AreEqual(1, _viewModel.VisibleProjects.Count);
+    }
+
+    [TestMethod]
+    public void The_cycle_control_never_steps_into_the_ribbon_by_accident()
+    {
+        _viewModel.Mode = DashboardViewMode.Compact;
+
+        _viewModel.CycleViewModeCommand.Execute(null);
+        Assert.AreEqual(DashboardViewMode.Expanded, _viewModel.Mode);
+
+        _viewModel.CycleViewModeCommand.Execute(null);
+        Assert.AreEqual(
+            DashboardViewMode.Compact,
+            _viewModel.Mode,
+            "Looking for a different size must never fold the dashboard away.");
+    }
+
+    private void SixProjects()
     {
         for (var i = 0; i < 6; i++)
         {
@@ -61,10 +126,21 @@ public sealed class ShellBehaviourTests
             var effort = _workspace.NewEffort(project, "feature");
             _workspace.WriteTicket(effort, "001.md", Fixtures.Ticket($"Work {i}", "ready"));
         }
+    }
 
-        _viewModel.Filter = DashboardFilter.AllRemaining;
+    private void Refresh()
+    {
         _viewModel.RefreshCommand.Execute(null);
         _viewModel.RefreshCommand.ExecutionTask!.GetAwaiter().GetResult();
+    }
+
+    [TestMethod]
+    public void The_compact_view_shows_at_most_three_rows_and_the_expanded_view_shows_them_all()
+    {
+        SixProjects();
+
+        _viewModel.Filter = DashboardFilter.AllRemaining;
+        Refresh();
 
         _viewModel.IsExpanded = false;
         Assert.AreEqual(DashboardViewModel.CompactRowLimit, _viewModel.VisibleProjects.Count);

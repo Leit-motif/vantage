@@ -217,6 +217,46 @@ public sealed class RunningShellTests
         Assert.AreEqual("Compact", shell.TrayLabelStartingWith("Compact"), "The tray now offers the way back.");
     }
 
+    /// <summary>
+    /// The claim the ribbon exists to make, asked of Windows rather than of the view model: a mode
+    /// that says it is one line but leaves a 220-unit window on the desktop has not collapsed
+    /// anything. The bound is a line of body text plus the row's own padding, well under the
+    /// standard view's floor and nowhere near tight enough to be measuring the font.
+    /// </summary>
+    [TestMethod]
+    public void The_ribbon_leaves_a_window_one_line_tall_and_gives_the_owner_their_height_back()
+    {
+        _settings.Ui.Geometry.Height = 520;
+
+        using var shell = Start();
+        var handle = shell.Handle;
+        var scale = WpfTestHost.Run(() => VisualTreeHelper.GetDpi(shell.Window).DpiScaleX);
+
+        var standardHeight = Win32Window.BoundsOf(handle).Height;
+        Assert.AreEqual(520 * scale, standardHeight, 2d, "The standard view opens at the height the owner chose.");
+
+        shell.ClickTray("Expand");
+        WpfTestHost.Run(() => _viewModel.ToggleRibbon());
+        RunningShell.Pump();
+        RunningShell.PumpUntil(() => Win32Window.BoundsOf(handle).Height < standardHeight / 2, TimeSpan.FromSeconds(2));
+
+        var ribbonHeight = Win32Window.BoundsOf(handle).Height;
+        Assert.IsTrue(
+            ribbonHeight <= 44 * scale,
+            $"The ribbon has to be one line, not a small window; it measured {ribbonHeight / scale} units.");
+
+        WpfTestHost.Run(() => _viewModel.ToggleRibbon());
+        RunningShell.Pump();
+        RunningShell.PumpUntil(() => Win32Window.BoundsOf(handle).Height > ribbonHeight, TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(
+            standardHeight,
+            Win32Window.BoundsOf(handle).Height,
+            2d,
+            "Coming back out of the ribbon must restore the height they sized the window to, not the ribbon's.");
+        Assert.AreEqual(520, _settings.Ui.Geometry.Height, 0.5d, "And the ribbon's own height was never written over it.");
+    }
+
     [TestMethod]
     public void The_tray_refresh_command_actually_refreshes_the_dashboard()
     {

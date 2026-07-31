@@ -25,11 +25,19 @@ public partial class DashboardWindow : Window
     /// </summary>
     public static readonly TimeSpan GeometrySettleDelay = TimeSpan.FromMilliseconds(750);
 
+    /// <summary>
+    /// The floor for the views that show a project list — enough for the header, the filters and a
+    /// row or two. The ribbon has no floor at all: being exactly as tall as one line of text is the
+    /// thing it exists to be, and any minimum here would be a minimum on that.
+    /// </summary>
+    public const double StandardMinHeight = 220;
+
     private readonly DashboardViewModel _viewModel;
     private readonly DashboardSettings _settings;
     private readonly Action _saveSettings;
     private readonly DispatcherTimer _geometrySettling;
     private bool _reallyExiting;
+    private bool _applyingMode;
 
     public DashboardWindow(DashboardViewModel viewModel, DashboardSettings settings, Action saveSettings)
     {
@@ -167,8 +175,8 @@ public partial class DashboardWindow : Window
     private void RestoreGeometry()
     {
         var geometry = _settings.Ui.Geometry;
-        Height = geometry.Height;
-        Width = _viewModel.IsExpanded ? geometry.ExpandedWidth : geometry.CompactWidth;
+        ApplyModeSize();
+        Width = _viewModel.ShellWidth;
 
         if (geometry.Left is not { } left || geometry.Top is not { } top)
         {
@@ -200,7 +208,7 @@ public partial class DashboardWindow : Window
     /// </summary>
     private void PersistGeometry()
     {
-        if (!IsLoaded || WindowState != WindowState.Normal)
+        if (!IsLoaded || WindowState != WindowState.Normal || _applyingMode)
         {
             return;
         }
@@ -210,7 +218,14 @@ public partial class DashboardWindow : Window
 
         geometry.Left = Left;
         geometry.Top = Top;
-        geometry.Height = Height;
+
+        // The ribbon's height is its content's rather than a size the owner chose. Writing it would
+        // overwrite the height of the view they collapsed from, and they would come back out of the
+        // ribbon into a one-line-tall window.
+        if (!_viewModel.IsRibbon)
+        {
+            geometry.Height = Height;
+        }
 
         if (_viewModel.IsExpanded)
         {
@@ -218,6 +233,8 @@ public partial class DashboardWindow : Window
         }
         else
         {
+            // Compact and the ribbon share one width: the ribbon is that view folded down, and
+            // dragging either wider is the same statement about how much room this may take.
             geometry.CompactWidth = Width;
         }
 
@@ -266,13 +283,55 @@ public partial class DashboardWindow : Window
     }
 
     /// <summary>Re-applies the size the owner chose for the mode they just switched into.</summary>
-    public void ApplyModeWidth()
+    public void ApplyMode()
     {
-        Width = _viewModel.IsExpanded
-            ? _settings.Ui.Geometry.ExpandedWidth
-            : _settings.Ui.Geometry.CompactWidth;
+        // Re-shaping the window raises a size change per step of the re-shaping, and every one of
+        // those looks exactly like the owner resizing it. Held shut for the duration, so the sizes
+        // the window passes through on the way are not mistaken for a size they chose.
+        _applyingMode = true;
+        try
+        {
+            ApplyModeSize();
+            Width = _viewModel.ShellWidth;
+        }
+        finally
+        {
+            _applyingMode = false;
+        }
 
-        var (left, top) = WindowInterop.EnsureOnScreen(Left, Top, Width, Height, DpiScale);
+        // After layout rather than now: in the ribbon the height is the content's, and the content
+        // has not been measured yet. Asked here, the check would be answering about the height of
+        // the view being left rather than the one being entered.
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, KeepOnScreen);
+    }
+
+    /// <summary>
+    /// How tall the window is allowed to be in the mode it is now in. The standard views keep the
+    /// height the owner sized them to; the ribbon takes the height of its one line, which is why
+    /// the floor has to come off before the content is asked.
+    /// </summary>
+    private void ApplyModeSize()
+    {
+        if (_viewModel.IsRibbon)
+        {
+            MinHeight = 0;
+            SizeToContent = SizeToContent.Height;
+            return;
+        }
+
+        // Read before anything is touched. Restoring the floor and turning manual sizing back on
+        // each resize the window, and reading afterwards would be reading a height the window was
+        // passing through rather than the one being restored.
+        var restored = Math.Max(_settings.Ui.Geometry.Height, StandardMinHeight);
+
+        SizeToContent = SizeToContent.Manual;
+        MinHeight = StandardMinHeight;
+        Height = restored;
+    }
+
+    private void KeepOnScreen()
+    {
+        var (left, top) = WindowInterop.EnsureOnScreen(Left, Top, ActualWidth, ActualHeight, DpiScale);
         Left = left;
         Top = top;
     }

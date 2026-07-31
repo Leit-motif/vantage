@@ -183,7 +183,68 @@
       <SolidColorBrush Color="{DynamicResource SurfaceColor}" Opacity="{Binding SurfaceOpacity}" />
     </Border.Background>
 
-    <Grid Margin="10,8,10,8">
+    <Grid>
+      <!--
+        The collapsed ribbon. Not a small window but a different shape of thing: one line, one
+        project, no chrome. It carries the drag handle itself, because in this mode there is no
+        header bar left to take hold of.
+      -->
+      <Grid x:Name="RibbonRow"
+            Margin="10,5,10,5"
+            Background="Transparent"
+            MouseLeftButtonDown="OnHeaderDrag"
+            Visibility="{Binding IsRibbon, Converter={StaticResource BoolToVisibility}}"
+            AutomationProperties.Name="{Binding RibbonSummary}">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <!--
+          Glyph, name and progress are stated in full at every width. The next action is the one
+          field allowed to ellipsize, because it is the only one with no bound on its length.
+        -->
+        <Grid Grid.Column="0" DataContext="{Binding RibbonProject}"
+              Visibility="{Binding DataContext.HasRibbonProject, RelativeSource={RelativeSource AncestorType=Window},
+                                   Converter={StaticResource BoolToVisibility}}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+
+          <TextBlock Grid.Column="0" Style="{StaticResource StateIconText}" Margin="0,0,6,0"
+                     Text="{Binding StateGlyph}" ToolTip="{Binding StateReason}" />
+
+          <TextBlock Grid.Column="1" Style="{StaticResource BodyText}" FontWeight="SemiBold"
+                     VerticalAlignment="Center" TextTrimming="None"
+                     Text="{Binding Name}" ToolTip="{Binding Path}" />
+
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="10,0,10,0" VerticalAlignment="Center">
+            <TextBlock Style="{StaticResource TertiaryText}" Text="Next: " TextTrimming="None" />
+            <TextBlock Style="{StaticResource SecondaryText}" Text="{Binding NextActionText}"
+                       ToolTip="{Binding NextActionDetail}" />
+          </StackPanel>
+
+          <TextBlock Grid.Column="3" Style="{StaticResource SecondaryText}" Margin="0,0,8,0"
+                     VerticalAlignment="Center" TextTrimming="None"
+                     Text="{Binding ProgressText}" ToolTip="{Binding ProgressPercentText}" />
+        </Grid>
+
+        <TextBlock Grid.Column="0" Style="{StaticResource TertiaryText}" VerticalAlignment="Center"
+                   Text="No projects match the current filter"
+                   Visibility="{Binding HasRibbonProject, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}" />
+
+        <Button Grid.Column="1" Style="{StaticResource GlassButton}" Padding="6,1"
+                Command="{Binding ToggleRibbonCommand}"
+                AutomationProperties.Name="Open the dashboard" ToolTip="Open the dashboard">
+          <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.ChevronUp}" />
+        </Button>
+      </Grid>
+
+      <Grid x:Name="StandardView" Margin="10,8,10,8"
+            Visibility="{Binding IsStandardView, Converter={StaticResource BoolToVisibility}}">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
@@ -216,12 +277,17 @@
         </StackPanel>
 
         <StackPanel Grid.Column="1" Orientation="Horizontal">
+          <!-- Collapse is its own control, and always one click away from wherever they are. -->
+          <Button Style="{StaticResource GlassButton}" Margin="0,0,10,0" Command="{Binding ToggleRibbonCommand}"
+                  AutomationProperties.Name="Collapse to a single line" ToolTip="Collapse to a single line">
+            <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.ChevronDown}" />
+          </Button>
           <Button Style="{StaticResource GlassButton}" Command="{Binding RefreshCommand}"
                   AutomationProperties.Name="Refresh now" ToolTip="Refresh now">
             <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.Refresh}" />
           </Button>
-          <Button Style="{StaticResource GlassButton}" Margin="4,0,0,0" Command="{Binding ToggleExpandedCommand}"
-                  AutomationProperties.Name="Toggle expanded view" ToolTip="Compact / expanded">
+          <Button Style="{StaticResource GlassButton}" Margin="4,0,0,0" Command="{Binding CycleViewModeCommand}"
+                  AutomationProperties.Name="Change the view size" ToolTip="Change the view size">
             <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.Expand}" />
           </Button>
           <Button Style="{StaticResource GlassButton}" Margin="4,0,0,0" Click="OnSettingsClick"
@@ -492,6 +558,7 @@
       <TextBlock Grid.Row="4" Style="{StaticResource TertiaryText}" Margin="0,6,0,0"
                  Text="{Binding StatusLine}" TextTrimming="CharacterEllipsis"
                  AutomationProperties.Name="Refresh status" />
+    </Grid>
     </Grid>
   </Border>
 </Window>
