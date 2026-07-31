@@ -47,22 +47,17 @@ own scanning once the repository is public, where it is free.
 
 ## Findings
 
-### 1. Windows account name in git history · low · accepted, deliberately not purged
+### 1. Windows account name in git history · low · resolved by the rewrite
 
-The shipped default discovery roots were two absolute paths on the author's machine, one of them
-under `C:\Users\Example`. Both are fixed at `HEAD` — the default is now empty — but they remain in
-**62 of 71 commits**, in
-`src/…/Settings/DashboardSettings.cs` and `tests/…/RefreshSeam/ReadOnlyAcceptanceTests.cs`, and in
-the bodies of issues #1 and #10.
+The shipped default discovery roots were two absolute paths on the author's machine. Both were
+fixed at `HEAD` before the rewrite — the default is now empty — but they remained in **62 of 71**
+commits, in `src/…/Settings/DashboardSettings.cs` and
+`tests/…/RefreshSeam/ReadOnlyAcceptanceTests.cs`, and in the bodies of issues #1 and #10.
 
-The planned rewrite will not remove them, on purpose. Rewriting file *content* would leave the
-history incoherent: the commit *"fix: take the author's machine out of the shipped defaults"* would
-be fixing a value that appears nowhere in the repository it supposedly fixed. That is a worse
-artifact than the disclosure, which is a pseudonymous local account handle on one machine, in a
-repository that names its author openly in `NOTICE.md`.
-
-Rewriting commit *metadata* and deleting *unreferenced binaries* leave every claim the history makes
-intact. Editing what the historical source said does not. Only the first two are in scope.
+The tracker bodies were edited. The history was handled by the rewrite's text-replacement pass,
+which substitutes placeholder paths in file content *and* in commit messages — see
+[the rewrite section](#the-history-rewrite-as-performed) for why including commit messages is what
+made this safe to do at all.
 
 ### 2. Author email on historical commits · low · resolved by the rewrite
 
@@ -82,7 +77,8 @@ Three parts, two already done:
 ### 3. Pre-implementation concept art · resolved
 
 `docs/design/*.png` was 3.2 MB of mockups that nothing referenced, showing a dashboard that was
-imagined rather than built. Removed at `HEAD`; the blobs come out of history in the rewrite.
+imagined rather than built. Removed at `HEAD`, and the blobs purged from history by the rewrite —
+which is most of why the pack went from 3.78 MiB to 730 KiB.
 
 ### 4. Tracker threads · low · audited, publishable
 
@@ -96,7 +92,7 @@ a live workspace, which made them the most likely place for a leak. They are cle
 | Unix home paths | none |
 | Links to other repositories | one, to this repository under its old name |
 | **Names of private projects the dashboard monitors** | **none** |
-| Windows paths | the same account name, in #1 and #10 — see finding 1 |
+| Windows paths | the same account name, in #1 and #10 — edited out, see finding 1 |
 
 One comment on #5 described an unrelated hobby project of the owner's by name while establishing
 that a tree change during a live run came from outside the dashboard. It never named the project
