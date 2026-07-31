@@ -29,6 +29,13 @@ public sealed class ThemeManager(Application application, Func<bool>? highContra
                 UriKind.Absolute),
         };
 
+        if (_highContrast())
+        {
+            // The palette Windows was told to use has to win outright — including the raw colours
+            // the glass surface composes its own translucency from, which a brush cannot carry.
+            dictionary["SurfaceColor"] = System.Windows.SystemColors.WindowColor;
+        }
+
         var merged = application.Resources.MergedDictionaries;
 
         // The palette always sits first so the control styles resolve against the new colours.

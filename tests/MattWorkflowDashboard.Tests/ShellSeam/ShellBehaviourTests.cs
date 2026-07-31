@@ -99,22 +99,36 @@ public sealed class ShellBehaviourTests
         Assert.AreEqual(0.45d, _viewModel.SurfaceOpacity, 0.001);
     }
 
+    /// <summary>
+    /// Every geometry answer is in a window's own layout units, so every geometry expectation has
+    /// to be too. Reading the display's physical pixels as if they were layout units is exactly
+    /// the mistake that strands a window on a scaled display.
+    /// </summary>
+    private static (System.Windows.Rect Area, double Scale) PrimaryDisplay()
+    {
+        var scale = ScaleOfPrimaryDisplay();
+        return (WindowInterop.InDeviceIndependentUnits(System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea, scale), scale);
+    }
+
+    private static double ScaleOfPrimaryDisplay() =>
+        WpfTestHost.Run(() => System.Windows.Media.VisualTreeHelper.GetDpi(new System.Windows.Controls.Border()).DpiScaleX);
+
     [TestMethod]
     public void Geometry_from_a_monitor_that_is_gone_is_brought_back_on_screen()
     {
-        var (left, top) = WindowInterop.EnsureOnScreen(-40_000, -40_000, 380, 520);
+        var (area, scale) = PrimaryDisplay();
+        var (left, top) = WindowInterop.EnsureOnScreen(-40_000, -40_000, 380, 520, scale);
 
         Assert.IsTrue(
-            System.Windows.Forms.Screen.AllScreens.Any(s =>
-                s.WorkingArea.IntersectsWith(new System.Drawing.Rectangle((int)left, (int)top, 380, 520))),
+            area.IntersectsWith(new System.Windows.Rect(left, top, 380, 520)),
             "A display change must never strand the window off-screen.");
     }
 
     [TestMethod]
     public void Geometry_that_is_already_visible_is_left_exactly_where_the_owner_put_it()
     {
-        var area = System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
-        var (left, top) = WindowInterop.EnsureOnScreen(area.Left + 100, area.Top + 100, 380, 520);
+        var (area, scale) = PrimaryDisplay();
+        var (left, top) = WindowInterop.EnsureOnScreen(area.Left + 100, area.Top + 100, 380, 520, scale);
 
         Assert.AreEqual(area.Left + 100, left);
         Assert.AreEqual(area.Top + 100, top);
@@ -123,12 +137,12 @@ public sealed class ShellBehaviourTests
     [TestMethod]
     public void Edge_snap_pulls_a_nearly_aligned_window_flush_and_leaves_a_distant_one_alone()
     {
-        var area = System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
+        var (area, scale) = PrimaryDisplay();
 
-        var (snappedLeft, _) = WindowInterop.SnapToEdge(area.Left + 6, area.Top + 200, 380, 520);
+        var (snappedLeft, _) = WindowInterop.SnapToEdge(area.Left + 6, area.Top + 200, 380, 520, scale);
         Assert.AreEqual(area.Left, snappedLeft);
 
-        var (freeLeft, _) = WindowInterop.SnapToEdge(area.Left + 400, area.Top + 200, 380, 520);
+        var (freeLeft, _) = WindowInterop.SnapToEdge(area.Left + 400, area.Top + 200, 380, 520, scale);
         Assert.AreEqual(area.Left + 400, freeLeft);
     }
 

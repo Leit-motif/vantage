@@ -81,32 +81,49 @@ public static partial class WindowInterop
     /// <summary>
     /// Returns geometry that is guaranteed to be visible on some connected display. A monitor
     /// that has been unplugged must never strand the window off-screen.
+    /// <para>
+    /// Everything here is in the window's own device-independent units, while Windows reports
+    /// display geometry in physical pixels. On a scaled display those are different numbers for
+    /// the same place, and comparing one against the other is itself a way to strand a window:
+    /// so the display is converted into the window's units before anything is decided.
+    /// </para>
     /// </summary>
-    public static (double Left, double Top) EnsureOnScreen(double left, double top, double width, double height)
+    public static (double Left, double Top) EnsureOnScreen(
+        double left,
+        double top,
+        double width,
+        double height,
+        double dpiScale = 1d)
     {
-        var screens = System.Windows.Forms.Screen.AllScreens;
-        var candidate = new System.Drawing.Rectangle((int)left, (int)top, (int)Math.Max(width, 1), (int)Math.Max(height, 1));
+        var candidate = new Rect(left, top, Math.Max(width, 1), Math.Max(height, 1));
 
-        foreach (var screen in screens)
+        foreach (var screen in System.Windows.Forms.Screen.AllScreens)
         {
-            if (screen.WorkingArea.IntersectsWith(candidate))
+            if (InDeviceIndependentUnits(screen.WorkingArea, dpiScale).IntersectsWith(candidate))
             {
                 return (left, top);
             }
         }
 
-        var primary = System.Windows.Forms.Screen.PrimaryScreen?.WorkingArea
-            ?? new System.Drawing.Rectangle(0, 0, 1920, 1080);
+        var primary = InDeviceIndependentUnits(
+            System.Windows.Forms.Screen.PrimaryScreen?.WorkingArea ?? new System.Drawing.Rectangle(0, 0, 1920, 1080),
+            dpiScale);
 
-        return (
-            primary.Right - width - 24,
-            primary.Top + 24);
+        return (primary.Right - width - 24, primary.Top + 24);
     }
 
     /// <summary>Snaps to the nearest working-area edge when the owner has asked for it.</summary>
-    public static (double Left, double Top) SnapToEdge(double left, double top, double width, double height, int threshold = 24)
+    public static (double Left, double Top) SnapToEdge(
+        double left,
+        double top,
+        double width,
+        double height,
+        double dpiScale = 1d,
+        int threshold = 24)
     {
-        var area = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)left, (int)top)).WorkingArea;
+        var scale = Normalise(dpiScale);
+        var origin = new System.Drawing.Point((int)(left * scale), (int)(top * scale));
+        var area = InDeviceIndependentUnits(System.Windows.Forms.Screen.FromPoint(origin).WorkingArea, dpiScale);
 
         var snappedLeft = left;
         var snappedTop = top;
@@ -131,4 +148,13 @@ public static partial class WindowInterop
 
         return (snappedLeft, snappedTop);
     }
+
+    /// <summary>A display's physical-pixel rectangle expressed in a window's own layout units.</summary>
+    public static Rect InDeviceIndependentUnits(System.Drawing.Rectangle area, double dpiScale)
+    {
+        var scale = Normalise(dpiScale);
+        return new Rect(area.Left / scale, area.Top / scale, area.Width / scale, area.Height / scale);
+    }
+
+    private static double Normalise(double dpiScale) => dpiScale > 0 ? dpiScale : 1d;
 }

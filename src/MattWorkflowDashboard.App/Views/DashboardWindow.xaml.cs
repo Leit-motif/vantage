@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using MattWorkflowDashboard.App.Shell;
 using MattWorkflowDashboard.App.ViewModels;
 using MattWorkflowDashboard.Infrastructure.Settings;
@@ -34,6 +35,12 @@ public partial class DashboardWindow : Window
     }
 
     public event Action? SettingsRequested;
+
+    /// <summary>
+    /// How many physical pixels this window's layout unit is currently worth. Read live rather
+    /// than cached: the answer changes when the window moves to a differently scaled display.
+    /// </summary>
+    private double DpiScale => VisualTreeHelper.GetDpi(this).DpiScaleX;
 
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
@@ -87,7 +94,7 @@ public partial class DashboardWindow : Window
 
         if (_settings.Ui.EdgeSnap)
         {
-            var (left, top) = WindowInterop.SnapToEdge(Left, Top, ActualWidth, ActualHeight);
+            var (left, top) = WindowInterop.SnapToEdge(Left, Top, ActualWidth, ActualHeight, DpiScale);
             Left = left;
             Top = top;
         }
@@ -109,14 +116,14 @@ public partial class DashboardWindow : Window
             return;
         }
 
-        var (safeLeft, safeTop) = WindowInterop.EnsureOnScreen(left, top, Width, Height);
+        var (safeLeft, safeTop) = WindowInterop.EnsureOnScreen(left, top, Width, Height, DpiScale);
         Left = safeLeft;
         Top = safeTop;
     }
 
     private void PlaceNearTopRight()
     {
-        var (left, top) = WindowInterop.EnsureOnScreen(double.MinValue, double.MinValue, Width, Height);
+        var (left, top) = WindowInterop.EnsureOnScreen(double.MinValue, double.MinValue, Width, Height, DpiScale);
         Left = left;
         Top = top;
     }
@@ -142,8 +149,11 @@ public partial class DashboardWindow : Window
             geometry.CompactWidth = Width;
         }
 
+        // Windows identifies a display by a physical-pixel point, so the window's own units have
+        // to be converted before asking which monitor it is on.
+        var scale = DpiScale;
         geometry.MonitorDeviceName = System.Windows.Forms.Screen
-            .FromPoint(new System.Drawing.Point((int)Left, (int)Top)).DeviceName;
+            .FromPoint(new System.Drawing.Point((int)(Left * scale), (int)(Top * scale))).DeviceName;
     }
 
     /// <summary>Re-applies the size the owner chose for the mode they just switched into.</summary>
@@ -153,7 +163,7 @@ public partial class DashboardWindow : Window
             ? _settings.Ui.Geometry.ExpandedWidth
             : _settings.Ui.Geometry.CompactWidth;
 
-        var (left, top) = WindowInterop.EnsureOnScreen(Left, Top, Width, Height);
+        var (left, top) = WindowInterop.EnsureOnScreen(Left, Top, Width, Height, DpiScale);
         Left = left;
         Top = top;
     }
