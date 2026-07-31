@@ -74,8 +74,13 @@ public sealed class MonitoredStateReader(
     IProcessRunner runner,
     Func<string, string> identify,
     int maxIssues,
-    Func<string, ProjectAssociation>? associationOf = null)
+    Func<string, ProjectAssociation>? associationOf = null,
+    int? maxWorkflowFiles = null,
+    long? maxWorkflowFileBytes = null)
 {
+    private readonly int _maxWorkflowFiles = maxWorkflowFiles ?? MaxWorkflowFiles;
+    private readonly long _maxWorkflowFileBytes = maxWorkflowFileBytes ?? MaxWorkflowFileBytes;
+
     /// <summary>
     /// The files this dashboard actually opens in a project. Everything else in a working tree is
     /// covered by the Git status and ref digests instead.
@@ -192,7 +197,7 @@ public sealed class MonitoredStateReader(
     /// A digest over every workflow file the dashboard reads: the markers that make a directory a
     /// project, and the whole <c>.scratch</c> tree. Names are included, so a rename is a change.
     /// </summary>
-    private static (int Count, string Digest) WorkflowDigest(
+    private (int Count, string Digest) WorkflowDigest(
         string projectPath,
         ICollection<string> unavailable,
         CancellationToken cancellationToken)
@@ -204,7 +209,7 @@ public sealed class MonitoredStateReader(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (count >= MaxWorkflowFiles)
+            if (count >= _maxWorkflowFiles)
             {
                 unavailable.Add("workflow files beyond the fingerprint bound");
                 break;
@@ -213,7 +218,7 @@ public sealed class MonitoredStateReader(
             try
             {
                 var info = new FileInfo(file);
-                if (info.Length > MaxWorkflowFileBytes)
+                if (info.Length > _maxWorkflowFileBytes)
                 {
                     // Too big to hold, but its size and name still change when it does.
                     builder.Append(Path.GetRelativePath(projectPath, file)).Append('|')
