@@ -15,8 +15,7 @@ working tree, in any commit, or in any tracker thread. No name of a private proj
 monitors appears anywhere.
 
 What remains are decisions, not defects. One — the author's email on historical commits — is
-resolved by [the planned history rewrite](#the-planned-history-rewrite), which must happen before
-publication. The rest are accepted risks recorded below.
+resolved by [the history rewrite](#the-history-rewrite-as-performed), which has been done. The rest are accepted risks recorded below.
 
 ---
 
@@ -139,28 +138,49 @@ Windows-only, so the practical impact is nil. `* text=auto` would silence it.
 
 ---
 
-## The planned history rewrite
+## The history rewrite, as performed
 
-Two operations, both metadata or unreferenced data, neither touching what the source said:
+Run with `git filter-repo` on a fresh clone, so no existing worktree was disturbed. Three
+operations, none of which changes a claim the history makes:
 
-1. Rewrite author and committer email on all commits to
-   `172229106+Leit-motif@users.noreply.github.com`.
-2. Purge `docs/design/*.png` blobs from every commit.
+1. **Author and committer email** on every commit rewritten to
+   `172229106+Leit-motif@users.noreply.github.com`, via `--mailmap`.
+2. **`docs/design/*.png` purged** from every commit. All three commits that only touched those
+   files became empty and were dropped: the two that added the art, and the one that removed it.
+3. **Text replaced** in both file content and commit messages — the author's account name and
+   second discovery root became placeholder paths, the personal address became the noreply one, and
+   the references to an unrelated hobby project were reworded.
 
-**Sequence matters.** Do it last, on one branch, after everything has landed:
+The third was initially ruled out, on the grounds that purging source content would leave the commit
+that fixed the shipped defaults fixing a value present nowhere. Applying the same substitutions to
+commit messages removes that objection: the history now reads coherently throughout, with a
+placeholder where a machine-specific path used to be.
 
-1. Finish the remaining prep work.
-2. Merge all branches into `main` via pull request; delete the merged branches.
-3. Rewrite `main` alone with `git filter-repo`.
-4. Remap the five acceptance stamps using filter-repo's old→new commit map, in a follow-up commit
-   that records the mapping. The stamps are the reason the rewrite is done once and late.
-5. Force-push `main`; prune stale worktrees.
-6. Flip visibility.
+### The acceptance stamps survived
 
-**What it costs.** Every SHA changes. The two concept-art commits disappear entirely — they added
-nothing else. Merged PR #12's page will reference commits that no longer exist, and any SHA quoted
-in an issue comment becomes a dead link. All cosmetic, and all confined to a repository nobody has
-cloned — which is exactly why this is the last cheap moment to do it.
+This is the reason the rewrite was done once and late rather than early or repeatedly. Each
+acceptance record is stamped with the commit it was made at, and a rewrite changes every SHA.
+Remapped through filter-repo's `commit-map`, each one still points at the same commit it always did:
+
+| Record | Was | Now | Commit |
+| --- | --- | --- | --- |
+| `keystroke-witness.json` | `d12a93b0d` | `0c00d95c3` | test: retire the idle-desktop split and record what the shell seam proves |
+| `local-only-default.json` | `920a732` | `81de45d` | fix: report the skipped offline gh probe as unanswered, not observed |
+| `read-only-scan.json` | `2cbd3f271` | `d1ebdeaa1` | test: close the second audit round on execution and measurement |
+| `running-shell-gaps.json` | `a6ac2827a` | `7b04175a9` | test: instrument the running shell so a live Windows change can be read back |
+| `visual-acceptance.json` | `c7d885d2d` | `65b83c1c7` | test: prove the running-shell gaps that needed the owner at the machine |
+### Result
+
+| | Before | After |
+| --- | --- | --- |
+| Commits | 77 | 74 |
+| Pack size | 3.78 MiB | 730 KiB |
+| Distinct author addresses | 2 | 1, the noreply address |
+| Sensitive strings in blobs or messages | several | none |
+
+**What it cost.** Every SHA changed. Merged PR #12's page references commits that no longer exist,
+and any SHA quoted in an issue comment is now a dead link. Both are cosmetic, and both were confined
+to a repository nobody had cloned — which is exactly why this was the last cheap moment to do it.
 
 ---
 
@@ -173,8 +193,8 @@ cloned — which is exactly why this is the last cheap moment to do it.
 - [x] State the copyright posture (`NOTICE.md`)
 - [x] Set this repository's commit email to the GitHub noreply address
 - [ ] Enable *Block command line pushes that expose my email* in GitHub email settings
-- [ ] Land all branches into `main`
-- [ ] Run the history rewrite and re-stamp the acceptance records
+- [x] Land all branches into `main`
+- [x] Run the history rewrite and re-stamp the acceptance records
 - [ ] Confirm `NOTICE.md` reads the way the owner wants. It is a plain-language statement of terms,
       not legal advice, and nobody qualified has reviewed it.
 - [ ] Flip visibility

@@ -4,7 +4,7 @@
     "Runtime": ".NET 10.0.10",
     "Architecture": "X64",
     "ProcessorCount": 16,
-    "Commit": "920a732",
+    "Commit": "81de45d",
     "StartedAtUtc": "2026-07-31 16:44:38Z"
   },
   "Bounds": {
