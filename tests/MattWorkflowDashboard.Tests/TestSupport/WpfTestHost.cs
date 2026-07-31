@@ -15,6 +15,11 @@ namespace MattWorkflowDashboard.Tests.TestSupport;
 /// product ships. A window's own content tree is laid out here without the window ever being
 /// shown, so what the dashboard renders can be read straight from the visual tree — no desktop
 /// session, no screenshot, and nothing that depends on an interactive login.
+/// <para>
+/// The thread lives on a desktop of the suite's own — see <see cref="IsolatedDesktop"/>. Every
+/// window the tests create belongs to it, so the shell-seam tests that do need a real HWND get one
+/// somewhere the owner is not: off their screen, and out of reach of their keyboard.
+/// </para>
 /// </summary>
 public static class WpfTestHost
 {
@@ -162,34 +167,45 @@ public static class WpfTestHost
             }
 
             using var ready = new ManualResetEventSlim();
-            var thread = new Thread(() =>
-            {
-                var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+            Exception? failure = null;
 
-                // The assembly is named explicitly: the product's own pack URIs resolve against
-                // the entry assembly, which in a test run is the test host rather than the app.
-                foreach (var name in new[] { "Dark", "Controls" })
+            // Every window the tests make belongs to this thread, so where the thread lives is
+            // where they appear — which is why it is started on a desktop of the suite's own
+            // rather than on the owner's.
+            IsolatedDesktop.StartStaThreadOnIt(
+                "wpf-test-host",
+                () =>
                 {
-                    application.Resources.MergedDictionaries.Add(new ResourceDictionary
+                    var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+
+                    // The assembly is named explicitly: the product's own pack URIs resolve against
+                    // the entry assembly, which in a test run is the test host rather than the app.
+                    foreach (var name in new[] { "Dark", "Controls" })
                     {
-                        Source = new Uri(
-                            $"pack://application:,,,/MattWorkflowDashboard;component/Themes/{name}.xaml",
-                            UriKind.Absolute),
-                    });
-                }
+                        application.Resources.MergedDictionaries.Add(new ResourceDictionary
+                        {
+                            Source = new Uri(
+                                $"pack://application:,,,/MattWorkflowDashboard;component/Themes/{name}.xaml",
+                                UriKind.Absolute),
+                        });
+                    }
 
-                _dispatcher = Dispatcher.CurrentDispatcher;
-                ready.Set();
-                Dispatcher.Run();
-            })
-            {
-                IsBackground = true,
-                Name = "wpf-test-host",
-            };
+                    _dispatcher = Dispatcher.CurrentDispatcher;
+                    ready.Set();
+                    Dispatcher.Run();
+                },
+                error =>
+                {
+                    failure = error;
+                    ready.Set();
+                });
 
-            thread.SetApartmentState(ApartmentState.STA);
-            thread.Start();
             ready.Wait(TimeSpan.FromSeconds(30));
+
+            if (failure is not null)
+            {
+                throw new InvalidOperationException("The WPF test host could not be isolated.", failure);
+            }
 
             return _dispatcher ?? throw new InvalidOperationException("The WPF test host did not start.");
         }
