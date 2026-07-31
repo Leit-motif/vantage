@@ -173,16 +173,19 @@ dotnet run -c Release --project src/MattWorkflowDashboard.App -- --acceptance "$
 Same instrument as the read-only scan above, including its own offline pass — which probes a real
 `gh auth status` to characterize behaviour with no session. That probe is itself gated on
 `GitHubEnrichmentEnabled` now: with enrichment off there is no session to probe for, so the one gh
-call an earlier version of the instrument still made on a local-only run is gone too. See
+call an earlier version of the instrument still made on a local-only run is gone too. The report's
+`Offline.GhReportedNoSession` is `null` rather than `true` in that case — the probe was skipped, not
+answered, and the report says so instead of claiming an observation that never ran. See
 `OfflinePassAsync` in `ReadOnlyAcceptanceRun.cs`.
 
 ## The run recorded here
 
-Against `710d9da`, over the same 53 projects as the read-only scan:
+Against `920a732`, over the same 53 projects as the read-only scan:
 
 | | |
 | --- | --- |
 | `CommandsIssued` | `git log`, `git rev-parse`, `git config --list`, `git show-ref`, `git remote get-url`, `git status` — no `gh` entry |
+| `Offline.GhReportedNoSession` | `null` — the probe was skipped, not observed |
 | Associations compared without querying GitHub | 33 of 33, 0 disagreements |
 | Monitored state changes | 0 |
 | Exit code | `4` — a pre-existing fingerprint gap (one file past the size bound in an unrelated project), not a safety failure |

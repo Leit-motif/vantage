@@ -4,8 +4,8 @@
     "Runtime": ".NET 10.0.10",
     "Architecture": "X64",
     "ProcessorCount": 16,
-    "Commit": "710d9da",
-    "StartedAtUtc": "2026-07-31 16:31:32Z"
+    "Commit": "920a732",
+    "StartedAtUtc": "2026-07-31 16:44:38Z"
   },
   "Bounds": {
     "Roots": 2,
@@ -19,7 +19,7 @@
   "Passes": [
     {
       "Name": "cold",
-      "ElapsedMilliseconds": 4054,
+      "ElapsedMilliseconds": 4028,
       "Projects": 53,
       "ProjectsWithProgress": 13,
       "ProjectsWithRemainingWork": 10,
@@ -36,7 +36,7 @@
     },
     {
       "Name": "warm",
-      "ElapsedMilliseconds": 3852,
+      "ElapsedMilliseconds": 4116,
       "Projects": 53,
       "ProjectsWithProgress": 13,
       "ProjectsWithRemainingWork": 10,
@@ -53,21 +53,21 @@
     }
   ],
   "Cancellation": {
-    "WaitedForIndexingMilliseconds": 2302,
+    "WaitedForIndexingMilliseconds": 2391,
     "ExternalCommandsSubmittedBeforeCancelling": 21,
     "ChildProcessesRunningWhenCancelled": 4,
     "StillRunningWhenCancelled": true,
-    "LatencyMilliseconds": 36.0111,
+    "LatencyMilliseconds": 36.7832,
     "StoppedByCancellation": true
   },
   "Offline": {
-    "GhReportedNoSession": true,
+    "GhReportedNoSession": null,
     "SnapshotMarkedOffline": false,
     "Projects": 53,
     "ProjectsWithProgress": 13,
     "ProjectsWithRemainingWork": 10,
     "StaleProjects": 0,
-    "ElapsedMilliseconds": 3775
+    "ElapsedMilliseconds": 3915
   },
   "Associations": {
     "Projects": 53,
@@ -88,7 +88,7 @@
     "MonitoredStateChanges": [],
     "FingerprintGaps": [
       {
-        "ProjectId": "6121130b8194",
+        "ProjectId": "2b2d4e7da617",
         "Subject": "content of a file past the size bound"
       }
     ],
