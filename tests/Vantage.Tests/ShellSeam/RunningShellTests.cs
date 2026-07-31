@@ -298,6 +298,83 @@ public sealed class RunningShellTests
         Assert.AreEqual(520, _settings.Ui.Geometry.Height, 0.5d, "And the ribbon's own height was never written over it.");
     }
 
+    /// <summary>
+    /// An overlay lives against an edge, and growing to the right from the right of the screen is
+    /// growing off it — after which the window gets shoved sideways to fit, which the owner sees as
+    /// a jump rather than as the view opening. Whichever edge it is nearest has to stay put.
+    /// </summary>
+    [TestMethod]
+    public void Changing_the_view_grows_away_from_the_edge_the_window_is_nearest()
+    {
+        _settings.Ui.Geometry.CompactWidth = 380;
+        _settings.Ui.Geometry.ExpandedWidth = 720;
+        _viewModel.Mode = DashboardViewMode.Compact;
+
+        using var shell = Start();
+        var area = WorkArea(shell);
+
+        // Parked against the right, where an overlay like this normally lives.
+        shell.MoveTo(area.Right - 380 - 8, area.Top + 60);
+        shell.LetGeometrySettle();
+        var rightEdge = Edges(shell).Right;
+
+        shell.ClickTray("Expand");
+        RunningShell.PumpUntil(() => Edges(shell).Width > 700, TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(rightEdge, Edges(shell).Right, 2d, "The edge it is against is the edge that stays.");
+        Assert.IsTrue(Edges(shell).Left < rightEdge - 700, "So the room for the detail pane comes out of the other side.");
+
+        // And dragged to the other side, it anchors to the other side — with nothing recorded and
+        // nothing for the owner to set.
+        shell.MoveTo(area.Left + 8, area.Top + 60);
+        shell.LetGeometrySettle();
+        var leftEdge = Edges(shell).Left;
+
+        WpfTestHost.Run(() => _viewModel.Mode = DashboardViewMode.Compact);
+        RunningShell.PumpUntil(() => Edges(shell).Width < 500, TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(leftEdge, Edges(shell).Left, 2d, "Against the left, the left edge is the one held still.");
+    }
+
+    [TestMethod]
+    public void Collapsing_at_the_bottom_of_the_screen_keeps_the_ribbon_at_the_bottom()
+    {
+        _settings.Ui.Geometry.Height = 520;
+        _viewModel.Mode = DashboardViewMode.Compact;
+
+        using var shell = Start();
+        var area = WorkArea(shell);
+
+        shell.MoveTo(area.Left + 40, area.Bottom - 520 - 8);
+        shell.LetGeometrySettle();
+        var bottomEdge = Edges(shell).Bottom;
+
+        WpfTestHost.Run(() => _viewModel.ToggleRibbon());
+        RunningShell.PumpUntil(() => Edges(shell).Height < 100, TimeSpan.FromSeconds(2));
+
+        var folded = Edges(shell);
+        Assert.IsTrue(folded.Height < 100, $"The window has to have actually folded down; it is {folded.Height} tall.");
+        Assert.AreEqual(
+            bottomEdge,
+            folded.Bottom,
+            2d,
+            "A ribbon folded down at the bottom of the screen must not walk up it.");
+
+        WpfTestHost.Run(() => _viewModel.ToggleRibbon());
+        RunningShell.PumpUntil(() => Edges(shell).Height > 400, TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(bottomEdge, Edges(shell).Bottom, 2d, "And coming back out unfolds upward from the same place.");
+    }
+
+    /// <summary>The running window's own bounds, in its own layout units.</summary>
+    private static Rect Edges(RunningShell shell) => WpfTestHost.Run(() =>
+        new Rect(shell.Window.Left, shell.Window.Top, shell.Window.ActualWidth, shell.Window.ActualHeight));
+
+    private static Rect WorkArea(RunningShell shell) => WpfTestHost.Run(() => WindowInterop.WorkAreaAt(
+        shell.Window.Left,
+        shell.Window.Top,
+        VisualTreeHelper.GetDpi(shell.Window).DpiScaleX));
+
     [TestMethod]
     public void The_tray_refresh_command_actually_refreshes_the_dashboard()
     {

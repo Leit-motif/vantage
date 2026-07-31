@@ -42,11 +42,15 @@ public partial class DashboardWindow : Window
     private bool _reallyExiting;
     private bool _applyingMode;
 
+    /// <summary>The mode the window is currently shaped for, which is what a change is a change from.</summary>
+    private DashboardViewMode _appliedMode;
+
     public DashboardWindow(DashboardViewModel viewModel, DashboardSettings settings, Action saveSettings)
     {
         _viewModel = viewModel;
         _settings = settings;
         _saveSettings = saveSettings;
+        _appliedMode = viewModel.Mode;
 
         InitializeComponent();
         DataContext = viewModel;
@@ -318,6 +322,13 @@ public partial class DashboardWindow : Window
     /// <summary>Re-applies the size the owner chose for the mode they just switched into.</summary>
     public void ApplyMode()
     {
+        var previous = _appliedMode;
+        _appliedMode = _viewModel.Mode;
+
+        // Read before anything moves: which edge to hold is a question about where the window is
+        // now, and re-shaping it is what makes that unanswerable a moment later.
+        var anchor = AnchorOf();
+
         // Re-shaping the window raises a size change per step of the re-shaping, and every one of
         // those looks exactly like the owner resizing it. Held shut for the duration, so the sizes
         // the window passes through on the way are not mistaken for a size they chose.
@@ -334,16 +345,74 @@ public partial class DashboardWindow : Window
 
             ApplyModeSize();
             Width = _viewModel.ShellWidth;
+
+            if (previous == DashboardViewMode.Full)
+            {
+                // Full screen's bounds were the monitor's, so there is no edge of the owner's to
+                // hold on the way out — only the position it was never allowed to overwrite.
+                RestoreSavedPosition();
+            }
         }
         finally
         {
             _applyingMode = false;
         }
 
-        // After layout rather than now: in the ribbon the height is the content's, and the content
-        // has not been measured yet. Asked here, the check would be answering about the height of
-        // the view being left rather than the one being entered.
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, KeepOnScreen);
+        // After layout rather than now: in the ribbon the new height is the content's, and the
+        // content has not been measured yet. Applied here, the anchor would be holding an edge
+        // against the height of the view being left rather than the one being entered.
+        Dispatcher.BeginInvoke(
+            DispatcherPriority.Loaded,
+            previous == DashboardViewMode.Full ? KeepOnScreen : () => Reanchor(anchor));
+    }
+
+    /// <summary>
+    /// Which edges the window holds still when it changes shape, and where they are. The nearest
+    /// ones, decided from where the window sits right now rather than from anything recorded:
+    /// parked against the right of the screen, growing to the right is growing off it, and the
+    /// window ends up shoved sideways instead of simply opening.
+    /// <para>
+    /// Nothing about this is stored. A window dragged to the other side of the screen anchors to
+    /// the other side the very next time, with no setting to notice or change.
+    /// </para>
+    /// </summary>
+    private Anchor AnchorOf()
+    {
+        var area = WindowInterop.WorkAreaAt(Left, Top, DpiScale);
+
+        return new Anchor(
+            HoldsRightEdge: Left + (ActualWidth / 2) > area.Left + (area.Width / 2),
+            Right: Left + ActualWidth,
+            HoldsBottomEdge: Top + (ActualHeight / 2) > area.Top + (area.Height / 2),
+            Bottom: Top + ActualHeight);
+    }
+
+    private void Reanchor(Anchor anchor)
+    {
+        if (anchor.HoldsRightEdge)
+        {
+            Left = anchor.Right - ActualWidth;
+        }
+
+        if (anchor.HoldsBottomEdge)
+        {
+            Top = anchor.Bottom - ActualHeight;
+        }
+
+        KeepOnScreen();
+    }
+
+    private void RestoreSavedPosition()
+    {
+        var geometry = _settings.Ui.Geometry;
+        if (geometry.Left is not { } left || geometry.Top is not { } top)
+        {
+            return;
+        }
+
+        var (savedLeft, savedTop) = WindowInterop.Reinterpret(left, top, geometry.DpiScale, DpiScale);
+        Left = savedLeft;
+        Top = savedTop;
     }
 
     /// <summary>
@@ -415,4 +484,7 @@ public partial class DashboardWindow : Window
     }
 
     public HwndSource? Source => (HwndSource?)PresentationSource.FromVisual(this);
+
+    /// <summary>The edges a re-shaped window holds still, and where they were before it changed.</summary>
+    private readonly record struct Anchor(bool HoldsRightEdge, double Right, bool HoldsBottomEdge, double Bottom);
 }
