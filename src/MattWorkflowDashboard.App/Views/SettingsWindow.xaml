@@ -59,6 +59,14 @@
       <TextBlock Style="{StaticResource TertiaryText}" Margin="140,4,0,0" TextWrapping="Wrap"
                  Text="Optional, and empty by default — for example Ctrl+Alt+D. Click-through is always recoverable from the tray." />
 
+      <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+        <TextBlock Style="{StaticResource BodyText}" Width="140" Text="Focus hotkey" VerticalAlignment="Center" />
+        <TextBox Style="{StaticResource SearchBox}" Width="160" Text="{Binding FocusHotkey}"
+                 AutomationProperties.Name="Focus hotkey" />
+      </StackPanel>
+      <TextBlock Style="{StaticResource TertiaryText}" Margin="140,4,0,0" TextWrapping="Wrap"
+                 Text="Optional, and empty by default — for example Ctrl+Alt+K. The dashboard never takes focus on its own, so this is the only way to reach it from the keyboard." />
+
       <CheckBox Margin="140,10,0,0" IsChecked="{Binding GitHubEnrichmentEnabled}"
                 Content="Enrich from my authenticated gh session"
                 Foreground="{DynamicResource TextPrimaryBrush}" />

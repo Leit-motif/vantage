@@ -66,6 +66,15 @@ public sealed class WindowGeometry
     public double Height { get; set; } = 520;
 
     public string? MonitorDeviceName { get; set; }
+
+    /// <summary>
+    /// The scale of the display the position above was measured on. A position is in the window's
+    /// own layout units, and those units are worth a different number of pixels on a differently
+    /// scaled display — so without the scale it was written under, a saved position cannot be read
+    /// back on another monitor. Null for geometry written before this was recorded, which is read
+    /// as "whatever the window is on now" and so behaves as it always did.
+    /// </summary>
+    public double? DpiScale { get; set; }
 }
 
 public sealed class UiSettings
@@ -86,6 +95,14 @@ public sealed class UiSettings
 
     /// <summary>No default binding — the dashboard never claims a global shortcut uninvited.</summary>
     public string? ClickThroughHotkey { get; set; }
+
+    /// <summary>
+    /// The gesture that hands the dashboard the keyboard, and the only way it ever takes focus.
+    /// The overlay refuses activation so a refresh can never interrupt typing, which also means
+    /// the keyboard cannot reach it unasked; this is the owner asking. No default binding, for
+    /// the same reason as above.
+    /// </summary>
+    public string? FocusHotkey { get; set; }
 
     public bool EdgeSnap { get; set; }
 

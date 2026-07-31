@@ -23,9 +23,15 @@ namespace MattWorkflowDashboard.App;
 /// </summary>
 public partial class App : Application
 {
-    private const string InstanceMutexName = @"Local\MattWorkflowDashboard.SingleInstance";
+    /// <summary>
+    /// Asks the application to decide whether another dashboard already owns this session, report
+    /// it as an exit code, and stop without building any UI.
+    /// </summary>
+    private const string SingleInstanceProbeArgument = "--single-instance-probe";
 
-    private Mutex? _instanceMutex;
+    private const int ExitCodeAlreadyRunning = 2;
+
+    private SingleInstanceGuard? _instance;
     private Logger? _logger;
     private AppPaths _paths = null!;
     private SettingsStore _settingsStore = null!;
@@ -33,19 +39,30 @@ public partial class App : Application
     private DashboardCache _cache = null!;
     private BoundedProcessRunner _processRunner = null!;
     private ThemeManager _themes = null!;
+    private AppearanceWatcher? _appearance;
     private DashboardViewModel _viewModel = null!;
     private DashboardWindow _window = null!;
     private TrayIcon _tray = null!;
+    private ShellController _shell = null!;
+    private StartupRegistration _startup = null!;
     private WorkflowWatcher? _watcher;
     private GlobalHotkey? _hotkey;
+    private GlobalHotkey? _focusHotkey;
     private DispatcherTimer? _periodicRefresh;
     private SettingsWindow? _settingsWindow;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         // One overlay, one indexer: a second instance would compete for the same cache.
-        _instanceMutex = new Mutex(initiallyOwned: true, InstanceMutexName, out var isFirstInstance);
-        if (!isFirstInstance)
+        _instance = new SingleInstanceGuard();
+
+        if (Array.Exists(e.Args, a => a.Equals(SingleInstanceProbeArgument, StringComparison.OrdinalIgnoreCase)))
+        {
+            Shutdown(_instance.IsOnlyInstance ? 0 : ExitCodeAlreadyRunning);
+            return;
+        }
+
+        if (!_instance.IsOnlyInstance)
         {
             Shutdown();
             return;
@@ -72,23 +89,32 @@ public partial class App : Application
 
         _themes = new ThemeManager(this);
         _themes.Apply(_settings.Ui.Theme);
-        SystemParameters.StaticPropertyChanged += OnSystemParametersChanged;
+
+        _appearance = new AppearanceWatcher();
+        _appearance.Changed += OnWindowsAppearanceChanged;
 
         _viewModel = new DashboardViewModel(_settings, _settingsStore, _cache, _processRunner);
         _window = new DashboardWindow(_viewModel, _settings, SaveSettings);
         _window.SettingsRequested += ShowSettings;
-        _viewModel.PropertyChanged += OnViewModelPropertyChanged;
 
+        _startup = new StartupRegistration();
         _tray = new TrayIcon();
-        WireTray();
+        _shell = new ShellController(_window, _tray, _viewModel, _settings, _startup, SaveSettings);
+        _shell.SettingsRequested += ShowSettings;
+        _shell.LogsRequested += OpenLogsFolder;
+        _shell.ExitRequested += Shutdown;
 
         DispatcherUnhandledException += OnUnhandledException;
 
-        _window.ShowWithoutStealingFocus();
-        UpdateTrayState();
+        _shell.Start();
 
-        _hotkey = new GlobalHotkey(WindowInterop.HandleOf(_window), ToggleClickThrough);
+        var handle = WindowInterop.HandleOf(_window);
+        _hotkey = new GlobalHotkey(handle, _shell.ToggleClickThrough, GlobalHotkey.ClickThroughId);
         _hotkey.Bind(_settings.Ui.ClickThroughHotkey);
+
+        // The only way the dashboard ever takes the keyboard, and only if the owner binds it.
+        _focusHotkey = new GlobalHotkey(handle, _window.FocusForKeyboard, GlobalHotkey.FocusId);
+        _focusHotkey.Bind(_settings.Ui.FocusHotkey);
 
         _watcher = new WorkflowWatcher(_settings.Roots, () => Dispatcher.BeginInvoke(RequestRefresh));
 
@@ -138,61 +164,7 @@ public partial class App : Application
         Shutdown();
     }
 
-    private void WireTray()
-    {
-        _tray.ShowHideRequested += () =>
-        {
-            if (_window.IsVisible)
-            {
-                _window.Hide();
-            }
-            else
-            {
-                _window.ShowWithoutStealingFocus();
-            }
-
-            UpdateTrayState();
-        };
-
-        _tray.CompactExpandRequested += () =>
-        {
-            _viewModel.IsExpanded = !_viewModel.IsExpanded;
-            _window.ApplyModeWidth();
-            UpdateTrayState();
-        };
-
-        _tray.ClickThroughToggled += ToggleClickThrough;
-        _tray.RefreshRequested += RequestRefresh;
-        _tray.SettingsRequested += ShowSettings;
-        _tray.LogsRequested += OpenLogsFolder;
-
-        _tray.LaunchAtSignInToggled += () =>
-        {
-            var enabled = !StartupRegistration.IsEnabled();
-            StartupRegistration.Set(enabled, Environment.ProcessPath ?? string.Empty);
-            _settings.LaunchAtSignIn = enabled;
-            SaveSettings();
-            UpdateTrayState();
-        };
-
-        _tray.ExitRequested += () =>
-        {
-            _window.ExitForReal();
-            Shutdown();
-        };
-    }
-
-    /// <summary>
-    /// Click-through is always recoverable: the tray owns the same toggle, so the overlay can
-    /// never make itself impossible to get back.
-    /// </summary>
-    private void ToggleClickThrough()
-    {
-        _window.SetClickThrough(!_settings.Ui.ClickThrough);
-        UpdateTrayState();
-    }
-
-    private void RequestRefresh() => _ = _viewModel.RefreshCommand.ExecuteAsync(null);
+    private void RequestRefresh() => _shell.RequestRefresh();
 
     private void ShowSettings()
     {
@@ -202,7 +174,7 @@ public partial class App : Application
             return;
         }
 
-        var viewModel = new SettingsViewModel(_settings, _settingsStore, OnSettingsApplied);
+        var viewModel = new SettingsViewModel(_settings, _settingsStore, OnSettingsApplied, _startup);
         _settingsWindow = new SettingsWindow(viewModel);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
@@ -213,6 +185,7 @@ public partial class App : Application
         _themes.Apply(_settings.Ui.Theme);
         _viewModel.NotifyAppearanceChanged();
         _hotkey?.Bind(_settings.Ui.ClickThroughHotkey);
+        _focusHotkey?.Bind(_settings.Ui.FocusHotkey);
 
         _watcher?.Dispose();
         _watcher = new WorkflowWatcher(_settings.Roots, () => Dispatcher.BeginInvoke(RequestRefresh));
@@ -220,30 +193,15 @@ public partial class App : Application
         RequestRefresh();
     }
 
-    private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    /// <summary>
+    /// Windows moved: re-resolve the palette and let the running window restyle itself. This is
+    /// what makes the System theme actually follow Windows rather than only follow a restart.
+    /// </summary>
+    private void OnWindowsAppearanceChanged() => Dispatcher.BeginInvoke(() =>
     {
-        if (e.PropertyName == nameof(DashboardViewModel.IsExpanded))
-        {
-            _window.ApplyModeWidth();
-            UpdateTrayState();
-        }
-
-        if (e.PropertyName == nameof(DashboardViewModel.StatusLine))
-        {
-            _tray.UpdateTooltip(_viewModel.StatusLine);
-        }
-    }
-
-    private void OnSystemParametersChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(SystemParameters.HighContrast))
-        {
-            Dispatcher.BeginInvoke(() => _themes.Apply(_settings.Ui.Theme));
-        }
-    }
-
-    private void UpdateTrayState() =>
-        _tray.UpdateState(_window.IsVisible, _viewModel.IsExpanded, _settings.Ui.ClickThrough, StartupRegistration.IsEnabled());
+        _themes.Apply(_settings.Ui.Theme);
+        _viewModel.NotifyAppearanceChanged();
+    });
 
     private void OpenLogsFolder()
     {
@@ -278,16 +236,18 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        SystemParameters.StaticPropertyChanged -= OnSystemParametersChanged;
+        _appearance?.Dispose();
         _viewModel?.CancelRefresh();
         _periodicRefresh?.Stop();
         _watcher?.Dispose();
         _hotkey?.Dispose();
+        _focusHotkey?.Dispose();
+        _shell?.Dispose();
         _tray?.Dispose();
         _processRunner?.Dispose();
         _cache?.Dispose();
         _logger?.Dispose();
-        _instanceMutex?.Dispose();
+        _instance?.Dispose();
 
         base.OnExit(e);
     }

@@ -29,8 +29,8 @@ public sealed class TrayIcon : IDisposable
             CheckOnClick = false,
         };
 
-        var menu = new ContextMenuStrip();
-        menu.Items.AddRange(
+        Menu = new ContextMenuStrip();
+        Menu.Items.AddRange(
         [
             _showHide,
             _compactExpand,
@@ -50,11 +50,17 @@ public sealed class TrayIcon : IDisposable
             Icon = CreateIcon(),
             Text = "Workflow dashboard",
             Visible = true,
-            ContextMenuStrip = menu,
+            ContextMenuStrip = Menu,
         };
 
         _icon.DoubleClick += (_, _) => ShowHideRequested?.Invoke();
     }
+
+    /// <summary>
+    /// The commands as they actually hang in the notification area. Exposed so the shell's
+    /// lifecycle controls can be exercised the way the owner reaches them.
+    /// </summary>
+    public ContextMenuStrip Menu { get; }
 
     public event Action? ShowHideRequested;
 
