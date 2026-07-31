@@ -144,7 +144,7 @@ bound says so in diagnostics rather than returning a quietly short answer.
 | [`src/Vantage.Core`](src/Vantage.Core) | The domain, with no UI and no I/O: observed evidence, normalized workflow facts, derived projections, provenance, conflict reconciliation |
 | [`src/Vantage.Infrastructure`](src/Vantage.Infrastructure) | Everything touching the outside world: discovery, markdown parsing, the Git and `gh` adapters, the SQLite cache, settings, logging, the refresh orchestrator |
 | [`src/Vantage.App`](src/Vantage.App) | The WPF overlay, tray, and settings window |
-| [`tests/Vantage.Tests`](tests/Vantage.Tests) | 229 tests, driven through the product's real refresh boundary |
+| [`tests/Vantage.Tests`](tests/Vantage.Tests) | The whole suite, driven through the product's real refresh boundary |
 | [`tools/`](tools) | A keystroke witness and a synthetic-workspace generator, both used to produce acceptance evidence |
 
 The dependency direction is the point: `Core` knows nothing about WPF, SQLite, Git or GitHub, so the
@@ -259,30 +259,20 @@ Closing hides the window; everything else lives in the tray — show/hide, compa
 click-through, refresh, settings, logs, launch at sign-in, exit. Click-through is off by default and
 always recoverable from the tray. The optional global hotkey has no default binding.
 
-<details>
-<summary>On “80% transparency”</summary>
-
-<br>
-
-The specification asked for *80% transparency*. Opacity and transparency are routinely inverted
-between APIs, so Settings expresses the value as **opacity** — 100 is fully solid — and shows both
-readings next to the slider (`80% opaque · 20% see-through`). Only the background surface carries
-it; text and controls are composited fully opaque, so translucency never costs legibility.
-
-</details>
+Only the background surface carries the opacity setting. Text and controls are composited fully
+opaque, so translucency never costs legibility.
 
 ## How it was built
 
-Vantage was specified, implemented, reviewed and accepted through coding agents, directed and
-reviewed by its author. That process is inspectable rather than described. The
+Vantage was specified, implemented and reviewed through coding agents, directed by its author. That
+process is inspectable rather than described: the
 [issue tracker](https://github.com/Leit-motif/vantage/issues) holds the originating specification in
 [#1](https://github.com/Leit-motif/vantage/issues/1) and a series of tickets that mostly begin with
 the word *Prove*, each paired with the acceptance record that answers it.
 
-The corrections are the interesting part. A commit reclassifying a skipped `gh` probe from
+The corrections are the part worth reading. A commit reclassifying a skipped `gh` probe from
 *observed* to *unanswered*, and an issue titled *“Shell-seam tests inject keystrokes into the
-owner's desktop”*, are both cases of an agent's claim not surviving review — which is most of what
-directing agents actually consists of.
+owner's desktop”*, are both cases of an agent's claim not surviving review.
 
 ## Copyright
 
