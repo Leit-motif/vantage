@@ -126,3 +126,9 @@ capturing whatever is on the desktop behind the glass.
 
 Proving translucency *over* a specific desktop application still requires a screen capture of the
 running overlay on a real desktop; that frame is the owner's to take.
+
+`--acceptance <directory>` is the other half: it runs the built application over the real
+configured roots without any UI, and writes sanitized evidence that nothing it observed was
+changed — along with how long the scan took, how quickly it stopped when asked, what it does
+without a `gh` session, and which repositories it queried. See
+[docs/acceptance](docs/acceptance/README.md).
