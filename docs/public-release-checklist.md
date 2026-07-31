@@ -67,8 +67,9 @@ intact. Editing what the historical source said does not. Only the first two are
 
 ### 2. Author email on historical commits · low · resolved by the rewrite
 
-70 of 71 commits are authored by `Amrit Chana <172229106+Leit-motif@users.noreply.github.com>`. Publishing makes that
-address visible and scrapeable on every one of them.
+70 of 71 commits carried the author's personal address. Publishing would have made it visible and
+scrapeable on every one of them. The address is deliberately not reproduced here — a document that
+records the removal should not be the thing that republishes it.
 
 Three parts, two already done:
 
