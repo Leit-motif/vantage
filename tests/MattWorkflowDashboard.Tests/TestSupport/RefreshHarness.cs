@@ -17,7 +17,11 @@ public sealed class RefreshHarness : IDisposable
     private DashboardCache _cache;
     private RefreshService? _service;
 
-    public RefreshHarness(WorkspaceFixture workspace, FakeProcessRunner? runner = null, DateTimeOffset? now = null)
+    public RefreshHarness(
+        WorkspaceFixture workspace,
+        FakeProcessRunner? runner = null,
+        DateTimeOffset? now = null,
+        bool gitHubEnrichmentEnabled = true)
     {
         Workspace = workspace;
         Runner = runner ?? new FakeProcessRunner();
@@ -29,7 +33,7 @@ public sealed class RefreshHarness : IDisposable
         Settings = new DashboardSettings
         {
             Roots = [workspace.WorkspacesRoot],
-            GitHubEnrichmentEnabled = true,
+            GitHubEnrichmentEnabled = gitHubEnrichmentEnabled,
         };
 
         // The settings file exists from the start, so a restart re-reads real configuration

@@ -1,5 +1,6 @@
 using MattWorkflowDashboard.Core;
 using MattWorkflowDashboard.Core.Projection;
+using MattWorkflowDashboard.Infrastructure.Settings;
 using MattWorkflowDashboard.Tests.TestSupport;
 
 namespace MattWorkflowDashboard.Tests.RefreshSeam;
@@ -220,6 +221,29 @@ public sealed class GitHubReconciliationTests
 
         Assert.IsTrue(snapshot.Offline);
         Assert.AreEqual(1, snapshot.Project("widget").Progress.Total, "Local work stays visible without GitHub.");
+    }
+
+    /// <summary>
+    /// #9: v1 ships local-only. A project with a GitHub origin and a linked ticket would issue
+    /// several `gh` calls if enrichment were on — this proves that with the flag at its shipped
+    /// default, none of them happen at all, not merely that their results go unused.
+    /// </summary>
+    [TestMethod]
+    public async Task A_fresh_run_with_default_settings_makes_no_gh_call()
+    {
+        LinkedProject(Fixtures.Ticket("Local work", "ready", gitHub: "#7"));
+
+        var runner = new FakeProcessRunner();
+        runner.Fallback = _runner.Fallback;
+        using var defaultHarness = new RefreshHarness(
+            _workspace, runner, DateTimeOffset.UtcNow, gitHubEnrichmentEnabled: new DashboardSettings().GitHubEnrichmentEnabled);
+
+        var snapshot = await defaultHarness.RefreshAsync();
+
+        Assert.IsFalse(
+            runner.Invocations.Any(i => i.FileName == "gh"),
+            "Default settings must never invoke gh, not merely ignore what it returns.");
+        Assert.AreEqual(1, snapshot.Project("widget").Progress.Total, "Local work stays visible.");
     }
 
     [TestMethod]

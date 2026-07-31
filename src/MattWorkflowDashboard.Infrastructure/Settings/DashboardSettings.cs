@@ -157,7 +157,11 @@ public sealed class DashboardSettings
     /// <summary>Bounds the per-repository GitHub read so an associated repo cannot become a crawl.</summary>
     public int MaxGitHubIssuesPerRepository { get; set; } = 200;
 
-    public bool GitHubEnrichmentEnabled { get; set; } = true;
+    /// <summary>
+    /// Off by default: v1 ships local-only (#9). Switching it on is the owner's call from Settings;
+    /// nothing about the adapter changes, only whether it runs uninvited.
+    /// </summary>
+    public bool GitHubEnrichmentEnabled { get; set; }
 
     public bool LaunchAtSignIn { get; set; }
 

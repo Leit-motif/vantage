@@ -221,6 +221,33 @@ public sealed class AcceptanceInstrumentTests
     }
 
     /// <summary>
+    /// #9: the acceptance instrument runs its own offline probe (a real <c>gh auth status</c>)
+    /// independent of the product's refresh path, to characterize behaviour with no session. That
+    /// probe must not itself become the one gh invocation a local-only default run makes.
+    /// </summary>
+    [TestMethod]
+    public async Task A_run_with_default_settings_issues_no_gh_command_at_all()
+    {
+        var project = _workspace.NewProject("widget");
+        _workspace.InitGitRepository(project, "https://github.com/acme/widget.git");
+        _workspace.Commit(project, "initial");
+
+        var state = new AppPaths(Path.Combine(_workspace.Root, "scan-state"));
+        var settings = new DashboardSettings { Roots = [_workspace.WorkspacesRoot] };
+
+        Assert.IsFalse(settings.GitHubEnrichmentEnabled, "This proves the shipped default, not an explicit override.");
+
+        var report = await new ReadOnlyAcceptanceRun(settings, state, "test").ExecuteAsync(CancellationToken.None);
+
+        Assert.IsFalse(
+            report.Safety.CommandsIssued.Keys.Any(command => command.StartsWith("gh", StringComparison.Ordinal)),
+            "A local-only default run must not invoke gh, including from the instrument's own offline probe.");
+        Assert.IsNull(
+            report.Offline.GhReportedNoSession,
+            "The probe was skipped, not answered — the report must say so rather than claim an observation that never ran.");
+    }
+
+    /// <summary>
     /// The guard exists because the documented example violated it. A run whose own output lands
     /// inside what it observes writes into a monitored workspace, in both fingerprints at once.
     /// </summary>

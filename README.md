@@ -6,12 +6,19 @@ explains those sources; it never becomes another workflow authority.
 
 Specified by [issue #1](https://github.com/Leit-motif/matt-workflow-dashboard-widget/issues/1).
 
+**v1 ships local-only.** GitHub enrichment is built and specified, but off by default and outside
+v1's acceptance surface — see [issue #8](https://github.com/Leit-motif/matt-workflow-dashboard-widget/issues/8)
+for the complete record of what it adds and what resuming it involves. Everything below that
+mentions GitHub describes behaviour available once you turn `GitHubEnrichmentEnabled` on in
+Settings, not what a default install does.
+
 ## What it does
 
 It discovers projects beneath configured roots, indexes `.scratch` planning artifacts and
-reachable local Git history, enriches explicitly linked items through your already-authenticated
-`gh` session, and projects that evidence into traceable project states, next actions, recent
-activity, conflicts, diagnostics, and full-pipeline progress.
+reachable local Git history, and projects that evidence into traceable project states, next
+actions, recent activity, diagnostics, and full-pipeline progress. Turning on GitHub enrichment in
+Settings additionally enriches explicitly linked items through your already-authenticated `gh`
+session and surfaces conflicts between local and remote evidence.
 
 Every displayed conclusion carries provenance: which source observed it, the raw value as
 written, what kind of timestamp it has, and which refresh produced it.
