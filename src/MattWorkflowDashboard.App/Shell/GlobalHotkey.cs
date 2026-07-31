@@ -11,7 +11,11 @@ namespace MattWorkflowDashboard.App.Shell;
 public sealed partial class GlobalHotkey : IDisposable
 {
     private const int WmHotkey = 0x0312;
-    private const int HotkeyId = 0xB0B;
+
+    /// <summary>Distinct identities so several gestures can be registered against one window.</summary>
+    public const int ClickThroughId = 0xB0B;
+
+    public const int FocusId = 0xB0C;
 
     [Flags]
     private enum Modifiers
@@ -34,12 +38,14 @@ public sealed partial class GlobalHotkey : IDisposable
     private readonly nint _handle;
     private readonly HwndSource? _source;
     private readonly Action _onPressed;
+    private readonly int _id;
     private bool _registered;
 
-    public GlobalHotkey(nint handle, Action onPressed)
+    public GlobalHotkey(nint handle, Action onPressed, int id = ClickThroughId)
     {
         _handle = handle;
         _onPressed = onPressed;
+        _id = id;
 
         // Without a window there is nothing to register against; binding simply never succeeds.
         _source = handle == 0 ? null : HwndSource.FromHwnd(handle);
@@ -60,7 +66,7 @@ public sealed partial class GlobalHotkey : IDisposable
         }
 
         var virtualKey = (uint)KeyInterop.VirtualKeyFromKey(key);
-        _registered = RegisterHotKey(_handle, HotkeyId, (uint)(modifiers | Modifiers.NoRepeat), virtualKey);
+        _registered = RegisterHotKey(_handle, _id, (uint)(modifiers | Modifiers.NoRepeat), virtualKey);
         return _registered;
     }
 
@@ -68,14 +74,14 @@ public sealed partial class GlobalHotkey : IDisposable
     {
         if (_registered)
         {
-            UnregisterHotKey(_handle, HotkeyId);
+            UnregisterHotKey(_handle, _id);
             _registered = false;
         }
     }
 
     private nint OnMessage(nint hwnd, int msg, nint wParam, nint lParam, ref bool handled)
     {
-        if (msg == WmHotkey && wParam == HotkeyId)
+        if (msg == WmHotkey && wParam == _id)
         {
             _onPressed();
             handled = true;

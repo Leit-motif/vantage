@@ -76,6 +76,44 @@ public partial class DashboardWindow : Window
         WindowInterop.BringToTopWithoutActivating(WindowInterop.HandleOf(this));
     }
 
+    /// <summary>
+    /// Hands the dashboard the keyboard because the owner asked for it, and only then.
+    /// <para>
+    /// The overlay refuses activation outright so that a refresh or a watcher event can never
+    /// interrupt typing. That refusal is also what puts the dashboard out of the keyboard's reach,
+    /// so the one gesture the owner binds for this lifts it for exactly as long as they are here:
+    /// activation is refused again the moment they move on. Nothing else in the shell may call
+    /// this — every other path shows the window without taking focus.
+    /// </para>
+    /// </summary>
+    public void FocusForKeyboard()
+    {
+        if (!IsVisible)
+        {
+            ShowWithoutStealingFocus();
+        }
+
+        var handle = WindowInterop.HandleOf(this);
+
+        WindowInterop.SetNoActivate(handle, enabled: false);
+        WindowInterop.TakeForeground(handle);
+        Activate();
+
+        // Land on something the owner can act on, rather than on the window's own chrome.
+        MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
+    }
+
+    /// <summary>
+    /// The owner has moved on, so the overlay goes back to refusing focus. Leaving activation
+    /// enabled would let a later show or refresh take the keyboard, which is the whole thing
+    /// the no-activate style exists to prevent.
+    /// </summary>
+    protected override void OnDeactivated(EventArgs e)
+    {
+        WindowInterop.SetNoActivate(WindowInterop.HandleOf(this), enabled: true);
+        base.OnDeactivated(e);
+    }
+
     public void SetClickThrough(bool enabled)
     {
         _settings.Ui.ClickThrough = enabled;

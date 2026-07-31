@@ -47,6 +47,7 @@ public partial class App : Application
     private StartupRegistration _startup = null!;
     private WorkflowWatcher? _watcher;
     private GlobalHotkey? _hotkey;
+    private GlobalHotkey? _focusHotkey;
     private DispatcherTimer? _periodicRefresh;
     private SettingsWindow? _settingsWindow;
 
@@ -107,8 +108,13 @@ public partial class App : Application
 
         _shell.Start();
 
-        _hotkey = new GlobalHotkey(WindowInterop.HandleOf(_window), _shell.ToggleClickThrough);
+        var handle = WindowInterop.HandleOf(_window);
+        _hotkey = new GlobalHotkey(handle, _shell.ToggleClickThrough, GlobalHotkey.ClickThroughId);
         _hotkey.Bind(_settings.Ui.ClickThroughHotkey);
+
+        // The only way the dashboard ever takes the keyboard, and only if the owner binds it.
+        _focusHotkey = new GlobalHotkey(handle, _window.FocusForKeyboard, GlobalHotkey.FocusId);
+        _focusHotkey.Bind(_settings.Ui.FocusHotkey);
 
         _watcher = new WorkflowWatcher(_settings.Roots, () => Dispatcher.BeginInvoke(RequestRefresh));
 
@@ -179,6 +185,7 @@ public partial class App : Application
         _themes.Apply(_settings.Ui.Theme);
         _viewModel.NotifyAppearanceChanged();
         _hotkey?.Bind(_settings.Ui.ClickThroughHotkey);
+        _focusHotkey?.Bind(_settings.Ui.FocusHotkey);
 
         _watcher?.Dispose();
         _watcher = new WorkflowWatcher(_settings.Roots, () => Dispatcher.BeginInvoke(RequestRefresh));
@@ -234,6 +241,7 @@ public partial class App : Application
         _periodicRefresh?.Stop();
         _watcher?.Dispose();
         _hotkey?.Dispose();
+        _focusHotkey?.Dispose();
         _shell?.Dispose();
         _tray?.Dispose();
         _processRunner?.Dispose();

@@ -465,29 +465,125 @@ public sealed class RunningShellTests
     }
 
     [TestMethod]
-    public void The_keyboard_can_move_between_the_running_window_s_controls()
+    public void No_focus_gesture_is_claimed_until_the_owner_configures_one()
+    {
+        Assert.IsNull(
+            new DashboardSettings().Ui.FocusHotkey,
+            "The dashboard claims no global shortcut uninvited, including this one.");
+
+        using var shell = Start();
+        using var hotkey = WpfTestHost.Run(() =>
+            new GlobalHotkey(shell.Handle, () => { }, GlobalHotkey.FocusId));
+
+        Assert.IsFalse(
+            WpfTestHost.Run(() => hotkey.Bind(_settings.Ui.FocusHotkey)),
+            "With nothing configured, there is nothing to register.");
+    }
+
+    /// <summary>
+    /// The focus gesture as the owner performs it: a global hotkey they configured, bound against
+    /// the real window and pressed on the real keyboard. Driving <c>FocusForKeyboard</c> directly
+    /// would not do — Windows only lets a process take the foreground when it has been given a
+    /// reason to, and receiving a hotkey is that reason. A test that skipped the keystroke would
+    /// be testing a path the owner does not have.
+    /// </summary>
+    private static GlobalHotkey FocusByPressingTheOwner_s_Gesture(RunningShell shell)
+    {
+        var hotkey = WpfTestHost.Run(() =>
+            new GlobalHotkey(shell.Handle, shell.Window.FocusForKeyboard, GlobalHotkey.FocusId));
+
+        Assert.IsTrue(WpfTestHost.Run(() => hotkey.Bind("Ctrl+Shift+F9")), "The gesture has to register with Windows.");
+
+        Win32Window.PressChord([Win32Window.VkControl, Win32Window.VkShift], Win32Window.VkF9);
+
+        // The keystroke travels through Windows, so it arrives on its own schedule.
+        for (var attempt = 0; attempt < 50 && Win32Window.Foreground() != shell.Handle; attempt++)
+        {
+            RunningShell.Pump();
+            Thread.Sleep(20);
+        }
+
+        return hotkey;
+    }
+
+    [TestMethod]
+    public void The_dashboard_takes_the_keyboard_only_when_the_owner_asks_for_it()
     {
         using var shell = Start();
+        var handle = shell.Handle;
 
-        var moved = WpfTestHost.Run(() =>
+        Assert.IsTrue(
+            Win32Window.HasExtendedStyle(handle, Win32Window.WsExNoActivate),
+            "Until asked, the overlay refuses activation so a refresh cannot interrupt typing.");
+        Assert.AreNotEqual(handle, Win32Window.Foreground());
+
+        using var hotkey = FocusByPressingTheOwner_s_Gesture(shell);
+
+        Assert.AreEqual(
+            handle,
+            Win32Window.Foreground(),
+            "The owner's focus gesture has to actually hand the dashboard the keyboard.");
+        Assert.IsFalse(
+            Win32Window.HasExtendedStyle(handle, Win32Window.WsExNoActivate),
+            "A window that still refuses activation cannot hold the keyboard.");
+        Assert.IsTrue(
+            WpfTestHost.Run(() => Keyboard.FocusedElement is DependencyObject focused
+                && WpfTestHost.Descendants<DependencyObject>(shell.Window).Contains(focused)),
+            "Focus has to land on something inside the dashboard.");
+    }
+
+    [TestMethod]
+    public void Tab_moves_between_the_running_window_s_controls()
+    {
+        using var shell = Start();
+        var handle = shell.Handle;
+
+        using var hotkey = FocusByPressingTheOwner_s_Gesture(shell);
+
+        // Real keyboard input goes to whatever Windows has in front, so this is only a fair test
+        // if the dashboard genuinely holds the foreground first.
+        Assert.AreEqual(handle, Win32Window.Foreground(), "The dashboard has to hold the keyboard before Tab means anything.");
+
+        var before = WpfTestHost.Run(() => Keyboard.FocusedElement);
+        Win32Window.PressTab();
+
+        // The keystroke goes out through Windows and comes back through the window's message
+        // queue, so it lands when it lands.
+        IInputElement? after = null;
+        for (var attempt = 0; attempt < 50; attempt++)
         {
-            var buttons = WpfTestHost.Descendants<ButtonBase>(shell.Window)
-                .Where(b => b.Focusable && b.IsTabStop && WpfTestHost.IsRendered(b))
-                .ToList();
-
-            if (buttons.Count < 2)
+            RunningShell.Pump();
+            after = WpfTestHost.Run(() => Keyboard.FocusedElement);
+            if (!ReferenceEquals(before, after))
             {
-                return false;
+                break;
             }
 
-            buttons[0].Focus();
-            var first = Keyboard.FocusedElement;
+            Thread.Sleep(20);
+        }
 
-            buttons[0].MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
-            return !ReferenceEquals(first, Keyboard.FocusedElement);
-        });
+        Assert.AreNotEqual(
+            before,
+            after,
+            "Pressing Tab has to move to the next control in the running window.");
+    }
 
-        Assert.IsTrue(moved, "Tab has to reach the next control in the running window.");
+    [TestMethod]
+    public void The_overlay_goes_back_to_refusing_focus_once_the_owner_moves_on()
+    {
+        using var shell = Start();
+        var handle = shell.Handle;
+
+        using var hotkey = FocusByPressingTheOwner_s_Gesture(shell);
+        Assert.IsFalse(Win32Window.HasExtendedStyle(handle, Win32Window.WsExNoActivate));
+
+        // Whatever the owner turns to next takes the foreground, and the overlay must let go.
+        WpfTestHost.Run(() => shell.Window.Hide());
+        RunningShell.Pump();
+
+        Assert.IsTrue(
+            Win32Window.HasExtendedStyle(handle, Win32Window.WsExNoActivate),
+            "Leaving activation enabled would let the next refresh take the keyboard.");
     }
 
     // ---- Reduced motion ------------------------------------------------------------------------------

@@ -181,6 +181,16 @@ public sealed partial class SettingsViewModel : ObservableObject
         set => Set(() => _settings.Ui.ClickThroughHotkey = string.IsNullOrWhiteSpace(value) ? null : value.Trim());
     }
 
+    /// <summary>
+    /// The gesture that hands the dashboard the keyboard. Empty by default: the overlay refuses
+    /// focus so refreshes cannot interrupt typing, and this is the owner's way to ask for it.
+    /// </summary>
+    public string FocusHotkey
+    {
+        get => _settings.Ui.FocusHotkey ?? string.Empty;
+        set => Set(() => _settings.Ui.FocusHotkey = string.IsNullOrWhiteSpace(value) ? null : value.Trim());
+    }
+
     public bool GitHubEnrichmentEnabled
     {
         get => _settings.GitHubEnrichmentEnabled;

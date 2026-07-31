@@ -51,6 +51,37 @@ public static partial class WindowInterop
         SetWindowLongW(handle, GwlExStyle, style | WsExToolWindow | WsExNoActivate);
     }
 
+    /// <summary>
+    /// Turns activation off or on. It is off for all but one moment in the dashboard's life: the
+    /// overlay refuses focus so a refresh cannot interrupt typing, and the cost of that refusal is
+    /// that the keyboard cannot reach it either. Lifting it is how the owner's focus gesture is
+    /// answered, and it goes back on the moment they leave.
+    /// </summary>
+    public static void SetNoActivate(nint handle, bool enabled)
+    {
+        if (handle == 0)
+        {
+            return;
+        }
+
+        var style = GetWindowLongW(handle, GwlExStyle);
+        style = enabled ? style | WsExNoActivate : style & ~WsExNoActivate;
+        SetWindowLongW(handle, GwlExStyle, style);
+    }
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool SetForegroundWindow(nint hWnd);
+
+    /// <summary>Hands the window the keyboard, having first been allowed to take it.</summary>
+    public static void TakeForeground(nint handle)
+    {
+        if (handle != 0)
+        {
+            SetForegroundWindow(handle);
+        }
+    }
+
     public static void BringToTopWithoutActivating(nint handle)
     {
         if (handle != 0)

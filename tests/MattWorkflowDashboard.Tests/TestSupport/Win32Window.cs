@@ -59,6 +59,51 @@ public static class Win32Window
 
     public static nint Foreground() => GetForegroundWindow();
 
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, nint dwExtraInfo);
+
+    private const byte VkTab = 0x09;
+
+    public const byte VkControl = 0x11;
+
+    public const byte VkShift = 0x10;
+
+    public const byte VkF9 = 0x78;
+
+    private const uint KeyEventKeyUp = 0x0002;
+
+    /// <summary>
+    /// Presses a chord as the owner's keyboard would: modifiers down, key, then everything back
+    /// up. Used to deliver a real global hotkey, which is the only way the shell's focus gesture
+    /// can be exercised as the owner experiences it — Windows grants a process the right to take
+    /// the foreground when it receives a hotkey, and withholds it otherwise.
+    /// </summary>
+    public static void PressChord(byte[] modifiers, byte key)
+    {
+        foreach (var modifier in modifiers)
+        {
+            keybd_event(modifier, 0, 0, 0);
+        }
+
+        keybd_event(key, 0, 0, 0);
+        keybd_event(key, 0, KeyEventKeyUp, 0);
+
+        foreach (var modifier in modifiers.Reverse())
+        {
+            keybd_event(modifier, 0, KeyEventKeyUp, 0);
+        }
+    }
+
+    /// <summary>
+    /// Presses Tab as the owner's keyboard would, through Windows rather than through WPF. It
+    /// goes wherever the foreground window is, so a caller must have established that first.
+    /// </summary>
+    public static void PressTab()
+    {
+        keybd_event(VkTab, 0, 0, 0);
+        keybd_event(VkTab, 0, KeyEventKeyUp, 0);
+    }
+
     public static Rect BoundsOf(nint handle) =>
         GetWindowRect(handle, out var rect) ? rect : throw new InvalidOperationException("The window has no bounds.");
 }
