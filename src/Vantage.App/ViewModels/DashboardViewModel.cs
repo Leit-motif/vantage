@@ -68,7 +68,6 @@ public sealed partial class DashboardViewModel : ObservableObject
         // dashboard in is not a change to persist, and the mode's own change handler rebuilds
         // rows that do not exist until the three collections above are assigned.
         _mode = settings.Ui.ViewMode;
-        _lastStandardMode = _mode == DashboardViewMode.Ribbon ? DashboardViewMode.Compact : _mode;
     }
 
     /// <summary>Everything the current filter matched.</summary>
@@ -85,12 +84,6 @@ public sealed partial class DashboardViewModel : ObservableObject
     private DashboardViewMode _mode;
 
     /// <summary>
-    /// The view the chevron restores to. The ribbon is a place the owner collapses *from*, so
-    /// coming back out of it has to land where they were rather than at a fixed default.
-    /// </summary>
-    private DashboardViewMode _lastStandardMode;
-
-    /// <summary>
     /// Whether the detail pane is showing. Kept as its own question because the detail pane, the
     /// tray's label and conflict navigation all ask exactly this and nothing finer; setting it is
     /// how a caller says "open the evidence" without having to know the mode vocabulary.
@@ -102,13 +95,6 @@ public sealed partial class DashboardViewModel : ObservableObject
     }
 
     public bool IsRibbon => Mode == DashboardViewMode.Ribbon;
-
-    /// <summary>
-    /// The view the ribbon is folded down from, and the one the chevron unfolds back to. Public
-    /// because the ribbon borrows that view's width rather than having one of its own, so anything
-    /// recording a width while collapsed has to know whose it is.
-    /// </summary>
-    public DashboardViewMode StandardMode => _lastStandardMode;
 
     /// <summary>
     /// Whether the window is filling the display. Its geometry is the monitor's rather than the
@@ -210,15 +196,13 @@ public sealed partial class DashboardViewModel : ObservableObject
     }
 
     /// <summary>
-    /// The ribbon has no width of its own: it borrows the one belonging to the view it folded down
-    /// from, so collapsing moves nothing sideways and unfolding lands on the same footprint. It is
-    /// a strip, so length costs the owner nothing — only height was ever the thing in the way.
+    /// The ribbon is the small view folded down, so it is small-width — the same footprint the
+    /// dashboard returns to when it is opened again. It stays free to be dragged longer: it is a
+    /// strip, so length costs the owner nothing, and only height was ever in their way.
     /// </summary>
-    public double ShellWidth => (Mode == DashboardViewMode.Ribbon ? StandardMode : Mode) switch
-    {
-        DashboardViewMode.Expanded => _settings.Ui.Geometry.ExpandedWidth,
-        _ => _settings.Ui.Geometry.CompactWidth,
-    };
+    public double ShellWidth => Mode == DashboardViewMode.Expanded
+        ? _settings.Ui.Geometry.ExpandedWidth
+        : _settings.Ui.Geometry.CompactWidth;
 
     /// <summary>
     /// The owner's own preference, and Windows' when they have not expressed one: an accessibility
@@ -237,11 +221,6 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     partial void OnModeChanged(DashboardViewMode value)
     {
-        if (value != DashboardViewMode.Ribbon)
-        {
-            _lastStandardMode = value;
-        }
-
         _settings.Ui.ViewMode = value;
 
         OnPropertyChanged(nameof(IsExpanded));
@@ -262,17 +241,24 @@ public sealed partial class DashboardViewModel : ObservableObject
     [RelayCommand]
     public void CycleViewMode() => Mode = Mode switch
     {
-        DashboardViewMode.Compact => DashboardViewMode.Expanded,
         DashboardViewMode.Expanded => DashboardViewMode.Full,
         DashboardViewMode.Full => DashboardViewMode.Compact,
-        // Out of the ribbon this opens the view they were last in, not the start of the cycle.
-        _ => _lastStandardMode,
+        // Compact, and out of the ribbon, both step to the next size up.
+        _ => DashboardViewMode.Expanded,
     };
 
-    /// <summary>Collapses to the ribbon, and back out to whichever standard view they left.</summary>
+    /// <summary>
+    /// Folds the dashboard away, and opens it again at the small view.
+    /// <para>
+    /// Deliberately not back to whichever size it was folded from. Collapsing is how the owner
+    /// puts the dashboard down, and picking it back up should hand them the same small window
+    /// every time rather than an outcome that depends on what they happened to be doing before —
+    /// most of all when what they were doing was filling the screen.
+    /// </para>
+    /// </summary>
     [RelayCommand]
     public void ToggleRibbon() =>
-        Mode = Mode == DashboardViewMode.Ribbon ? _lastStandardMode : DashboardViewMode.Ribbon;
+        Mode = Mode == DashboardViewMode.Ribbon ? DashboardViewMode.Compact : DashboardViewMode.Ribbon;
 
     [RelayCommand]
     public void SetFilter(string filter) =>

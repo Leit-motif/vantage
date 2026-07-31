@@ -51,19 +51,36 @@ public sealed class ShellBehaviourTests
         Assert.IsTrue(_viewModel.IsExpanded);
         Assert.AreEqual(720, _viewModel.ShellWidth);
 
-        // The ribbon borrows the width of whichever view it folded down from, so collapsing is
-        // purely vertical: only height was ever the thing standing in the owner's way.
+        // The ribbon is the small view folded down, whatever it was folded down from.
         _viewModel.ToggleRibbonCommand.Execute(null);
-        Assert.AreEqual(720, _viewModel.ShellWidth, "Folded down from expanded, the ribbon is expanded-wide.");
+        Assert.AreEqual(380, _viewModel.ShellWidth);
+    }
 
-        _viewModel.ToggleRibbonCommand.Execute(null);
-        _viewModel.Mode = DashboardViewMode.Compact;
-        _viewModel.ToggleRibbonCommand.Execute(null);
-        Assert.AreEqual(380, _viewModel.ShellWidth, "And folded down from compact, compact-wide.");
+    /// <summary>
+    /// Collapsing is how the dashboard gets put down, so picking it back up hands the owner the
+    /// same small window every time rather than an outcome that depends on what they were doing
+    /// beforehand — most of all when what they were doing was filling the screen.
+    /// </summary>
+    [TestMethod]
+    public void Opening_the_dashboard_again_always_lands_on_the_small_view()
+    {
+        foreach (var folded in new[] { DashboardViewMode.Compact, DashboardViewMode.Expanded, DashboardViewMode.Full })
+        {
+            _viewModel.Mode = folded;
+            _viewModel.ToggleRibbonCommand.Execute(null);
+            Assert.AreEqual(DashboardViewMode.Ribbon, _viewModel.Mode);
+
+            _viewModel.ToggleRibbonCommand.Execute(null);
+            Assert.AreEqual(
+                DashboardViewMode.Compact,
+                _viewModel.Mode,
+                $"Folded away from {folded}, opening it again still lands on the small view.");
+            Assert.AreEqual(380, _viewModel.ShellWidth);
+        }
     }
 
     [TestMethod]
-    public void The_ribbon_carries_one_project_and_the_chevron_puts_the_owner_back_where_they_were()
+    public void The_ribbon_carries_exactly_one_project()
     {
         SixProjects();
 
@@ -76,12 +93,6 @@ public sealed class ShellBehaviourTests
         Assert.AreEqual(DashboardViewMode.Ribbon, _viewModel.Mode);
         Assert.AreEqual(1, _viewModel.VisibleProjects.Count, "A ribbon is one line, so it is one project.");
         Assert.IsTrue(_viewModel.HasRibbonProject);
-
-        _viewModel.ToggleRibbonCommand.Execute(null);
-        Assert.AreEqual(
-            DashboardViewMode.Expanded,
-            _viewModel.Mode,
-            "Coming back out of the ribbon has to land where the owner left, not at a default.");
     }
 
     [TestMethod]

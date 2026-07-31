@@ -367,12 +367,12 @@ public sealed class RunningShellTests
     }
 
     /// <summary>
-    /// Collapsing is a vertical gesture. The ribbon borrows the width of the view it folded down
-    /// from rather than having one of its own, so nothing moves sideways on the way in or out —
-    /// a window that shrinks horizontally when you fold it away reads as having gone somewhere.
+    /// Folding away from full screen is the case that used to go wrong: the window filled the
+    /// display, so it was against every edge and none, and the ribbon came back against the left
+    /// of the screen regardless of which side the owner keeps it on.
     /// </summary>
     [TestMethod]
-    public void Folding_the_dashboard_away_moves_nothing_sideways()
+    public void Folding_away_from_full_screen_lands_small_against_the_edge_it_was_against()
     {
         _settings.Ui.Geometry.CompactWidth = 380;
         _settings.Ui.Geometry.ExpandedWidth = 720;
@@ -381,22 +381,22 @@ public sealed class RunningShellTests
         using var shell = Start();
         var area = WorkArea(shell);
 
-        shell.MoveTo(area.Left + 40, area.Top + 60);
+        // Expanded and against the right, which is where an overlay like this is kept.
+        shell.MoveTo(area.Right - 720 - 8, area.Top + 60);
         shell.LetGeometrySettle();
-        var expanded = Edges(shell);
+        var rightEdge = Edges(shell).Right;
+
+        WpfTestHost.Run(() => _viewModel.CycleViewMode());
+        RunningShell.PumpUntil(() => Edges(shell).Width > 900, TimeSpan.FromSeconds(2));
+        Assert.IsTrue(Edges(shell).Width > 900, "The window has to have actually filled the display.");
 
         WpfTestHost.Run(() => _viewModel.ToggleRibbon());
         RunningShell.PumpUntil(() => Edges(shell).Height < 100, TimeSpan.FromSeconds(2));
 
         var folded = Edges(shell);
-        Assert.AreEqual(expanded.Left, folded.Left, 2d, "Folding away must not move the window sideways.");
-        Assert.AreEqual(expanded.Width, folded.Width, 2d, "The ribbon keeps the width of the view it folded down from.");
-
-        WpfTestHost.Run(() => _viewModel.ToggleRibbon());
-        RunningShell.PumpUntil(() => Edges(shell).Height > 400, TimeSpan.FromSeconds(2));
-
-        Assert.AreEqual(expanded.Width, Edges(shell).Width, 2d, "And unfolding lands on the same footprint.");
-        Assert.AreEqual(720, _settings.Ui.Geometry.ExpandedWidth, 0.5d, "A borrowed width is not recorded as compact's.");
+        Assert.IsTrue(folded.Height < 100, $"It has to have folded down; it is {folded.Height} tall.");
+        Assert.AreEqual(380, folded.Width, 2d, "The ribbon is the small view folded down, whatever it folded down from.");
+        Assert.AreEqual(rightEdge, folded.Right, 2d, "And it comes back against the edge the window was against.");
     }
 
     /// <summary>

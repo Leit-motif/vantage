@@ -267,17 +267,15 @@ public partial class DashboardWindow : Window
             geometry.Height = Height;
         }
 
-        // The ribbon borrows a width rather than owning one, so widening it is the owner widening
-        // the view it was folded down from. Recording it against the ribbon instead would hand
-        // compact a width chosen for something else.
-        switch (_viewModel.IsRibbon ? _viewModel.StandardMode : _viewModel.Mode)
+        // The ribbon is the small view folded down, so it shares that view's width: dragging
+        // either one longer is the same statement about how much room the dashboard may take.
+        if (_viewModel.Mode == DashboardViewMode.Expanded)
         {
-            case DashboardViewMode.Expanded:
-                geometry.ExpandedWidth = Width;
-                break;
-            case DashboardViewMode.Compact:
-                geometry.CompactWidth = Width;
-                break;
+            geometry.ExpandedWidth = Width;
+        }
+        else
+        {
+            geometry.CompactWidth = Width;
         }
 
         // Windows identifies a display by a physical-pixel point, so the window's own units have
@@ -372,7 +370,7 @@ public partial class DashboardWindow : Window
             Top = from.Top;
 
             ApplyModeSize();
-            ApplyModeWidth();
+            Width = _viewModel.ShellWidth;
         }
         finally
         {
@@ -385,18 +383,6 @@ public partial class DashboardWindow : Window
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => Reanchor(anchor));
     }
 
-    /// <summary>
-    /// The width the mode being entered asks for. The ribbon asks for none: collapsing is a
-    /// vertical gesture, so it keeps the width of the view it folded down from and unfolds back to
-    /// exactly the same footprint. Nothing about folding the dashboard away should move it sideways.
-    /// </summary>
-    private void ApplyModeWidth()
-    {
-        if (!_viewModel.IsRibbon)
-        {
-            Width = _viewModel.ShellWidth;
-        }
-    }
 
     /// <summary>
     /// Which edges the window holds still when it changes shape, and where they are. The nearest
