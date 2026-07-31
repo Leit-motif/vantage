@@ -50,8 +50,9 @@ own scanning once the repository is public, where it is free.
 
 ### 1. Windows account name in git history · low · accepted, deliberately not purged
 
-`C:\Users\Example\Workspaces` was the shipped default discovery root, alongside `D:\Projects`.
-Both are fixed at `HEAD` — the default is now empty — but they remain in **62 of 71 commits**, in
+The shipped default discovery roots were two absolute paths on the author's machine, one of them
+under `C:\Users\Example`. Both are fixed at `HEAD` — the default is now empty — but they remain in
+**62 of 71 commits**, in
 `src/…/Settings/DashboardSettings.cs` and `tests/…/RefreshSeam/ReadOnlyAcceptanceTests.cs`, and in
 the bodies of issues #1 and #10.
 
@@ -97,14 +98,16 @@ a live workspace, which made them the most likely place for a leak. They are cle
 | **Names of private projects the dashboard monitors** | **none** |
 | Windows paths | the same account name, in #1 and #10 — see finding 1 |
 
-The case worth reading is a comment on #5. A live acceptance run reported one project's tree as
-changed, and the comment establishes the change was external — an unrelated agent writing binary asset
-files this dashboard has no code path to touch — **without naming the project**. It discloses
-that the owner also has an unrelated hobby, and nothing else. That is a matter of taste, not privacy.
+One comment on #5 described an unrelated hobby project of the owner's by name while establishing
+that a tree change during a live run came from outside the dashboard. It never named the project
+itself, so this was presentation rather than privacy — but the repository is public-facing, so the
+reference was removed and the same passage in `docs/acceptance/README.md` was reworded. The
+evidence is unchanged: what mattered was that the writer was external and the file types were ones
+the dashboard has no code path to touch.
 
 Note that editing an issue or comment hides nothing: GitHub keeps an edit history anyone with read
 access can open, which on a public repository is everyone. Removing text from a thread means
-deleting the comment, not editing it.
+deleting the comment and reposting a clean one, not editing it in place.
 
 ### 5. No `.gitattributes` · informational
 

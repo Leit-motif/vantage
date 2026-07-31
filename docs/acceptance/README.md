@@ -152,10 +152,10 @@ to notice an edited file and a renamed one. A boundary that refused everything, 
 that noticed nothing, would produce the same clean report.
 
 It has also discriminated on live data. An earlier run of this same instrument reported one
-project's working tree as changed; the named project turned out to be one another agent on the machine
-was writing to at that moment, in file types the dashboard has no code path to touch. A comparison
-that had simply always been green would not have caught that, and would not have been worth
-believing when it was.
+project's working tree as changed; that project turned out to be one another agent on the machine
+was writing to at that moment, in binary file types the dashboard has no code path to touch. A
+comparison that had simply always been green would not have caught that, and would not have been
+worth believing when it was.
 
 ---
 
