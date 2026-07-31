@@ -33,6 +33,7 @@ public sealed record AcceptancePass(
     string Name,
     long ElapsedMilliseconds,
     int Projects,
+    int ProjectsWithProgress,
     int ProjectsWithRemainingWork,
     int StaleProjects,
     bool Offline,
@@ -40,9 +41,16 @@ public sealed record AcceptancePass(
     int PeakConcurrentProcesses,
     IReadOnlyList<string> DiagnosticCodes);
 
+/// <summary>
+/// How long a refresh kept going after it was told to stop — and, because that number means
+/// nothing without it, what the refresh was doing at the time. A pass cancelled while it is still
+/// walking the roots stops almost instantly and proves only the easy half.
+/// </summary>
 public sealed record CancellationEvidence(
-    long RequestedAfterMilliseconds,
-    long LatencyMilliseconds,
+    long WaitedForIndexingMilliseconds,
+    int ExternalCommandsBeforeCancelling,
+    bool StillRunningWhenCancelled,
+    double LatencyMilliseconds,
     bool StoppedByCancellation);
 
 public sealed record OfflineEvidence(
@@ -50,6 +58,8 @@ public sealed record OfflineEvidence(
     bool SnapshotMarkedOffline,
     int Projects,
     int ProjectsWithProgress,
+    int ProjectsWithRemainingWork,
+    int StaleProjects,
     long ElapsedMilliseconds);
 
 public sealed record AssociationEvidence(
@@ -105,10 +115,11 @@ public sealed class ReadOnlyAcceptanceRun(
     string commit)
 {
     /// <summary>
-    /// How long the cancellation pass is allowed to run before it is stopped. Long enough for a
-    /// real scan to be well under way, short enough that the answer is about responsiveness.
+    /// How long the cancellation pass will wait for indexing to start before giving up on waiting
+    /// and cancelling anyway. The wait itself is what matters: cancelling on a timer would land in
+    /// whatever phase the timer happened to fall in.
     /// </summary>
-    private static readonly TimeSpan CancelAfter = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan WaitForIndexing = TimeSpan.FromSeconds(30);
 
     private readonly byte[] _salt = RandomNumberGenerator.GetBytes(32);
 
@@ -155,18 +166,27 @@ public sealed class ReadOnlyAcceptanceRun(
             await PassAsync("warm", service, bounded, cancellationToken).ConfigureAwait(false),
         };
 
-        var cancellation = await CancellationPassAsync(service, cancellationToken).ConfigureAwait(false);
+        var cancellation = await CancellationPassAsync(service, runner, cancellationToken).ConfigureAwait(false);
 
-        // Associations are read off the warm pass rather than the cancelled one: a cancelled pass
+        // Associations are read off a settled pass rather than the cancelled one: a cancelled pass
         // has no complete answer to be right or wrong about.
         var settled = await service.RefreshAsync(cancellationToken).ConfigureAwait(false);
         var associations = Associations(settled, discovered, runner);
 
-        var offline = await OfflinePassAsync(cache, store, timeout, cancellationToken).ConfigureAwait(false);
+        var (offline, offlineRunner) = await OfflinePassAsync(cache, store, timeout, cancellationToken)
+            .ConfigureAwait(false);
 
         var after = await stateReader
             .ReadAsync(projectPaths, settings.GitHubEnrichmentEnabled, cancellationToken)
             .ConfigureAwait(false);
+
+        // Both boundaries are reported together. The offline pass runs behind a second runner, and
+        // a refusal it recorded would otherwise never be looked at.
+        var issued = runner.Issued.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        foreach (var (shape, count) in offlineRunner.Issued)
+        {
+            issued[shape] = issued.GetValueOrDefault(shape) + count;
+        }
 
         return new AcceptanceReport(
             environment,
@@ -178,8 +198,8 @@ public sealed class ReadOnlyAcceptanceRun(
             new SafetyEvidence(
                 before.Count,
                 MonitoredStateReader.Diff(before, after),
-                runner.Refused,
-                runner.Issued.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)));
+                [.. runner.Refused, .. offlineRunner.Refused],
+                issued));
     }
 
     private static async Task<AcceptancePass> PassAsync(
@@ -196,6 +216,7 @@ public sealed class ReadOnlyAcceptanceRun(
             name,
             elapsed.ElapsedMilliseconds,
             snapshot.Projects.Count,
+            snapshot.Projects.Count(p => p.Progress.Total > 0),
             snapshot.Projects.Count(p => p.HasRemainingWork),
             snapshot.Projects.Count(p => p.IsStale),
             snapshot.Offline,
@@ -215,12 +236,28 @@ public sealed class ReadOnlyAcceptanceRun(
     /// </summary>
     private static async Task<CancellationEvidence> CancellationPassAsync(
         RefreshService service,
+        ReadOnlyProcessRunner runner,
         CancellationToken cancellationToken)
     {
+        var commandsBefore = runner.Issued.Values.Sum();
+
         using var source = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var refresh = Task.Run(() => service.RefreshAsync(source.Token), CancellationToken.None);
 
-        await Task.Delay(CancelAfter, cancellationToken).ConfigureAwait(false);
+        // Waiting for the first external command rather than for a fixed delay. Discovery walks the
+        // roots before anything is indexed, and a pass cancelled during that walk stops promptly for
+        // reasons that say nothing about stopping a scan already talking to git and gh.
+        var waiting = Stopwatch.StartNew();
+        while (runner.Issued.Values.Sum() == commandsBefore
+            && !refresh.IsCompleted
+            && waiting.Elapsed < WaitForIndexing)
+        {
+            await Task.Delay(25, cancellationToken).ConfigureAwait(false);
+        }
+
+        waiting.Stop();
+        var issuedAtCancel = runner.Issued.Values.Sum() - commandsBefore;
+        var stillRunning = !refresh.IsCompleted;
 
         var latency = Stopwatch.StartNew();
         await source.CancelAsync().ConfigureAwait(false);
@@ -236,7 +273,13 @@ public sealed class ReadOnlyAcceptanceRun(
         }
 
         latency.Stop();
-        return new CancellationEvidence((long)CancelAfter.TotalMilliseconds, latency.ElapsedMilliseconds, stopped);
+
+        return new CancellationEvidence(
+            waiting.ElapsedMilliseconds,
+            issuedAtCancel,
+            stillRunning,
+            latency.Elapsed.TotalMilliseconds,
+            stopped);
     }
 
     /// <summary>
@@ -245,7 +288,7 @@ public sealed class ReadOnlyAcceptanceRun(
     /// Nothing on the machine is changed, and nothing is imitated — the tool itself decides it has
     /// no session, and the dashboard has to stay useful anyway.
     /// </summary>
-    private async Task<OfflineEvidence> OfflinePassAsync(
+    private async Task<(OfflineEvidence Evidence, ReadOnlyProcessRunner Runner)> OfflinePassAsync(
         DashboardCache cache,
         SettingsStore store,
         TimeSpan timeout,
@@ -278,12 +321,16 @@ public sealed class ReadOnlyAcceptanceRun(
         var snapshot = await offlineService.RefreshAsync(cancellationToken).ConfigureAwait(false);
         elapsed.Stop();
 
-        return new OfflineEvidence(
-            !probe.Succeeded,
-            snapshot.Offline,
-            snapshot.Projects.Count,
-            snapshot.Projects.Count(p => p.Progress.Total > 0),
-            elapsed.ElapsedMilliseconds);
+        return (
+            new OfflineEvidence(
+                !probe.Succeeded,
+                snapshot.Offline,
+                snapshot.Projects.Count,
+                snapshot.Projects.Count(p => p.Progress.Total > 0),
+                snapshot.Projects.Count(p => p.HasRemainingWork),
+                snapshot.Projects.Count(p => p.IsStale),
+                elapsed.ElapsedMilliseconds),
+            runner);
     }
 
     private AssociationEvidence Associations(
