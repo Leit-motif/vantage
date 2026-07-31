@@ -54,8 +54,13 @@ public sealed record CancellationEvidence(
     double LatencyMilliseconds,
     bool StoppedByCancellation);
 
+/// <summary>
+/// <see cref="GhReportedNoSession"/> is null, not <c>false</c>, when enrichment is off: the probe
+/// that would answer it was never run, and a report must not claim an observation that did not
+/// happen.
+/// </summary>
 public sealed record OfflineEvidence(
-    bool GhReportedNoSession,
+    bool? GhReportedNoSession,
     bool SnapshotMarkedOffline,
     int Projects,
     int ProjectsWithProgress,
@@ -404,8 +409,9 @@ public sealed class ReadOnlyAcceptanceRun(
 
         // With enrichment off, the dashboard never asks gh anything, so there is no session to
         // probe for — asking anyway would be the one gh call a local-only default run must not
-        // make. Reported as "no session" because none is in use either way.
-        var ghReportedNoSession = true;
+        // make. Left null rather than guessed true: the probe that would answer this was never
+        // run, and this report must not claim an observation that did not happen.
+        bool? ghReportedNoSession = null;
         if (settings.GitHubEnrichmentEnabled)
         {
             var probe = await runner

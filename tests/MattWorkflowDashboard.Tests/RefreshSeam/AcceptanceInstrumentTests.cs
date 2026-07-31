@@ -242,6 +242,9 @@ public sealed class AcceptanceInstrumentTests
         Assert.IsFalse(
             report.Safety.CommandsIssued.Keys.Any(command => command.StartsWith("gh", StringComparison.Ordinal)),
             "A local-only default run must not invoke gh, including from the instrument's own offline probe.");
+        Assert.IsNull(
+            report.Offline.GhReportedNoSession,
+            "The probe was skipped, not answered — the report must say so rather than claim an observation that never ran.");
     }
 
     /// <summary>
