@@ -15,6 +15,7 @@ namespace MattWorkflowDashboard.Tests.TestSupport;
 public sealed class RefreshHarness : IDisposable
 {
     private DashboardCache _cache;
+    private RefreshService? _service;
 
     public RefreshHarness(WorkspaceFixture workspace, FakeProcessRunner? runner = null, DateTimeOffset? now = null)
     {
@@ -59,8 +60,16 @@ public sealed class RefreshHarness : IDisposable
         return this;
     }
 
+    /// <summary>
+    /// The one refresh boundary this session drives, exactly as the running dashboard holds it.
+    /// Reused rather than rebuilt per call, because the per-project gate only serializes overlapping
+    /// passes if both passes go through the same boundary.
+    /// </summary>
+    public RefreshService Service =>
+        _service ??= new RefreshService(Settings, Runner, _cache, Clock, SettingsStore);
+
     public Task<DashboardSnapshot> RefreshAsync(CancellationToken cancellationToken = default) =>
-        new RefreshService(Settings, Runner, _cache, Clock, SettingsStore).RefreshAsync(cancellationToken);
+        Service.RefreshAsync(cancellationToken);
 
     /// <summary>Reopens the cache and re-reads settings from disk, as a restart would.</summary>
     public void Restart()
@@ -68,6 +77,7 @@ public sealed class RefreshHarness : IDisposable
         _cache.Dispose();
         _cache = DashboardCache.Open(Workspace.CacheFile);
         Settings = SettingsStore.Load().Settings;
+        _service = null;
     }
 
     public void Dispose() => _cache.Dispose();

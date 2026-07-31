@@ -30,9 +30,14 @@ public sealed partial class DashboardViewModel : ObservableObject
 {
     private readonly DashboardSettings _settings;
     private readonly SettingsStore _settingsStore;
-    private readonly DashboardCache _cache;
-    private readonly IProcessRunner _processRunner;
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
+
+    /// <summary>
+    /// The refresh boundary, held for the life of the dashboard rather than rebuilt per refresh.
+    /// It owns the per-project gate that keeps overlapping passes from interleaving, and a gate
+    /// rebuilt with each refresh could never serialize one refresh against the next.
+    /// </summary>
+    private readonly RefreshService _refresh;
 
     private CancellationTokenSource? _inFlight;
     private DashboardSnapshot _snapshot;
@@ -48,10 +53,12 @@ public sealed partial class DashboardViewModel : ObservableObject
     {
         _settings = settings;
         _settingsStore = settingsStore;
-        _cache = cache;
-        _processRunner = processRunner;
         _highContrast = highContrast ?? (() => System.Windows.SystemParameters.HighContrast);
         _snapshot = DashboardSnapshot.Empty("initial", DateTimeOffset.UtcNow);
+
+        // The refresh boundary owns persisting the registry intent it produces: a newly discovered
+        // project, a first-seen remote, or a remote now waiting on confirmation.
+        _refresh = new RefreshService(settings, processRunner, cache, settingsStore: settingsStore);
 
         IsExpanded = !settings.Ui.StartCompact;
         Projects = [];
@@ -200,11 +207,8 @@ public sealed partial class DashboardViewModel : ObservableObject
         try
         {
             IsRefreshing = true;
-            // The refresh boundary owns persisting the registry intent it produces: a newly
-            // discovered project, a first-seen remote, or a remote now waiting on confirmation.
-            var service = new RefreshService(_settings, _processRunner, _cache, settingsStore: _settingsStore);
 
-            var snapshot = await service.RefreshAsync(token).ConfigureAwait(true);
+            var snapshot = await _refresh.RefreshAsync(token).ConfigureAwait(true);
             Apply(snapshot);
         }
         catch (OperationCanceledException)

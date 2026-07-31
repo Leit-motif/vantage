@@ -21,6 +21,9 @@ public static class WpfTestHost
     private static readonly Lock Gate = new();
     private static Dispatcher? _dispatcher;
 
+    /// <summary>The shell's dispatcher, for tests that need to queue work at a chosen priority.</summary>
+    public static Dispatcher Ui() => Dispatcher_();
+
     public static void Run(Action work) => Ui().Invoke(work);
 
     public static T Run<T>(Func<T> work) => Ui().Invoke(work);
@@ -149,7 +152,7 @@ public static class WpfTestHost
                 .Where(t => IsRendered(t) && !string.IsNullOrEmpty(t.Text))
                 .Select(t => t.Text));
 
-    private static Dispatcher Ui()
+    private static Dispatcher Dispatcher_()
     {
         lock (Gate)
         {

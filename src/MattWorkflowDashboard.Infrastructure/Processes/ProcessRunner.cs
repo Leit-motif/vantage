@@ -35,12 +35,21 @@ public sealed class BoundedProcessRunner : IProcessRunner, IDisposable
 {
     private readonly SemaphoreSlim _slots;
     private readonly TimeSpan _timeout;
+    private int _running;
+    private int _peak;
 
     public BoundedProcessRunner(int maxConcurrent, TimeSpan timeout)
     {
         _slots = new SemaphoreSlim(Math.Max(1, maxConcurrent));
         _timeout = timeout;
     }
+
+    /// <summary>
+    /// The most child processes this runner ever had alive at once. Local instrumentation, never
+    /// reported anywhere: it is how the global cap is shown to be a cap rather than an intention.
+    /// Counted around the child itself, because a caller waiting on the semaphore is not a process.
+    /// </summary>
+    public int PeakConcurrentProcesses => Volatile.Read(ref _peak);
 
     public async Task<ProcessResult> RunAsync(
         string fileName,
@@ -51,7 +60,20 @@ public sealed class BoundedProcessRunner : IProcessRunner, IDisposable
         await _slots.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await RunCoreAsync(fileName, arguments, workingDirectory, cancellationToken).ConfigureAwait(false);
+            var running = Interlocked.Increment(ref _running);
+            for (var peak = Volatile.Read(ref _peak); running > peak; peak = Volatile.Read(ref _peak))
+            {
+                Interlocked.CompareExchange(ref _peak, running, peak);
+            }
+
+            try
+            {
+                return await RunCoreAsync(fileName, arguments, workingDirectory, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _running);
+            }
         }
         finally
         {

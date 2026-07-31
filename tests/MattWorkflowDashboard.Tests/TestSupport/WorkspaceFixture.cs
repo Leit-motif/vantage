@@ -34,6 +34,35 @@ public sealed class WorkspaceFixture : IDisposable
         return path;
     }
 
+    /// <summary>
+    /// A tree big enough for traversal bounds to be a real question, laid out as ordinary nested
+    /// directories with a project every so often. Sanitized by construction: nothing here is copied
+    /// from a live workspace.
+    /// </summary>
+    public void NewTree(int directories, int projectsEvery, int breadth = 5)
+    {
+        var created = 0;
+        var frontier = new Queue<string>();
+        frontier.Enqueue(WorkspacesRoot);
+
+        while (created < directories && frontier.Count > 0)
+        {
+            var parent = frontier.Dequeue();
+
+            for (var i = 0; i < breadth && created < directories; i++)
+            {
+                var child = EnsureDirectory(Path.Combine(parent, $"d{created:D4}"));
+                if (created % projectsEvery == 0)
+                {
+                    File.WriteAllText(Path.Combine(child, "AGENTS.md"), "# Agents\n");
+                }
+
+                frontier.Enqueue(child);
+                created++;
+            }
+        }
+    }
+
     public string NewEffort(string projectPath, string effortName)
     {
         var path = EnsureDirectory(Path.Combine(projectPath, ".scratch", effortName));
