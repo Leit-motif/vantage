@@ -6,6 +6,11 @@ whether the test suite stays off the owner's keyboard, what the running shell do
 itself moves underneath it, and what the overlay actually looks like on a real desktop. All are made
 on the live machine, and all record their evidence here.
 
+The product was named `MattWorkflowDashboard` when these runs were recorded, and was renamed to
+`Vantage` afterwards. The commands above have been updated so they still run; the recorded JSON has
+not, because it is evidence. Where a record names a path, an assembly, or a registry value, it names
+what existed at the commit it is stamped with.
+
 ---
 
 # The keystroke witness
@@ -22,7 +27,7 @@ trust.
 ## Reproducing it
 
 ```bash
-dotnet run -c Release --project tools/KeystrokeWitness -- docs/acceptance/keystroke-witness.json --stamp $(git rev-parse HEAD) dotnet test tests/MattWorkflowDashboard.Tests --configuration Release --no-build
+dotnet run -c Release --project tools/KeystrokeWitness -- docs/acceptance/keystroke-witness.json --stamp $(git rev-parse HEAD) dotnet test tests/Vantage.Tests --configuration Release --no-build
 ```
 
 **Run it while using the machine.** A clean result from an idle desktop is the weakest version of
@@ -79,7 +84,7 @@ real, private, and messier than any fixture.
 ## Reproducing it
 
 ```bash
-dotnet run -c Release --project src/MattWorkflowDashboard.App -- --acceptance "$env:TEMP/mwd-scan" --stamp $(git rev-parse HEAD)
+dotnet run -c Release --project src/Vantage.App -- --acceptance "$env:TEMP/mwd-scan" --stamp $(git rev-parse HEAD)
 ```
 
 **The output directory must be outside every configured root**, and the run refuses to start
@@ -147,10 +152,10 @@ to notice an edited file and a renamed one. A boundary that refused everything, 
 that noticed nothing, would produce the same clean report.
 
 It has also discriminated on live data. An earlier run of this same instrument reported one
-project's working tree as changed; the named project turned out to be one another agent on the machine
-was writing to at that moment, in file types the dashboard has no code path to touch. A comparison
-that had simply always been green would not have caught that, and would not have been worth
-believing when it was.
+project's working tree as changed; that project turned out to be one another agent on the machine
+was writing to at that moment, in binary file types the dashboard has no code path to touch. A
+comparison that had simply always been green would not have caught that, and would not have been
+worth believing when it was.
 
 ---
 
@@ -167,7 +172,7 @@ or the key temporarily removed from the owner's own file for the duration of the
 immediately after):
 
 ```bash
-dotnet run -c Release --project src/MattWorkflowDashboard.App -- --acceptance "$env:TEMP/mwd-local-only" --stamp $(git rev-parse HEAD)
+dotnet run -c Release --project src/Vantage.App -- --acceptance "$env:TEMP/mwd-local-only" --stamp $(git rev-parse HEAD)
 ```
 
 Same instrument as the read-only scan above, including its own offline pass — which probes a real
@@ -214,7 +219,7 @@ It writes only when the switch names a file, and it records the shell's own stat
 content, no project or repository names.
 
 ```bash
-dotnet run -c Release --project src/MattWorkflowDashboard.App -- --shell-journal "$env:TEMP/mwd-shell.jsonl"
+dotnet run -c Release --project src/Vantage.App -- --shell-journal "$env:TEMP/mwd-shell.jsonl"
 ```
 
 The items below are then driven by hand — the owner changing Windows, the agent reading the journal
@@ -296,7 +301,7 @@ doing the one thing the ticket is about.
 
 ```bash
 pwsh tools/VisualFixture/New-VisualFixture.ps1
-dotnet run -c Release --project src/MattWorkflowDashboard.App -- --state "$env:PUBLIC/mwd-visual-fixture/state"
+dotnet run -c Release --project src/Vantage.App -- --state "$env:PUBLIC/mwd-visual-fixture/state"
 pwsh tools/VisualFixture/Save-Frame.ps1 -Rect 725,113,775,950 -Path frame.png
 ```
 
@@ -325,3 +330,10 @@ either, and neither was tested. Only 125% scaling and only the Dark palette were
 Every frame also carries a `Diagnostics 5` badge, because the fixture uses the status `Idle`, which
 the parser does not recognise. That is the fixture's doing rather than the product's, and the frames
 were approved with it visible rather than quietly re-shot.
+
+They also predate the rename to Vantage, and their header still reads `Workflow · read-only`. They
+have not been re-shot for it. What they are evidence of — the measured 79.3% surface opacity, the
+recorded window styles of each target, the three layouts over a real composited desktop — is
+unaffected by a header string, and re-shooting would replace a record the owner approved frame by
+frame with one taken to make a caption tidy. The current interface is in `docs/images/`, rendered
+from the same fixture by `--capture`, which is a different artifact for a different purpose.

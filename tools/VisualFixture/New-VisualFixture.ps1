@@ -9,7 +9,7 @@
   an invented workspace with the same shape — projects, efforts, tickets, git history — and a
   state directory pointing at it, which the app opens with:
 
-      MattWorkflowDashboard.exe --state <StateDirectory>
+      Vantage.exe --state <StateDirectory>
 
   Nothing here is copied from a live workspace. Every name is made up, and the tickets carry only
   the metadata grammar the dashboard reads.
@@ -158,4 +158,4 @@ $settings | ConvertTo-Json -Depth 6 | Set-Content -Path (Join-Path $StateDirecto
 
 Write-Host "Fixture workspace : $Root"
 Write-Host "Fixture state     : $StateDirectory"
-Write-Host "Run               : MattWorkflowDashboard.exe --state `"$StateDirectory`""
+Write-Host "Run               : Vantage.exe --state `"$StateDirectory`""

@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Vantage.App/Vantage.App.csproj" />
+    <Project Path="src/Vantage.Core/Vantage.Core.csproj" />
+    <Project Path="src/Vantage.Infrastructure/Vantage.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Vantage.Tests/Vantage.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/KeystrokeWitness/KeystrokeWitness.csproj" />
+  </Folder>
+</Solution>

@@ -23,21 +23,21 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Restore
-        run: dotnet restore MattWorkflowDashboard.slnx
+        run: dotnet restore Vantage.slnx
 
       - name: Build
-        run: dotnet build MattWorkflowDashboard.slnx --configuration Release --no-restore
+        run: dotnet build Vantage.slnx --configuration Release --no-restore
 
       - name: Test
-        run: dotnet test tests/MattWorkflowDashboard.Tests/MattWorkflowDashboard.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=results.trx"
+        run: dotnet test tests/Vantage.Tests/Vantage.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=results.trx"
 
       - name: Validate the shipping publish configuration
-        run: dotnet publish src/MattWorkflowDashboard.App/MattWorkflowDashboard.App.csproj -p:PublishProfile=win-x64 --configuration Release --output ${{ runner.temp }}/publish
+        run: dotnet publish src/Vantage.App/Vantage.App.csproj -p:PublishProfile=win-x64 --configuration Release --output ${{ runner.temp }}/publish
 
       - name: Confirm the published artifact exists
         shell: pwsh
         run: |
-          $exe = Join-Path "${{ runner.temp }}/publish" "MattWorkflowDashboard.exe"
+          $exe = Join-Path "${{ runner.temp }}/publish" "Vantage.exe"
           if (-not (Test-Path $exe)) { throw "Publish did not produce $exe" }
           "Published $((Get-Item $exe).Length) bytes"
 

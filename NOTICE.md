@@ -1,0 +1,24 @@
+# Copyright and usage
+
+Copyright © 2026 Amritpal Singh Chana. All rights reserved.
+
+This repository is published for portfolio review, technical evaluation, and educational
+inspection. **It is not open-source software**, and no open-source licence is granted.
+
+No permission is granted to use, copy, modify, merge, publish, distribute, sublicense, sell,
+host, deploy, or commercially exploit this software or any part of it, except where such
+permission is required by applicable law or by the GitHub Terms of Service — which is what
+allows GitHub to display it and other GitHub users to fork it within the platform.
+
+You are welcome to read the source, run it locally to evaluate it, and cite or discuss it with
+attribution.
+
+This notice is a statement of the terms under which the work is published. It is not legal
+advice, and it is not a negotiated licence.
+
+For licensing enquiries, contact Amrit Chana through the repository owner's GitHub profile.
+
+## Third-party components
+
+Dependencies retain their own licences, which are not affected by this notice. They are declared
+in the project files under `src/` and `tests/`, and are resolved from NuGet at build time.
