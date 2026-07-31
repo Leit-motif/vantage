@@ -103,16 +103,20 @@ public sealed record AcceptanceReport(
     AssociationEvidence Associations,
     SafetyEvidence Safety)
 {
-    /// <summary>
-    /// A clean result, and a complete one. A source that could not be read is not evidence that it
-    /// is unchanged, so a gap fails this just as a change does — otherwise the strongest possible
-    /// report would be the one produced by observing nothing at all.
-    /// </summary>
+    /// <summary>Nothing the run observed moved, and nothing it tried to do was stopped.</summary>
     [JsonIgnore]
     public bool NothingWasChanged =>
-        Safety.MonitoredStateChanges.Count == 0
-        && Safety.RefusedCommands.Count == 0
-        && Safety.FingerprintGaps.Count == 0;
+        Safety.MonitoredStateChanges.Count == 0 && Safety.RefusedCommands.Count == 0;
+
+    /// <summary>
+    /// Everything the run set out to observe, it actually saw. Kept apart from
+    /// <see cref="NothingWasChanged"/> deliberately: a source that could not be read is not evidence
+    /// that it is unchanged, but neither is it a safety failure — a private or deleted repository is
+    /// an ordinary fact of a real workspace. Reporting them as one thing would either make a clean
+    /// run impossible or let the strongest report be the one that observed the least.
+    /// </summary>
+    [JsonIgnore]
+    public bool ObservationWasComplete => Safety.FingerprintGaps.Count == 0;
 }
 
 /// <summary>
@@ -496,9 +500,7 @@ public sealed class ReadOnlyAcceptanceRun(
     /// confirmation, and the fingerprint must not query a repository they have not approved.
     /// </summary>
     private ProjectAssociation AssociationOf(string projectPath) =>
-        settings.FindProject(projectPath) is { } entry
-            ? new ProjectAssociation(true, entry.ConfirmedOrigin)
-            : ProjectAssociation.Unregistered;
+        new(settings.FindProject(projectPath)?.ConfirmedOrigin);
 
     /// <summary>
     /// A stable identifier for a path or a repository within one report, and nothing outside it.

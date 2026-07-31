@@ -276,7 +276,7 @@ public sealed class ReadOnlyAcceptanceTests
             runner,
             path => path.ToLowerInvariant(),
             200,
-            associationOf: _ => new ProjectAssociation(Registered: true, ConfirmedSlug: "acme/confirmed"));
+            associationOf: _ => new ProjectAssociation("acme/confirmed"));
 
         await reader.ReadAsync([project], includeGitHub: true, CancellationToken.None);
 
@@ -309,7 +309,7 @@ public sealed class ReadOnlyAcceptanceTests
             runner,
             path => path.ToLowerInvariant(),
             200,
-            associationOf: _ => ProjectAssociation.Unregistered);
+            associationOf: _ => ProjectAssociation.None);
 
         await reader.ReadAsync([project], includeGitHub: true, CancellationToken.None);
 

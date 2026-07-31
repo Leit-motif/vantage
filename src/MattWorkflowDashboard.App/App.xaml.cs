@@ -35,6 +35,12 @@ public partial class App : Application
     /// <summary>Something the run was supposed to leave alone did not survive it.</summary>
     private const int ExitCodeAcceptanceViolated = 3;
 
+    /// <summary>
+    /// Nothing changed, but something could not be read — a private or deleted repository, an
+    /// unreadable file. The run is clean as far as it saw, and says how far that was.
+    /// </summary>
+    private const int ExitCodeObservationIncomplete = 4;
+
     private SingleInstanceGuard? _instance;
     private Logger? _logger;
     private AppPaths _paths = null!;
@@ -192,7 +198,9 @@ public partial class App : Application
                 Path.Combine(outputDirectory, "acceptance-report.json"),
                 ReadOnlyAcceptanceRun.Serialize(report));
 
-            exitCode = report.NothingWasChanged ? 0 : ExitCodeAcceptanceViolated;
+            exitCode = report.NothingWasChanged
+                ? report.ObservationWasComplete ? 0 : ExitCodeObservationIncomplete
+                : ExitCodeAcceptanceViolated;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {

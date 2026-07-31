@@ -42,14 +42,20 @@ public sealed record MonitoredStateChange(string ProjectId, string Subject, stri
 public sealed record FingerprintGap(string ProjectId, string Subject);
 
 /// <summary>
-/// What the registry says about a project's repository. The distinction that matters is between a
-/// project the registry knows — whose confirmed association is the only repository that may be
-/// queried — and one it has never seen, which has no confirmed association to contradict and whose
-/// first-observed remote is what the dashboard would itself adopt.
+/// What the registry says about a project's repository. The distinction that matters is not whether
+/// the registry has an entry but whether that entry carries a <em>confirmed</em> origin: an entry
+/// written before any remote was seen has nothing to contradict, and the dashboard's own rule for
+/// that case is to adopt the first remote it observes.
 /// </summary>
-public sealed record ProjectAssociation(bool Registered, string? ConfirmedSlug)
+public sealed record ProjectAssociation(string? ConfirmedSlug)
 {
-    public static readonly ProjectAssociation Unregistered = new(false, null);
+    public static readonly ProjectAssociation None = new((string?)null);
+
+    /// <summary>
+    /// True when a repository has been confirmed for this project, and therefore when it is the only
+    /// one that may be queried — a remote that has since changed is pending the owner's confirmation.
+    /// </summary>
+    public bool IsConfirmed => ConfirmedSlug is not null;
 }
 
 /// <summary>
@@ -116,19 +122,29 @@ public sealed class MonitoredStateReader(
 
         if (isRepository)
         {
-            head = await GitDigestAsync(projectPath, ["rev-parse", "HEAD"], "git HEAD", unavailable, cancellationToken).ConfigureAwait(false);
+            // Status first: whether it worked is what tells a repository that has nothing to show
+            // apart from one that could not be read.
             status = await GitDigestAsync(projectPath, ["status", "--porcelain"], "git status", unavailable, cancellationToken).ConfigureAwait(false);
             config = await GitDigestAsync(projectPath, ["config", "--list", "--local"], "git config", unavailable, cancellationToken).ConfigureAwait(false);
-            refs = await GitDigestAsync(projectPath, ["show-ref"], "git refs", unavailable, cancellationToken).ConfigureAwait(false);
+
+            var readable = status is not null;
+
+            // A repository with no commits has no HEAD and no refs, and both commands fail saying so.
+            // That is the true state of it, not a blind spot — and it is a state that changes the
+            // moment anything is committed, so it is recorded rather than reported as unseen.
+            head = await GitDigestAsync(projectPath, ["rev-parse", "HEAD"], "git HEAD", unavailable, cancellationToken, emptyWhenReadable: readable).ConfigureAwait(false);
+            refs = await GitDigestAsync(projectPath, ["show-ref"], "git refs", unavailable, cancellationToken, emptyWhenReadable: readable).ConfigureAwait(false);
         }
 
-        var association = associationOf?.Invoke(projectPath) ?? ProjectAssociation.Unregistered;
+        var association = associationOf?.Invoke(projectPath) ?? ProjectAssociation.None;
 
-        // A registered project is asked about only under its confirmed association. An unregistered
-        // one has none to contradict, and reading its remote is what makes the two fingerprints
-        // symmetric: a project the registry learns about between them would otherwise be skipped
-        // before and queried after, and that difference would read as a change in the workspace.
-        var originSlug = association.Registered
+        // A project with a confirmed repository is asked about only under that one, never under a
+        // remote that has since changed and is waiting on the owner. A project without one is asked
+        // about under the remote it actually has, which is exactly what the dashboard would adopt
+        // for it — and what keeps the two fingerprints symmetric. Skipping it instead would mean a
+        // project whose origin is confirmed between the two readings shows up as the workspace
+        // changing, which is what the first run with this restriction in place reported.
+        var originSlug = association.IsConfirmed
             ? association.ConfirmedSlug
             : isRepository
                 ? await ObservedRemoteAsync(projectPath, unavailable, cancellationToken).ConfigureAwait(false)
@@ -302,12 +318,18 @@ public sealed class MonitoredStateReader(
         return slug;
     }
 
+    /// <param name="emptyWhenReadable">
+    /// When the repository is known to be readable, a command that fails with nothing to say is
+    /// reporting emptiness rather than refusing to answer. That is a real state worth recording, and
+    /// one that stops being empty as soon as the repository has anything in it.
+    /// </param>
     private async Task<string?> GitDigestAsync(
         string projectPath,
         IReadOnlyList<string> verb,
         string subject,
         ICollection<string> unavailable,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool emptyWhenReadable = false)
     {
         var result = await runner.RunAsync(
             "git",
@@ -318,6 +340,11 @@ public sealed class MonitoredStateReader(
         if (result.Succeeded)
         {
             return Digest(result.StandardOutput);
+        }
+
+        if (emptyWhenReadable && result.StandardOutput.Trim().Length == 0 && !result.TimedOut && !result.NotFound)
+        {
+            return Digest("<nothing yet>");
         }
 
         unavailable.Add(subject);
