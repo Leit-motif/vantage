@@ -4,8 +4,8 @@
     "Runtime": ".NET 10.0.10",
     "Architecture": "X64",
     "ProcessorCount": 16,
-    "Commit": "ffb0d4056896e9a7706598eebbd9c2524b8a5c97",
-    "StartedAtUtc": "2026-07-31 04:13:39Z"
+    "Commit": "2cbd3f2710430b4ea502828d7dc08acdd102d3d8",
+    "StartedAtUtc": "2026-07-31 04:54:20Z"
   },
   "Bounds": {
     "Roots": 2,
@@ -19,7 +19,7 @@
   "Passes": [
     {
       "Name": "cold",
-      "ElapsedMilliseconds": 17407,
+      "ElapsedMilliseconds": 15909,
       "Projects": 53,
       "ProjectsWithProgress": 26,
       "ProjectsWithRemainingWork": 23,
@@ -32,13 +32,13 @@
         "EFFORT_EMPTY=1",
         "GITHUB_UNAVAILABLE=10",
         "SCAN_TRUNCATED=4",
-        "TICKET_AMBIGUOUS_STATUS=6",
+        "TICKET_AMBIGUOUS_STATUS=7",
         "TICKET_UNRECOGNIZED=62"
       ]
     },
     {
       "Name": "warm",
-      "ElapsedMilliseconds": 18246,
+      "ElapsedMilliseconds": 15037,
       "Projects": 53,
       "ProjectsWithProgress": 26,
       "ProjectsWithRemainingWork": 23,
@@ -51,17 +51,17 @@
         "EFFORT_EMPTY=1",
         "GITHUB_UNAVAILABLE=10",
         "SCAN_TRUNCATED=4",
-        "TICKET_AMBIGUOUS_STATUS=6",
+        "TICKET_AMBIGUOUS_STATUS=7",
         "TICKET_UNRECOGNIZED=62"
       ]
     }
   ],
   "Cancellation": {
-    "WaitedForIndexingMilliseconds": 2901,
-    "ExternalCommandsSubmittedBeforeCancelling": 21,
+    "WaitedForIndexingMilliseconds": 3033,
+    "ExternalCommandsSubmittedBeforeCancelling": 20,
     "ChildProcessesRunningWhenCancelled": 4,
     "StillRunningWhenCancelled": true,
-    "LatencyMilliseconds": 32.9965,
+    "LatencyMilliseconds": 31.6975,
     "StoppedByCancellation": true
   },
   "Offline": {
@@ -71,7 +71,7 @@
     "ProjectsWithProgress": 13,
     "ProjectsWithRemainingWork": 10,
     "StaleProjects": 33,
-    "ElapsedMilliseconds": 4478
+    "ElapsedMilliseconds": 4116
   },
   "Associations": {
     "Projects": 53,
@@ -92,49 +92,49 @@
     "MonitoredStateChanges": [],
     "FingerprintGaps": [
       {
-        "ProjectId": "5ccf8dc3cc3b",
+        "ProjectId": "4fc77b244250",
         "Subject": "github issues"
       },
       {
-        "ProjectId": "5ccf8dc3cc3b",
+        "ProjectId": "4fc77b244250",
         "Subject": "github labels"
       },
       {
-        "ProjectId": "dfd6089e6db6",
+        "ProjectId": "fc8328b6492d",
         "Subject": "github issues"
       },
       {
-        "ProjectId": "dfd6089e6db6",
+        "ProjectId": "fc8328b6492d",
         "Subject": "github labels"
       },
       {
-        "ProjectId": "c33f1b15cb05",
+        "ProjectId": "6680cb5869e7",
         "Subject": "github issues"
       },
       {
-        "ProjectId": "c33f1b15cb05",
+        "ProjectId": "6680cb5869e7",
         "Subject": "github labels"
       },
       {
-        "ProjectId": "eb177c127516",
+        "ProjectId": "b09dfa930ce4",
         "Subject": "github issues"
       },
       {
-        "ProjectId": "eb177c127516",
+        "ProjectId": "b09dfa930ce4",
         "Subject": "github labels"
       },
       {
-        "ProjectId": "895157bc5fcd",
+        "ProjectId": "c879a17df934",
         "Subject": "content of a file past the size bound"
       },
       {
-        "ProjectId": "507c90caf7d0",
+        "ProjectId": "98441d409e38",
         "Subject": "github issues"
       }
     ],
     "RefusedCommands": [],
     "CommandsIssued": {
-      "git rev-parse": 301,
+      "git rev-parse": 300,
       "git config --list": 98,
       "gh label list": 66,
       "git log": 202,
