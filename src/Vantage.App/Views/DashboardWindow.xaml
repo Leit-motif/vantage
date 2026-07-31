@@ -4,7 +4,7 @@
         xmlns:conv="clr-namespace:Vantage.App.Converters"
         xmlns:shell="clr-namespace:Vantage.App.Shell"
         xmlns:vm="clr-namespace:Vantage.App.ViewModels"
-        Title="Workflow dashboard"
+        Title="Vantage"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"
@@ -18,7 +18,7 @@
         Height="520"
         UseLayoutRounding="True"
         TextOptions.TextFormattingMode="Display"
-        AutomationProperties.Name="Workflow dashboard">
+        AutomationProperties.Name="Vantage">
 
   <Window.Resources>
     <conv:StarLengthConverter x:Key="StarLength" />
@@ -200,8 +200,7 @@
         </Grid.ColumnDefinitions>
 
         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-          <TextBlock Style="{StaticResource TitleText}" Text="Workflow" />
-          <TextBlock Style="{StaticResource TertiaryText}" Text=" · read-only" VerticalAlignment="Bottom" Margin="0,0,0,2" />
+          <TextBlock Style="{StaticResource TitleText}" Text="Vantage" />
           <Border Margin="8,0,0,0" Padding="5,1" CornerRadius="8"
                   Background="{DynamicResource SurfaceOverlayBrush}"
                   Visibility="{Binding IsOffline, Converter={StaticResource BoolToVisibility}}"

@@ -48,7 +48,7 @@ public sealed class TrayIcon : IDisposable
         _icon = new NotifyIcon
         {
             Icon = CreateIcon(),
-            Text = "Workflow dashboard",
+            Text = "Vantage",
             Visible = true,
             ContextMenuStrip = Menu,
         };

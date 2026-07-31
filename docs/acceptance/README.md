@@ -330,3 +330,10 @@ either, and neither was tested. Only 125% scaling and only the Dark palette were
 Every frame also carries a `Diagnostics 5` badge, because the fixture uses the status `Idle`, which
 the parser does not recognise. That is the fixture's doing rather than the product's, and the frames
 were approved with it visible rather than quietly re-shot.
+
+They also predate the rename to Vantage, and their header still reads `Workflow · read-only`. They
+have not been re-shot for it. What they are evidence of — the measured 79.3% surface opacity, the
+recorded window styles of each target, the three layouts over a real composited desktop — is
+unaffected by a header string, and re-shooting would replace a record the owner approved frame by
+frame with one taken to make a caption tidy. The current interface is in `docs/images/`, rendered
+from the same fixture by `--capture`, which is a different artifact for a different purpose.
