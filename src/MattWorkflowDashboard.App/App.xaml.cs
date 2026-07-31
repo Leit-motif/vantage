@@ -39,6 +39,7 @@ public partial class App : Application
     private DashboardCache _cache = null!;
     private BoundedProcessRunner _processRunner = null!;
     private ThemeManager _themes = null!;
+    private AppearanceWatcher? _appearance;
     private DashboardViewModel _viewModel = null!;
     private DashboardWindow _window = null!;
     private TrayIcon _tray = null!;
@@ -87,7 +88,9 @@ public partial class App : Application
 
         _themes = new ThemeManager(this);
         _themes.Apply(_settings.Ui.Theme);
-        SystemParameters.StaticPropertyChanged += OnSystemParametersChanged;
+
+        _appearance = new AppearanceWatcher();
+        _appearance.Changed += OnWindowsAppearanceChanged;
 
         _viewModel = new DashboardViewModel(_settings, _settingsStore, _cache, _processRunner);
         _window = new DashboardWindow(_viewModel, _settings, SaveSettings);
@@ -183,13 +186,15 @@ public partial class App : Application
         RequestRefresh();
     }
 
-    private void OnSystemParametersChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    /// <summary>
+    /// Windows moved: re-resolve the palette and let the running window restyle itself. This is
+    /// what makes the System theme actually follow Windows rather than only follow a restart.
+    /// </summary>
+    private void OnWindowsAppearanceChanged() => Dispatcher.BeginInvoke(() =>
     {
-        if (e.PropertyName == nameof(SystemParameters.HighContrast))
-        {
-            Dispatcher.BeginInvoke(() => _themes.Apply(_settings.Ui.Theme));
-        }
-    }
+        _themes.Apply(_settings.Ui.Theme);
+        _viewModel.NotifyAppearanceChanged();
+    });
 
     private void OpenLogsFolder()
     {
@@ -224,7 +229,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        SystemParameters.StaticPropertyChanged -= OnSystemParametersChanged;
+        _appearance?.Dispose();
         _viewModel?.CancelRefresh();
         _periodicRefresh?.Stop();
         _watcher?.Dispose();

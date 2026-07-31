@@ -116,7 +116,12 @@ public partial class DashboardWindow : Window
             return;
         }
 
-        var (safeLeft, safeTop) = WindowInterop.EnsureOnScreen(left, top, Width, Height, DpiScale);
+        // The saved position was measured on whatever display it was saved on; read it in the
+        // units of the one the window is opening on before deciding whether it is still visible.
+        var scale = DpiScale;
+        var (savedLeft, savedTop) = WindowInterop.Reinterpret(left, top, geometry.DpiScale, scale);
+
+        var (safeLeft, safeTop) = WindowInterop.EnsureOnScreen(savedLeft, savedTop, Width, Height, scale);
         Left = safeLeft;
         Top = safeTop;
     }
@@ -150,8 +155,10 @@ public partial class DashboardWindow : Window
         }
 
         // Windows identifies a display by a physical-pixel point, so the window's own units have
-        // to be converted before asking which monitor it is on.
+        // to be converted before asking which monitor it is on. The scale is saved with the
+        // position: without it the position cannot be read back on a differently scaled display.
         var scale = DpiScale;
+        geometry.DpiScale = scale;
         geometry.MonitorDeviceName = System.Windows.Forms.Screen
             .FromPoint(new System.Drawing.Point((int)(Left * scale), (int)(Top * scale))).DeviceName;
     }

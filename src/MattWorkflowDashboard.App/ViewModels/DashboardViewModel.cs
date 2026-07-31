@@ -37,16 +37,20 @@ public sealed partial class DashboardViewModel : ObservableObject
     private CancellationTokenSource? _inFlight;
     private DashboardSnapshot _snapshot;
 
+    private readonly Func<bool> _highContrast;
+
     public DashboardViewModel(
         DashboardSettings settings,
         SettingsStore settingsStore,
         DashboardCache cache,
-        IProcessRunner processRunner)
+        IProcessRunner processRunner,
+        Func<bool>? highContrast = null)
     {
         _settings = settings;
         _settingsStore = settingsStore;
         _cache = cache;
         _processRunner = processRunner;
+        _highContrast = highContrast ?? (() => System.Windows.SystemParameters.HighContrast);
         _snapshot = DashboardSnapshot.Empty("initial", DateTimeOffset.UtcNow);
 
         IsExpanded = !settings.Ui.StartCompact;
@@ -107,8 +111,15 @@ public sealed partial class DashboardViewModel : ObservableObject
     /// <summary>
     /// Surface opacity as WPF wants it (0–1), derived from the percentage the owner sets.
     /// Only the background carries it; content layers stay fully opaque and legible.
+    /// <para>
+    /// Under Windows high contrast there is no translucency at all. A high-contrast palette is a
+    /// legibility guarantee, and blending any of it with whatever happens to be on the desktop
+    /// behind the overlay is exactly the guarantee being broken.
+    /// </para>
     /// </summary>
-    public double SurfaceOpacity => Math.Clamp(_settings.Ui.SurfaceOpacityPercent, 10, 100) / 100d;
+    public double SurfaceOpacity => _highContrast()
+        ? 1d
+        : Math.Clamp(_settings.Ui.SurfaceOpacityPercent, 10, 100) / 100d;
 
     public int SurfaceOpacityPercent
     {

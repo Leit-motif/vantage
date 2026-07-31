@@ -149,6 +149,26 @@ public static partial class WindowInterop
         return (snappedLeft, snappedTop);
     }
 
+    /// <summary>
+    /// Re-reads a position that was saved on one display in the units of the display the window is
+    /// opening on. Layout units are only meaningful alongside the scale they were measured at: a
+    /// window at 1200 on a 100% display and a window at 1200 on a 150% display are nowhere near
+    /// each other. Restoring without this step is how geometry saved on a secondary monitor comes
+    /// back shifted, or on the wrong monitor entirely.
+    /// </summary>
+    public static (double Left, double Top) Reinterpret(
+        double left,
+        double top,
+        double? savedScale,
+        double currentScale)
+    {
+        var saved = Normalise(savedScale ?? currentScale);
+        var current = Normalise(currentScale);
+
+        // The physical place the owner left it, expressed in the units this window now speaks.
+        return (left * saved / current, top * saved / current);
+    }
+
     /// <summary>A display's physical-pixel rectangle expressed in a window's own layout units.</summary>
     public static Rect InDeviceIndependentUnits(System.Drawing.Rectangle area, double dpiScale)
     {

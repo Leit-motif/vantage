@@ -135,6 +135,25 @@ public sealed class ShellBehaviourTests
     }
 
     [TestMethod]
+    public void A_position_measured_at_one_scale_is_the_same_place_when_read_at_another()
+    {
+        // 1200 units on a 100% display is 1200 physical pixels, which is 960 units at 125%.
+        var (left, top) = WindowInterop.Reinterpret(1200, 400, savedScale: 1.0, currentScale: 1.25);
+
+        Assert.AreEqual(960, left, 0.001);
+        Assert.AreEqual(320, top, 0.001);
+    }
+
+    [TestMethod]
+    public void A_position_saved_before_the_scale_was_recorded_is_read_exactly_as_it_always_was()
+    {
+        var (left, top) = WindowInterop.Reinterpret(1200, 400, savedScale: null, currentScale: 1.25);
+
+        Assert.AreEqual(1200, left, 0.001, "An older settings file must not have its geometry moved by an upgrade.");
+        Assert.AreEqual(400, top, 0.001);
+    }
+
+    [TestMethod]
     public void Edge_snap_pulls_a_nearly_aligned_window_flush_and_leaves_a_distant_one_alone()
     {
         var (area, scale) = PrimaryDisplay();

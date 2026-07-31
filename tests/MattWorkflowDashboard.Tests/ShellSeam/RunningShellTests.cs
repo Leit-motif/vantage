@@ -262,6 +262,41 @@ public sealed class RunningShellTests
     }
 
     [TestMethod]
+    public void A_position_saved_on_a_differently_scaled_display_is_read_back_in_this_window_s_units()
+    {
+        // A place on screen, expressed as it would have been saved by a window on a 100% display,
+        // where one layout unit is one pixel.
+        var area = System.Windows.Forms.Screen.PrimaryScreen!.WorkingArea;
+        _settings.Ui.Geometry.Left = area.Left + 400;
+        _settings.Ui.Geometry.Top = area.Top + 200;
+        _settings.Ui.Geometry.DpiScale = 1d;
+
+        using var shell = Start();
+        var bounds = Win32Window.BoundsOf(shell.Handle);
+
+        Assert.AreEqual(
+            area.Left + 400,
+            bounds.Left,
+            2d,
+            "The window has to come back to the same physical place, whatever this display's scale is.");
+        Assert.AreEqual(area.Top + 200, bounds.Top, 2d);
+    }
+
+    [TestMethod]
+    public void A_saved_position_carries_the_scale_it_was_measured_at()
+    {
+        using var shell = Start();
+        RunningShell.Pump();
+
+        var scale = WpfTestHost.Run(() => VisualTreeHelper.GetDpi(shell.Window).DpiScaleX);
+
+        Assert.AreEqual(
+            scale,
+            _settings.Ui.Geometry.DpiScale,
+            "Without the scale it was written under, a saved position cannot be read on another display.");
+    }
+
+    [TestMethod]
     public void The_running_window_is_laid_out_in_device_independent_units_and_scaled_by_its_monitor()
     {
         using var shell = Start();
@@ -316,6 +351,48 @@ public sealed class RunningShellTests
             SystemColors.WindowColor,
             contrast,
             "Under high contrast the dashboard defers to the colours Windows was told to use.");
+    }
+
+    [TestMethod]
+    public void Windows_high_contrast_makes_the_surface_opaque_rather_than_blending_with_the_desktop()
+    {
+        _settings.Ui.SurfaceOpacityPercent = 80;
+
+        Assert.AreEqual(
+            0.8d,
+            SurfaceOpacityOfRunningWindow(highContrast: false),
+            0.001,
+            "Ordinarily the owner's chosen translucency is what the surface renders at.");
+
+        Assert.AreEqual(
+            1d,
+            SurfaceOpacityOfRunningWindow(highContrast: true),
+            0.001,
+            "A high-contrast palette blended with the desktop behind it is no longer high contrast.");
+    }
+
+    /// <summary>
+    /// The opacity the running window's glass surface actually renders at — read off the brush the
+    /// window paints with, not off the setting that was asked for.
+    /// </summary>
+    private double SurfaceOpacityOfRunningWindow(bool highContrast)
+    {
+        var paths = new AppPaths(Path.Combine(_workspace.Root, "appdata"));
+        var viewModel = new DashboardViewModel(
+            _settings,
+            new SettingsStore(paths),
+            _cache,
+            new FakeProcessRunner(),
+            () => highContrast);
+
+        using var shell = RunningShell.Start(viewModel, _settings, _startup);
+
+        return WpfTestHost.Run(() =>
+        {
+            shell.Window.UpdateLayout();
+            var root = (Border)shell.Window.FindName("GlassRoot");
+            return ((SolidColorBrush)root.Background).Opacity;
+        });
     }
 
     private static Color SurfaceColourAfter(RunningShell shell, ThemeManager themes, AppTheme theme) =>

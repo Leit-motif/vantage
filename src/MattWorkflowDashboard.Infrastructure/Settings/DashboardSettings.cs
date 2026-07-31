@@ -66,6 +66,15 @@ public sealed class WindowGeometry
     public double Height { get; set; } = 520;
 
     public string? MonitorDeviceName { get; set; }
+
+    /// <summary>
+    /// The scale of the display the position above was measured on. A position is in the window's
+    /// own layout units, and those units are worth a different number of pixels on a differently
+    /// scaled display — so without the scale it was written under, a saved position cannot be read
+    /// back on another monitor. Null for geometry written before this was recorded, which is read
+    /// as "whatever the window is on now" and so behaves as it always did.
+    /// </summary>
+    public double? DpiScale { get; set; }
 }
 
 public sealed class UiSettings
