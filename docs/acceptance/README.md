@@ -1,9 +1,10 @@
 # Runtime acceptance
 
-Four records, each answering a question the fixtures cannot: whether the dashboard stays read-only
-against the owner's real workspaces, whether the test suite stays off the owner's keyboard, what
-the running shell does when Windows itself moves underneath it, and what the overlay actually looks
-like on a real desktop. All are made on the live machine, and all record their evidence here.
+Five records, each answering a question the fixtures cannot: whether the dashboard stays read-only
+against the owner's real workspaces, whether that stays true with GitHub enrichment off by default,
+whether the test suite stays off the owner's keyboard, what the running shell does when Windows
+itself moves underneath it, and what the overlay actually looks like on a real desktop. All are made
+on the live machine, and all record their evidence here.
 
 ---
 
@@ -150,6 +151,41 @@ project's working tree as changed; the named project turned out to be one anothe
 was writing to at that moment, in file types the dashboard has no code path to touch. A comparison
 that had simply always been green would not have caught that, and would not have been worth
 believing when it was.
+
+---
+
+# The local-only default
+
+`local-only-default.json` is the evidence for #9: with `GitHubEnrichmentEnabled` at its shipped
+default of `false`, a live run over the owner's real roots issues no `gh` command at all — not
+merely that a `gh` call's result goes unused.
+
+## Reproducing it
+
+Requires a settings.json without an explicit `GitHubEnrichmentEnabled` override (a fresh install,
+or the key temporarily removed from the owner's own file for the duration of the run — restored
+immediately after):
+
+```bash
+dotnet run -c Release --project src/MattWorkflowDashboard.App -- --acceptance "$env:TEMP/mwd-local-only" --stamp $(git rev-parse HEAD)
+```
+
+Same instrument as the read-only scan above, including its own offline pass — which probes a real
+`gh auth status` to characterize behaviour with no session. That probe is itself gated on
+`GitHubEnrichmentEnabled` now: with enrichment off there is no session to probe for, so the one gh
+call an earlier version of the instrument still made on a local-only run is gone too. See
+`OfflinePassAsync` in `ReadOnlyAcceptanceRun.cs`.
+
+## The run recorded here
+
+Against `710d9da`, over the same 53 projects as the read-only scan:
+
+| | |
+| --- | --- |
+| `CommandsIssued` | `git log`, `git rev-parse`, `git config --list`, `git show-ref`, `git remote get-url`, `git status` — no `gh` entry |
+| Associations compared without querying GitHub | 33 of 33, 0 disagreements |
+| Monitored state changes | 0 |
+| Exit code | `4` — a pre-existing fingerprint gap (one file past the size bound in an unrelated project), not a safety failure |
 
 ---
 
