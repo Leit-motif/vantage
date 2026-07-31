@@ -462,17 +462,17 @@ public sealed class RefreshService(
 
             // Each kind of change is reported for what it is, rather than collapsed into a
             // single "something changed".
-            if (!string.Equals(before.Labels, DashboardCache.Join(ticket.Labels), StringComparison.Ordinal))
+            if (!string.Equals(before.Labels, DashboardCache.Canonical(ticket.Labels), StringComparison.Ordinal))
             {
                 events.Add(Change(ticket, ActivityKind.LabelChanged, $"{ticket.Title}: labels changed"));
             }
 
-            if (!string.Equals(before.Assignees, DashboardCache.Join(ticket.Assignees), StringComparison.Ordinal))
+            if (!string.Equals(before.Assignees, DashboardCache.Canonical(ticket.Assignees), StringComparison.Ordinal))
             {
                 events.Add(Change(ticket, ActivityKind.AssignmentChanged, $"{ticket.Title}: assignment changed"));
             }
 
-            var blockers = DashboardCache.Join(ticket.Blockers.Select(b => b.NormalizedKey));
+            var blockers = DashboardCache.Canonical(ticket.Blockers.Select(b => b.NormalizedKey));
             if (!string.Equals(before.Blockers, blockers, StringComparison.Ordinal))
             {
                 events.Add(Change(ticket, ActivityKind.BlockerChanged, $"{ticket.Title}: blockers changed"));

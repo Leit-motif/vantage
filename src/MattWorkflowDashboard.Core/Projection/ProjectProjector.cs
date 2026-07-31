@@ -29,6 +29,8 @@ public static class ProjectProjector
     {
         var diagnostics = new List<Diagnostic>(project.Diagnostics);
         var effortViews = new List<EffortView>();
+        var conflictsByTicket = ConflictsByTicket(options.Conflicts);
+
         var resolutions = new Dictionary<string, BlockerResolution>(StringComparer.OrdinalIgnoreCase);
         var actionable = new List<(WorkflowEffort Effort, WorkflowTicket Ticket, NextActionSource Source, string Reason)>();
 
@@ -61,7 +63,10 @@ public static class ProjectProjector
                     ticket.Link,
                     ticket.SourcePath,
                     ticket.Provenance,
-                    ticket.EnrichmentProvenance));
+                    ticket.EnrichmentProvenance)
+                {
+                    Conflicts = conflictsByTicket.TryGetValue(ticket.Id, out var reports) ? reports : [],
+                });
             }
 
             effortViews.Add(new EffortView(
@@ -103,6 +108,50 @@ public static class ProjectProjector
             IsStale = options.IsStale,
             GitAvailable = project.GitAvailable,
             GitHubAvailable = project.GitHubAvailable,
+        };
+    }
+
+    /// <summary>
+    /// A disagreement travels with the work it is about, so the aggregate warning on a project and
+    /// the control on the affected item are two routes to one piece of evidence.
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<ConflictReport>> ConflictsByTicket(
+        IEnumerable<ConflictReport> conflicts) =>
+        conflicts
+            .GroupBy(c => c.TicketId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, IReadOnlyList<ConflictReport> (g) => [.. g], StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Restores that attachment on a view that arrived without it. A projection stored by an
+    /// earlier build carries a project's conflicts but nothing on its items, and a last-known-good
+    /// view is still a view the owner has to be able to inspect — so the attachment is rebuilt on
+    /// the way out of the cache rather than left to the next successful refresh.
+    /// </summary>
+    public static ProjectView AttachConflictsToItems(ProjectView view)
+    {
+        if (view.Conflicts.Count == 0
+            || view.Efforts.SelectMany(e => e.Tickets).Any(t => t.Conflicts.Count > 0))
+        {
+            return view;
+        }
+
+        var byTicket = ConflictsByTicket(view.Conflicts);
+
+        return view with
+        {
+            Efforts =
+            [
+                .. view.Efforts.Select(effort => effort with
+                {
+                    Tickets =
+                    [
+                        .. effort.Tickets.Select(ticket => ticket with
+                        {
+                            Conflicts = byTicket.TryGetValue(ticket.Id, out var reports) ? reports : [],
+                        }),
+                    ],
+                }),
+            ],
         };
     }
 

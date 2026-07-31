@@ -126,7 +126,14 @@ public sealed record TicketView(
     GitHubLink? Link,
     string SourcePath,
     Provenance Provenance,
-    IReadOnlyList<Provenance> EnrichmentProvenance);
+    IReadOnlyList<Provenance> EnrichmentProvenance)
+{
+    /// <summary>
+    /// The disagreements this item is the subject of. A conflict belongs on the work it is about,
+    /// so it can be inspected where it arose rather than only in an aggregate list.
+    /// </summary>
+    public IReadOnlyList<ConflictReport> Conflicts { get; init; } = [];
+}
 
 public sealed record EffortView(
     string Id,

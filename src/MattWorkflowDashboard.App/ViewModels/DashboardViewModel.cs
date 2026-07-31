@@ -208,12 +208,23 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     public void CancelRefresh() => _inFlight?.Cancel();
 
+    /// <summary>
+    /// Where a conflict control leads. The evidence lives in the expanded view's detail pane, so
+    /// an aggregate badge on a compact row has to select its project and open that view — a
+    /// warning the owner cannot follow to the disagreement is not navigation.
+    /// </summary>
+    private void NavigateToConflicts(ProjectItemViewModel project)
+    {
+        SelectedProject = project;
+        IsExpanded = true;
+    }
+
     private void Apply(DashboardSnapshot snapshot)
     {
         _snapshot = snapshot;
 
         AllProjects.Clear();
-        foreach (var project in snapshot.Projects.Select(p => new ProjectItemViewModel(p)))
+        foreach (var project in snapshot.Projects.Select(p => new ProjectItemViewModel(p, NavigateToConflicts)))
         {
             AllProjects.Add(project);
         }
@@ -283,11 +294,19 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     private void UpdateVisibleProjects()
     {
+        var selected = SelectedProject;
+
         VisibleProjects.Clear();
         foreach (var project in IsExpanded ? Projects : Projects.Take(CompactRowLimit))
         {
             VisibleProjects.Add(project);
         }
+
+        // Rebuilding the rows clears the list's own selection. A project that is still on screen
+        // has to keep it, or switching between compact and expanded would empty the detail pane
+        // and take the owner away from whatever they had just opened.
+        SelectedProject = VisibleProjects.FirstOrDefault(p => p.Path == selected?.Path)
+            ?? VisibleProjects.FirstOrDefault();
     }
 
     private void SaveSettings()

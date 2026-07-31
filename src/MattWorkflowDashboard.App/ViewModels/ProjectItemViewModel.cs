@@ -1,3 +1,5 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using MattWorkflowDashboard.Core;
 using MattWorkflowDashboard.Core.Projection;
 
@@ -10,9 +12,35 @@ public sealed record BlockedItem(string Title, string HeldBy, string Provenance)
 /// One project row. Everything shown here is read straight from the snapshot, and every value
 /// carries the provenance that produced it so any conclusion can be challenged.
 /// </summary>
-public sealed class ProjectItemViewModel(ProjectView view)
+public sealed partial class ProjectItemViewModel : ObservableObject
 {
-    public ProjectView View { get; } = view;
+    private readonly Action<ProjectItemViewModel>? _navigateToConflicts;
+
+    public ProjectItemViewModel(ProjectView view, Action<ProjectItemViewModel>? navigateToConflicts = null)
+    {
+        View = view;
+        _navigateToConflicts = navigateToConflicts;
+
+        var titles = view.Efforts
+            .SelectMany(e => e.Tickets)
+            .ToDictionary(t => t.Id, t => t.Title, StringComparer.OrdinalIgnoreCase);
+
+        Conflicts =
+        [
+            .. view.Conflicts.Select(c => new ConflictItemViewModel(
+                c,
+                titles.TryGetValue(c.TicketId, out var title) ? title : c.TicketId)),
+        ];
+
+        Efforts =
+        [
+            .. view.Efforts.Select(e => new EffortItemViewModel(
+                e,
+                [.. e.Tickets.Select(t => new TicketItemViewModel(t, InspectTicketConflictsCommand))])),
+        ];
+    }
+
+    public ProjectView View { get; }
 
     public string Name => View.Identity.Name;
 
@@ -64,7 +92,7 @@ public sealed class ProjectItemViewModel(ProjectView view)
 
     public IReadOnlyList<ActivityEvent> RecentActivity => View.RecentActivity;
 
-    public IReadOnlyList<EffortView> Efforts => View.Efforts;
+    public IReadOnlyList<EffortItemViewModel> Efforts { get; }
 
     /// <summary>Everything that cannot move, and what is holding it.</summary>
     public IReadOnlyList<BlockedItem> Blockers => View.Efforts
@@ -80,7 +108,29 @@ public sealed class ProjectItemViewModel(ProjectView view)
 
     public int BlockerCount => Blockers.Count;
 
-    public IReadOnlyList<ConflictReport> Conflicts => View.Conflicts;
+    /// <summary>Every disagreement in this project, each with both sides and both provenances.</summary>
+    public IReadOnlyList<ConflictItemViewModel> Conflicts { get; }
+
+    /// <summary>
+    /// The item whose disagreement is being inspected, or null while the whole project's
+    /// conflicts are listed.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(InspectedConflicts))]
+    [NotifyPropertyChangedFor(nameof(IsConflictInspectionNarrowed))]
+    [NotifyPropertyChangedFor(nameof(ConflictHeading))]
+    private string? _conflictFocusTicketId;
+
+    /// <summary>What the conflicts region shows: everything, or one item's disagreement.</summary>
+    public IReadOnlyList<ConflictItemViewModel> InspectedConflicts => ConflictFocusTicketId is { } id
+        ? [.. Conflicts.Where(c => string.Equals(c.TicketId, id, StringComparison.OrdinalIgnoreCase))]
+        : Conflicts;
+
+    public bool IsConflictInspectionNarrowed => ConflictFocusTicketId is not null;
+
+    public string ConflictHeading => ConflictFocusTicketId is null
+        ? "CONFLICTS"
+        : $"CONFLICTS · {InspectedConflicts.FirstOrDefault()?.TicketTitle ?? ConflictFocusTicketId}";
 
     public IReadOnlyList<Diagnostic> Diagnostics => View.Diagnostics;
 
@@ -91,6 +141,45 @@ public sealed class ProjectItemViewModel(ProjectView view)
     public bool HasConflicts => View.Conflicts.Count > 0;
 
     public bool HasDiagnostics => View.Diagnostics.Count > 0;
+
+    /// <summary>The aggregate warning as a command's name, so the badge is announced as a control.</summary>
+    public string ConflictBadgeName => $"Inspect {ConflictCount} conflict(s) in project {Name}";
+
+    /// <summary>
+    /// How many times the conflicts region has been asked for. The view scrolls it into view on
+    /// each request, because a pane taller than its viewport can otherwise leave the evidence
+    /// below the fold — selected and expanded, but not actually reached.
+    /// </summary>
+    [ObservableProperty]
+    private int _conflictInspectionRequests;
+
+    /// <summary>
+    /// The aggregate badge leads to the evidence: it opens this project's conflicts, all of them,
+    /// wherever the owner clicked from.
+    /// </summary>
+    [RelayCommand]
+    public void InspectConflicts()
+    {
+        ConflictFocusTicketId = null;
+        Reach();
+    }
+
+    /// <summary>The control on an affected item narrows the same region to that item.</summary>
+    [RelayCommand]
+    public void InspectTicketConflicts(string? ticketId)
+    {
+        ConflictFocusTicketId = ticketId;
+        Reach();
+    }
+
+    private void Reach()
+    {
+        _navigateToConflicts?.Invoke(this);
+        ConflictInspectionRequests++;
+    }
+
+    [RelayCommand]
+    public void ShowAllConflicts() => ConflictFocusTicketId = null;
 
     public bool IsPinned => View.IsPinned;
 
