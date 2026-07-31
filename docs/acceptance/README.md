@@ -1,8 +1,9 @@
 # Runtime acceptance
 
-Two instruments, each answering a question the fixtures cannot: whether the dashboard stays
-read-only against the owner's real workspaces, and whether the test suite stays off the owner's
-keyboard. Both are run on the live machine, and both record their evidence here.
+Four records, each answering a question the fixtures cannot: whether the dashboard stays read-only
+against the owner's real workspaces, whether the test suite stays off the owner's keyboard, what
+the running shell does when Windows itself moves underneath it, and what the overlay actually looks
+like on a real desktop. All are made on the live machine, and all record their evidence here.
 
 ---
 
@@ -149,3 +150,139 @@ project's working tree as changed; the named project turned out to be one anothe
 was writing to at that moment, in file types the dashboard has no code path to touch. A comparison
 that had simply always been green would not have caught that, and would not have been worth
 believing when it was.
+
+---
+
+# The running-shell gaps
+
+`running-shell-gaps.json` is the evidence for the five items ticket #4 proved only in part and
+handed on as #7. Every one of them needed something a test process cannot supply: hardware this
+machine does not have, the owner's live Windows settings changed mid-run, or the shipped
+executable started the way Windows would start it. None was left open because it was hard to write.
+
+## The instrument
+
+`--shell-journal <file>` records what the running window *is*, appending a line on every appearance
+change, every visibility change, and on a five-second tick. It exists because the two claims these
+items make cannot be photographed. A frame cannot show that the process never restarted, and a view
+model that agreed to restyle is not evidence that anything did. Every line therefore carries the
+process id and its start time beside the resolved palette, the effective opacity, the window's rect,
+its scale, and the monitor it sits on — so a run that quietly restarted cannot read as a run that
+restyled, and a restore can be checked in physical pixels rather than in whichever units each end
+happened to speak.
+
+It writes only when the switch names a file, and it records the shell's own state. No workspace
+content, no project or repository names.
+
+```bash
+dotnet run -c Release --project src/MattWorkflowDashboard.App -- --shell-journal "$env:TEMP/mwd-shell.jsonl"
+```
+
+The items below are then driven by hand — the owner changing Windows, the agent reading the journal
+back. That is the point of the ticket: what remains here is exactly what no test process could do
+for itself.
+
+## What was proven
+
+**Geometry survives a scale change.** Parked at logical `(912, 516)` on a 125% display — physical
+`(1140, 645)` — the dashboard was closed, the display changed to 150%, and reopened at logical
+`(760, 430)`, which is physical `(1140, 645)`. Reversing the change reproduced `(912, 516)` and the
+same physical point a third time. The position was predicted before each measurement rather than
+read off afterwards.
+
+**Windows appearance reaches the running window.** With the System theme selected, applying a
+contrast theme moved the palette to `HighContrast.xaml` and `SurfaceColor` to `#FF202020` — exactly
+the `systemWindowColor` of the moment, which is the one line in `ThemeManager` that makes the
+system palette win over a colour a brush cannot carry. With the opacity setting held at 80%, the
+effective opacity went to `1` for the duration and returned to `0.8` on the way out, so it is the
+code forcing the surface opaque and not the slider. Switching Windows between light and dark moved
+`AppsUseLightTheme` and the running window followed in both directions. All of it on one process id
+across an unbroken uptime.
+
+**The notification area.** The icon is present, its tooltip carrying live status truncated at the
+63 characters the shell allows. A real double-click on it took the window from hidden to visible on
+the process that was already running.
+
+**An ordinary second launch.** Started with no arguments — the full startup path, not
+`--single-instance-probe` — the second process exited `0` and left the first untouched.
+
+**The production Run key.** The tray's own command wrote the real value under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`; a different, later process read it back and
+showed the command checked. Launched verbatim through `CreateProcessW` with a null
+`lpApplicationName`, which is how Windows starts a Run entry, it produced a working dashboard. The
+same command removed the value, leaving the owner's other 23 entries as they were.
+
+## What is deliberately not claimed
+
+**The cross-monitor half of the geometry item.** This machine has one display. Changing its scale
+exercises `Reinterpret`, which is the arithmetic that item is mostly about, and exercises nothing at
+all about arriving on a *different* monitor. `MonitorDeviceName` is still persisted and still unused
+by the restore path, and the case that would settle whether it should be needs the second display
+this run did not have. Recorded as undecided rather than decided on reasoning alone.
+
+**A real sign-in.** Everything above about the Run key is about the value and what launching it
+does. Whether the dashboard appears after an actual sign-out and sign-in was not tested, because
+the owner declined to spend the cycle. The distinction is kept because the weaker claim is easy to
+read as the stronger one.
+
+**The light/dark flip on the first attempt.** Worth recording because the instrument is what caught
+it. The first pass looked like a pass: the window went light, then dark. The journal showed
+`themeSetting` moving `System → Light → Dark` while `windowsAppsUseLightTheme` never left `0` — the
+dashboard's own theme selector had been changed, and Windows had not moved at all. On the `Dark`
+setting the subscription under test is ignored by design, so the run proved the opposite of what it
+appeared to. The same pass also had the opacity slider at 100%, which would have made "high contrast
+forces the surface opaque" true of the setting rather than of the code. Both were re-run from a
+known state.
+
+## Settings changed, and put back
+
+Windows app light/dark mode; a Windows contrast theme; the display scale on `\.\DISPLAY1`; the
+dashboard's Run value; and — from the mis-aimed first attempt — the dashboard's own theme and
+surface opacity. Every one was restored, and the file records each with its restoration.
+
+---
+
+# The runtime frames
+
+`visual-acceptance.json` and `frames/` are the evidence for ticket #6: the built overlay
+photographed on the real desktop at the confirmed default of 80% opacity, rather than inferred
+from a mockup or from the window's own visual tree.
+
+The distinction matters more than it sounds. `--capture` renders the window's visual tree, which
+cannot show what sits behind a translucent surface, because what sits behind it is not part of the
+window. These frames are cut out of the composited screen instead, so the surface is photographed
+doing the one thing the ticket is about.
+
+## Reproducing it
+
+```bash
+pwsh tools/VisualFixture/New-VisualFixture.ps1
+dotnet run -c Release --project src/MattWorkflowDashboard.App -- --state "$env:PUBLIC/mwd-visual-fixture/state"
+pwsh tools/VisualFixture/Save-Frame.ps1 -Rect 725,113,775,950 -Path frame.png
+```
+
+The fixture is invented and lives under the **public** profile, not the owner's. The expanded
+layout prints a project's full path in its detail pane, so a fixture under a personal profile would
+put the account name into every wide frame — which is the one thing these frames must not carry.
+`--state` keeps the run's settings, cache and logs out of the owner's own dashboard state.
+
+## What the frames show
+
+Compact, expanded, and narrow, over an ordinary titled window and over a borderless-windowed one.
+The target's window style is recorded beside each frame rather than argued from the picture:
+`WS_CAPTION` set at `0x96CF0000` for the ordinary case, cleared at `0x96080000` with `WS_POPUP` set
+and the whole display covered for the borderless one.
+
+The opacity is measured rather than asserted. Comparing the same target content under the base
+surface against the same content beside it gives **79.3%** against a setting of 80%, the residual
+being sRGB gamma and 8-bit rounding. A frame that merely came from a run configured at 80% would
+prove the configuration; this proves the pixels.
+
+## What is deliberately not claimed
+
+Exclusive-fullscreen applications and other topmost windows — the overlay makes no promise about
+either, and neither was tested. Only 125% scaling and only the Dark palette were photographed.
+
+Every frame also carries a `Diagnostics 5` badge, because the fixture uses the status `Idle`, which
+the parser does not recognise. That is the fixture's doing rather than the product's, and the frames
+were approved with it visible rather than quietly re-shot.

@@ -1,0 +1,230 @@
+{
+  "commit": "a6ac2827a961029da4b1f15343b4e70124d91c79",
+  "recordedUtc": "2026-07-31T15:33:53.2971219Z",
+  "ticket": 7,
+  "machine": {
+    "windows": "Microsoft Windows 11 Pro 10.0.26200 (build 26200)",
+    "displays": [
+      {
+        "device": "\\\\.\\DISPLAY1",
+        "physical": "3440x1440",
+        "scalePercentNormal": 125,
+        "scalePercentTested": 150,
+        "primary": true
+      }
+    ],
+    "secondDisplayAvailable": false
+  },
+  "items": {
+    "geometryAcrossScaleChange": {
+      "proven": true,
+      "crossMonitorHalfProven": false,
+      "note": "Same single display, scale changed between save and restore. The cross-monitor half is unproven for lack of a second display.",
+      "observedBy": "owner changed the scale; agent measured",
+      "savedAt125": {
+        "logicalLeft": 912,
+        "logicalTop": 516,
+        "dpiScale": 1.25,
+        "physicalLeft": 1140,
+        "physicalTop": 645,
+        "monitorDeviceName": "\\\\.\\DISPLAY1"
+      },
+      "restoredAt150": {
+        "logicalLeft": 760,
+        "logicalTop": 430,
+        "dpiScale": 1.5,
+        "physicalLeft": 1140,
+        "physicalTop": 645,
+        "monitorDeviceName": "\\\\.\\DISPLAY1"
+      },
+      "restoredBackAt125": {
+        "logicalLeft": 912,
+        "logicalTop": 516,
+        "dpiScale": 1.25,
+        "physicalLeft": 1140,
+        "physicalTop": 645,
+        "monitorDeviceName": "\\\\.\\DISPLAY1"
+      },
+      "physicalPositionHeld": true,
+      "monitorDeviceNameDecision": "undecided - persisted but unused by the restore path, and the case that would settle it needs a second display"
+    },
+    "appearanceReachesRunningApp": {
+      "proven": true,
+      "observedBy": "owner flipped Windows settings; agent read the running window back",
+      "rawAppearanceChangedRecords": 27,
+      "note": "Windows raises several user-preference notifications per change, so the raw record count exceeds the number of real state changes. The states below are the deduplicated transitions.",
+      "states": [
+        {
+          "utc": "2026-07-31T15:16:35.2984189Z",
+          "pid": 38320,
+          "uptimeSeconds": 1160.9,
+          "themeSetting": "System",
+          "palette": "Dark.xaml",
+          "highContrast": false,
+          "windowsAppsUseLightTheme": 0,
+          "surfaceOpacityPercent": 80,
+          "surfaceOpacity": 0.8,
+          "surfaceColor": "#FF121213",
+          "systemWindowColor": "#FF202020"
+        },
+        {
+          "utc": "2026-07-31T15:16:35.3952003Z",
+          "pid": 38320,
+          "uptimeSeconds": 1161,
+          "themeSetting": "System",
+          "palette": "HighContrast.xaml",
+          "highContrast": true,
+          "windowsAppsUseLightTheme": 0,
+          "surfaceOpacityPercent": 80,
+          "surfaceOpacity": 1,
+          "surfaceColor": "#FF202020",
+          "systemWindowColor": "#FF202020"
+        },
+        {
+          "utc": "2026-07-31T15:16:36.8039920Z",
+          "pid": 38320,
+          "uptimeSeconds": 1162.4,
+          "themeSetting": "System",
+          "palette": "HighContrast.xaml",
+          "highContrast": true,
+          "windowsAppsUseLightTheme": 1,
+          "surfaceOpacityPercent": 80,
+          "surfaceOpacity": 1,
+          "surfaceColor": "#FF202020",
+          "systemWindowColor": "#FF202020"
+        },
+        {
+          "utc": "2026-07-31T15:16:58.2721685Z",
+          "pid": 38320,
+          "uptimeSeconds": 1183.8,
+          "themeSetting": "System",
+          "palette": "Light.xaml",
+          "highContrast": false,
+          "windowsAppsUseLightTheme": 1,
+          "surfaceOpacityPercent": 80,
+          "surfaceOpacity": 0.8,
+          "surfaceColor": "#FFF3F3F4",
+          "systemWindowColor": "#FFFFFFFF"
+        },
+        {
+          "utc": "2026-07-31T15:16:59.1615346Z",
+          "pid": 38320,
+          "uptimeSeconds": 1184.7,
+          "themeSetting": "System",
+          "palette": "Dark.xaml",
+          "highContrast": false,
+          "windowsAppsUseLightTheme": 0,
+          "surfaceOpacityPercent": 80,
+          "surfaceOpacity": 0.8,
+          "surfaceColor": "#FF121213",
+          "systemWindowColor": "#FFFFFFFF"
+        },
+        {
+          "utc": "2026-07-31T15:17:21.0170007Z",
+          "pid": 38320,
+          "uptimeSeconds": 1206.6,
+          "themeSetting": "System",
+          "palette": "Light.xaml",
+          "highContrast": false,
+          "windowsAppsUseLightTheme": 1,
+          "surfaceOpacityPercent": 80,
+          "surfaceOpacity": 0.8,
+          "surfaceColor": "#FFF3F3F4",
+          "systemWindowColor": "#FFFFFFFF"
+        },
+        {
+          "utc": "2026-07-31T15:17:32.6153682Z",
+          "pid": 38320,
+          "uptimeSeconds": 1218.2,
+          "themeSetting": "System",
+          "palette": "Dark.xaml",
+          "highContrast": false,
+          "windowsAppsUseLightTheme": 0,
+          "surfaceOpacityPercent": 80,
+          "surfaceOpacity": 0.8,
+          "surfaceColor": "#FF121213",
+          "systemWindowColor": "#FFFFFFFF"
+        }
+      ]
+    },
+    "notificationArea": {
+      "proven": true,
+      "observedBy": "agent",
+      "iconPresent": true,
+      "tooltipObserved": "53 project(s) - refreshed 09:49:30 - showing some cached eviden",
+      "tooltipNote": "Truncated by the shell at 63 characters, as the tray code intends.",
+      "gesture": "real double-click on the icon in the notification area overflow",
+      "hiddenBefore": {
+        "utc": "2026-07-31T14:52:05.2865623Z",
+        "isVisible": false,
+        "pid": 34460,
+        "uptimeSeconds": 456.2
+      },
+      "visibleAfter": {
+        "utc": "2026-07-31T14:52:07.8190056Z",
+        "isVisible": true,
+        "pid": 34460,
+        "uptimeSeconds": 458.8
+      }
+    },
+    "ordinarySecondLaunch": {
+      "proven": true,
+      "observedBy": "agent",
+      "note": "Launched with no arguments, so the full startup path ran rather than --single-instance-probe.",
+      "firstInstancePid": 45624,
+      "secondLaunchPid": 15344,
+      "secondLaunchExitCode": 0,
+      "secondLaunchExitedWithinSeconds": 15,
+      "processesAfter": 1
+    },
+    "launchAtSignIn": {
+      "proven": "partial",
+      "withheld": "A real sign-out and sign-in cycle. The owner chose not to spend one; recorded rather than claimed.",
+      "observedBy": "agent",
+      "key": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+      "valueName": "MattWorkflowDashboard",
+      "enabledVia": "the tray's own Launch at sign-in command",
+      "valueWritten": "\"<repo>\\src\\MattWorkflowDashboard.App\\bin\\Release\\net10.0-windows\\MattWorkflowDashboard.exe\"",
+      "readBackByFreshProcess": true,
+      "launchedVerbatim": "CreateProcessW with lpApplicationName null, which is how Windows starts a Run entry",
+      "launchedPid": 32928,
+      "resultingDashboard": "running, with a real window",
+      "disabledVia": "the tray's own Launch at sign-in command",
+      "valueAfterDisable": "absent",
+      "otherRunEntriesBefore": 23,
+      "otherRunEntriesAfter": 23
+    }
+  },
+  "settingsChangedAndRestored": [
+    {
+      "setting": "Windows app light/dark mode",
+      "changed": "Light and back to Dark",
+      "restored": true
+    },
+    {
+      "setting": "Windows contrast theme",
+      "changed": "applied a contrast theme, then None",
+      "restored": true
+    },
+    {
+      "setting": "Display scale on \\\\.\\DISPLAY1",
+      "changed": "125% to 150%",
+      "restored": "yes, back to 125%"
+    },
+    {
+      "setting": "HKCU Run value for the dashboard",
+      "changed": "added",
+      "restored": "yes, removed"
+    },
+    {
+      "setting": "dashboard's own theme",
+      "changed": "System to Light to Dark during a mis-aimed first attempt",
+      "restored": "yes, back to System"
+    },
+    {
+      "setting": "dashboard's own surface opacity",
+      "changed": "80% to 100% during that attempt",
+      "restored": "yes, back to 80%"
+    }
+  ]
+}
