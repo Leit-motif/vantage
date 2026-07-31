@@ -105,9 +105,11 @@ reference was removed and the same passage in `docs/acceptance/README.md` was re
 evidence is unchanged: what mattered was that the writer was external and the file types were ones
 the dashboard has no code path to touch.
 
-Note that editing an issue or comment hides nothing: GitHub keeps an edit history anyone with read
-access can open, which on a public repository is everyone. Removing text from a thread means
-deleting the comment and reposting a clean one, not editing it in place.
+Note what editing a thread does and does not achieve. GitHub keeps an edit history that anyone with
+read access can open, which on a public repository is everyone. Editing removes text from the
+default view — which is what almost every reader sees — but leaves the original retrievable by
+anyone who clicks through. Only deleting a comment and reposting a clean one removes it outright,
+and an issue body cannot be deleted without deleting the issue.
 
 ### 5. No `.gitattributes` · informational
 
