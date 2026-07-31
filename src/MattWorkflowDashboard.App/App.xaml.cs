@@ -60,6 +60,8 @@ public partial class App : Application
     private GlobalHotkey? _focusHotkey;
     private DispatcherTimer? _periodicRefresh;
     private SettingsWindow? _settingsWindow;
+    private ShellJournal? _journal;
+    private DispatcherTimer? _journalSample;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -88,7 +90,11 @@ public partial class App : Application
 
         base.OnStartup(e);
 
-        _paths = new AppPaths();
+        // Development-only: runs the real UI against a state directory of its own. Visual evidence
+        // has to be captured from sanitized fixtures rather than the owner's private workspaces,
+        // and pointing the shipped settings file at fixtures to do that would leave the owner's
+        // own dashboard rewritten afterwards.
+        _paths = new AppPaths(Argument(e.Args, "--state"));
         _paths.EnsureCreated();
         _logger = LogSetup.Create(_paths);
 
@@ -144,6 +150,11 @@ public partial class App : Application
         _periodicRefresh.Start();
 
         RequestRefresh();
+
+        if (Argument(e.Args, "--shell-journal") is { } journalPath)
+        {
+            StartJournal(journalPath);
+        }
 
         var captureIndex = Array.FindIndex(e.Args, a => a.Equals("--capture", StringComparison.OrdinalIgnoreCase));
         if (captureIndex >= 0 && captureIndex + 1 < e.Args.Length)
@@ -255,6 +266,33 @@ public partial class App : Application
         Shutdown();
     }
 
+    /// <summary>
+    /// Development-only: starts recording what the running window is, so a change made to Windows
+    /// while the dashboard is up can be checked against the window that was already open rather
+    /// than against a fresh one. Reached only by <c>--shell-journal</c>.
+    /// <para>
+    /// Three things are watched. Appearance changes are recorded after the theme has been
+    /// re-applied, because the question is what the window became, not that it was told. Visibility
+    /// is recorded because that is how a real click on the tray icon shows up from inside the
+    /// process. The timer is the control: a line that keeps appearing with an unchanged palette is
+    /// what makes a line with a changed one mean something.
+    /// </para>
+    /// </summary>
+    private void StartJournal(string path)
+    {
+        _journal = new ShellJournal(this, _window, _viewModel, _settings, path);
+        _journal.Record("startup");
+
+        _window.IsVisibleChanged += (_, _) => _journal?.Record("visibility-changed");
+
+        _journalSample = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromSeconds(5),
+        };
+        _journalSample.Tick += (_, _) => _journal?.Record("sample");
+        _journalSample.Start();
+    }
+
     private void RequestRefresh() => _shell.RequestRefresh();
 
     private void ShowSettings()
@@ -292,6 +330,7 @@ public partial class App : Application
     {
         _themes.Apply(_settings.Ui.Theme);
         _viewModel.NotifyAppearanceChanged();
+        _journal?.Record("appearance-changed");
     });
 
     private void OpenLogsFolder()
@@ -327,6 +366,9 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _journalSample?.Stop();
+        _journal?.Record("exit");
+        _journal?.Dispose();
         _appearance?.Dispose();
         _viewModel?.CancelRefresh();
         _periodicRefresh?.Stop();
