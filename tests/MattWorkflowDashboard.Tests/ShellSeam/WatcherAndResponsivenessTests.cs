@@ -131,6 +131,12 @@ public sealed class WatcherAndResponsivenessTests
 
         Assert.IsTrue(samples > 3, $"Only {samples} samples were taken during the scan.");
 
+        // Printed, not only asserted: a cell that says "responsive" is worth what the number behind
+        // it is worth, and a passing test that reports nothing leaves the criterion unmeasured.
+        Console.WriteLine(
+            $"RESPONSIVENESS: worst input latency {worstLatency.TotalMilliseconds:F0}ms "
+            + $"over {samples} samples during a {scan.ElapsedMilliseconds}ms scan");
+
         Assert.IsTrue(
             worstLatency < TimeSpan.FromMilliseconds(400),
             $"The owner waited {worstLatency.TotalMilliseconds:F0}ms for the window to answer during a {scan.ElapsedMilliseconds}ms scan.");

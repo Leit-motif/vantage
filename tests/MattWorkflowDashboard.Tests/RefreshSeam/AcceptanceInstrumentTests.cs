@@ -64,6 +64,51 @@ public sealed class AcceptanceInstrumentTests
     }
 
     /// <summary>
+    /// The other half of the same hazard. `diff.external` names a program git runs when producing a
+    /// diff, and the dashboard issues `git log` against every repository it observes.
+    /// <para>
+    /// Asserted one step earlier than the <c>core.fsmonitor</c> case above, and deliberately so: the
+    /// claim here is that the repository's value never reaches git, not that a program was observed
+    /// not running. Staging a real external-diff execution proved unreliable on this platform, and a
+    /// test whose attack half does not fire would make its defence half prove nothing — which is
+    /// exactly the trap the fsmonitor test avoids by checking both directions. So this checks the
+    /// value git would actually use, in both directions.
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public async Task An_external_diff_program_configured_by_a_repository_never_reaches_git()
+    {
+        var project = _workspace.NewProject("repo");
+        _workspace.InitGitRepository(project);
+        _workspace.Commit(project, "initial");
+
+        var hook = Path.Combine(_workspace.Root, "difftool.bat").Replace('\\', '/');
+        _workspace.Git(project, "config", "diff.external", hook);
+
+        string[] read = ["-C", project, "config", "--get", "diff.external"];
+
+        using var hardened = new BoundedProcessRunner(2, TimeSpan.FromSeconds(30));
+        var underHardening = await hardened.RunAsync("git", read, project, CancellationToken.None);
+
+        Assert.AreEqual(
+            string.Empty,
+            underHardening.StandardOutput.Trim(),
+            "The repository's own choice of program must not be the one git resolves.");
+
+        using var unhardened = new BoundedProcessRunner(
+            2,
+            TimeSpan.FromSeconds(30),
+            new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["GIT_CONFIG_COUNT"] = null });
+
+        var without = await unhardened.RunAsync("git", read, project, CancellationToken.None);
+
+        Assert.AreEqual(
+            hook,
+            without.StandardOutput.Trim(),
+            "Without the hardening git resolves the repository's value, which is what makes its absence above meaningful.");
+    }
+
+    /// <summary>
     /// The fingerprint has to complete as reliably as the scan it measures. Both bounds are asserted
     /// by lowering them rather than by building a tree big enough to hit the shipped ones.
     /// </summary>
