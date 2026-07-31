@@ -366,6 +366,74 @@ public sealed class RunningShellTests
         Assert.AreEqual(bottomEdge, Edges(shell).Bottom, 2d, "And coming back out unfolds upward from the same place.");
     }
 
+    /// <summary>
+    /// Collapsing is a vertical gesture. The ribbon borrows the width of the view it folded down
+    /// from rather than having one of its own, so nothing moves sideways on the way in or out —
+    /// a window that shrinks horizontally when you fold it away reads as having gone somewhere.
+    /// </summary>
+    [TestMethod]
+    public void Folding_the_dashboard_away_moves_nothing_sideways()
+    {
+        _settings.Ui.Geometry.CompactWidth = 380;
+        _settings.Ui.Geometry.ExpandedWidth = 720;
+        _viewModel.Mode = DashboardViewMode.Expanded;
+
+        using var shell = Start();
+        var area = WorkArea(shell);
+
+        shell.MoveTo(area.Left + 40, area.Top + 60);
+        shell.LetGeometrySettle();
+        var expanded = Edges(shell);
+
+        WpfTestHost.Run(() => _viewModel.ToggleRibbon());
+        RunningShell.PumpUntil(() => Edges(shell).Height < 100, TimeSpan.FromSeconds(2));
+
+        var folded = Edges(shell);
+        Assert.AreEqual(expanded.Left, folded.Left, 2d, "Folding away must not move the window sideways.");
+        Assert.AreEqual(expanded.Width, folded.Width, 2d, "The ribbon keeps the width of the view it folded down from.");
+
+        WpfTestHost.Run(() => _viewModel.ToggleRibbon());
+        RunningShell.PumpUntil(() => Edges(shell).Height > 400, TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(expanded.Width, Edges(shell).Width, 2d, "And unfolding lands on the same footprint.");
+        Assert.AreEqual(720, _settings.Ui.Geometry.ExpandedWidth, 0.5d, "A borrowed width is not recorded as compact's.");
+    }
+
+    /// <summary>
+    /// Full screen borrows the whole display, which is near no edge in particular. Coming out of it
+    /// has to answer about where the window was before it went in, or the owner gets their window
+    /// back somewhere they never put it.
+    /// </summary>
+    [TestMethod]
+    public void Leaving_full_screen_returns_to_the_edge_the_window_was_against()
+    {
+        _settings.Ui.Geometry.CompactWidth = 380;
+        _settings.Ui.Geometry.ExpandedWidth = 720;
+        _viewModel.Mode = DashboardViewMode.Expanded;
+
+        using var shell = Start();
+        var area = WorkArea(shell);
+
+        // Expanded and against the right, which is the state the full-screen step is entered from.
+        shell.MoveTo(area.Right - 720 - 8, area.Top + 60);
+        shell.LetGeometrySettle();
+        var rightEdge = Edges(shell).Right;
+
+        WpfTestHost.Run(() => _viewModel.CycleViewMode());
+        RunningShell.PumpUntil(() => Edges(shell).Width > 900, TimeSpan.FromSeconds(2));
+        Assert.IsTrue(Edges(shell).Width > 900, "The full-screen step has to have actually happened.");
+
+        WpfTestHost.Run(() => _viewModel.CycleViewMode());
+        RunningShell.PumpUntil(() => Edges(shell).Width < 500, TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(DashboardViewMode.Compact, _viewModel.Mode);
+        Assert.AreEqual(
+            rightEdge,
+            Edges(shell).Right,
+            2d,
+            "The whole way round the cycle, the edge it was against is the edge it comes back to.");
+    }
+
     /// <summary>The running window's own bounds, in its own layout units.</summary>
     private static Rect Edges(RunningShell shell) => WpfTestHost.Run(() =>
         new Rect(shell.Window.Left, shell.Window.Top, shell.Window.ActualWidth, shell.Window.ActualHeight));

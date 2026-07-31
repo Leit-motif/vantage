@@ -51,10 +51,15 @@ public sealed class ShellBehaviourTests
         Assert.IsTrue(_viewModel.IsExpanded);
         Assert.AreEqual(720, _viewModel.ShellWidth);
 
-        // The ribbon is the compact view folded down, so it keeps that view's width: only height
-        // was ever the thing standing in the owner's way.
+        // The ribbon borrows the width of whichever view it folded down from, so collapsing is
+        // purely vertical: only height was ever the thing standing in the owner's way.
         _viewModel.ToggleRibbonCommand.Execute(null);
-        Assert.AreEqual(380, _viewModel.ShellWidth);
+        Assert.AreEqual(720, _viewModel.ShellWidth, "Folded down from expanded, the ribbon is expanded-wide.");
+
+        _viewModel.ToggleRibbonCommand.Execute(null);
+        _viewModel.Mode = DashboardViewMode.Compact;
+        _viewModel.ToggleRibbonCommand.Execute(null);
+        Assert.AreEqual(380, _viewModel.ShellWidth, "And folded down from compact, compact-wide.");
     }
 
     [TestMethod]

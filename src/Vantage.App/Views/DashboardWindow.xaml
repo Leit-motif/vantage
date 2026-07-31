@@ -196,15 +196,22 @@
             Visibility="{Binding IsRibbon, Converter={StaticResource BoolToVisibility}}"
             AutomationProperties.Name="{Binding RibbonSummary}">
         <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
+
+        <!-- The same control in the same place as the header's, so collapsing never moves it. -->
+        <Button Grid.Column="0" Style="{StaticResource GlassButton}" Margin="0,0,8,0" Padding="6,1"
+                Command="{Binding ToggleRibbonCommand}"
+                AutomationProperties.Name="Open the dashboard" ToolTip="Open the dashboard">
+          <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.ChevronDown}" />
+        </Button>
 
         <!--
           Glyph, name and progress are stated in full at every width. The next action is the one
           field allowed to ellipsize, because it is the only one with no bound on its length.
         -->
-        <Grid Grid.Column="0" DataContext="{Binding RibbonProject}"
+        <Grid Grid.Column="1" DataContext="{Binding RibbonProject}"
               Visibility="{Binding DataContext.HasRibbonProject, RelativeSource={RelativeSource AncestorType=Window},
                                    Converter={StaticResource BoolToVisibility}}">
           <Grid.ColumnDefinitions>
@@ -232,15 +239,9 @@
                      Text="{Binding ProgressText}" ToolTip="{Binding ProgressPercentText}" />
         </Grid>
 
-        <TextBlock Grid.Column="0" Style="{StaticResource TertiaryText}" VerticalAlignment="Center"
+        <TextBlock Grid.Column="1" Style="{StaticResource TertiaryText}" VerticalAlignment="Center"
                    Text="No projects match the current filter"
                    Visibility="{Binding HasRibbonProject, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}" />
-
-        <Button Grid.Column="1" Style="{StaticResource GlassButton}" Padding="6,1"
-                Command="{Binding ToggleRibbonCommand}"
-                AutomationProperties.Name="Open the dashboard" ToolTip="Open the dashboard">
-          <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.ChevronUp}" />
-        </Button>
       </Grid>
 
       <Grid x:Name="StandardView" Margin="10,8,10,8"
@@ -261,6 +262,16 @@
         </Grid.ColumnDefinitions>
 
         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+          <!--
+            The collapse control sits at the left edge in every mode, including the ribbon. It is
+            the one control the ribbon keeps, and a control that lands somewhere different
+            depending on which view you pressed it from is a control you have to look for.
+          -->
+          <Button Style="{StaticResource GlassButton}" Margin="0,0,8,0" Padding="6,1"
+                  Command="{Binding ToggleRibbonCommand}"
+                  AutomationProperties.Name="Collapse to a single line" ToolTip="Collapse to a single line">
+            <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.ChevronUp}" />
+          </Button>
           <TextBlock Style="{StaticResource TitleText}" Text="Vantage" />
           <Border Margin="8,0,0,0" Padding="5,1" CornerRadius="8"
                   Background="{DynamicResource SurfaceOverlayBrush}"
@@ -277,11 +288,6 @@
         </StackPanel>
 
         <StackPanel Grid.Column="1" Orientation="Horizontal">
-          <!-- Collapse is its own control, and always one click away from wherever they are. -->
-          <Button Style="{StaticResource GlassButton}" Margin="0,0,10,0" Command="{Binding ToggleRibbonCommand}"
-                  AutomationProperties.Name="Collapse to a single line" ToolTip="Collapse to a single line">
-            <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.ChevronDown}" />
-          </Button>
           <Button Style="{StaticResource GlassButton}" Command="{Binding RefreshCommand}"
                   AutomationProperties.Name="Refresh now" ToolTip="Refresh now">
             <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.Refresh}" />

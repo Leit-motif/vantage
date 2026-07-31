@@ -104,6 +104,13 @@ public sealed partial class DashboardViewModel : ObservableObject
     public bool IsRibbon => Mode == DashboardViewMode.Ribbon;
 
     /// <summary>
+    /// The view the ribbon is folded down from, and the one the chevron unfolds back to. Public
+    /// because the ribbon borrows that view's width rather than having one of its own, so anything
+    /// recording a width while collapsed has to know whose it is.
+    /// </summary>
+    public DashboardViewMode StandardMode => _lastStandardMode;
+
+    /// <summary>
     /// Whether the window is filling the display. Its geometry is the monitor's rather than the
     /// owner's while it is, which is what everything that saves a size needs to know.
     /// </summary>
@@ -203,12 +210,15 @@ public sealed partial class DashboardViewModel : ObservableObject
     }
 
     /// <summary>
-    /// The ribbon keeps the compact width and stays free to be dragged wider: it is a strip, so
-    /// length costs the owner nothing — only height was ever the thing in the way.
+    /// The ribbon has no width of its own: it borrows the one belonging to the view it folded down
+    /// from, so collapsing moves nothing sideways and unfolding lands on the same footprint. It is
+    /// a strip, so length costs the owner nothing — only height was ever the thing in the way.
     /// </summary>
-    public double ShellWidth => Mode == DashboardViewMode.Expanded
-        ? _settings.Ui.Geometry.ExpandedWidth
-        : _settings.Ui.Geometry.CompactWidth;
+    public double ShellWidth => (Mode == DashboardViewMode.Ribbon ? StandardMode : Mode) switch
+    {
+        DashboardViewMode.Expanded => _settings.Ui.Geometry.ExpandedWidth,
+        _ => _settings.Ui.Geometry.CompactWidth,
+    };
 
     /// <summary>
     /// The owner's own preference, and Windows' when they have not expressed one: an accessibility

@@ -45,6 +45,9 @@ public partial class DashboardWindow : Window
     /// <summary>The mode the window is currently shaped for, which is what a change is a change from.</summary>
     private DashboardViewMode _appliedMode;
 
+    /// <summary>The window's own bounds before it filled the display, which are the ones to come back to.</summary>
+    private Rect? _beforeFullScreen;
+
     public DashboardWindow(DashboardViewModel viewModel, DashboardSettings settings, Action saveSettings)
     {
         _viewModel = viewModel;
@@ -264,15 +267,17 @@ public partial class DashboardWindow : Window
             geometry.Height = Height;
         }
 
-        if (_viewModel.IsExpanded)
+        // The ribbon borrows a width rather than owning one, so widening it is the owner widening
+        // the view it was folded down from. Recording it against the ribbon instead would hand
+        // compact a width chosen for something else.
+        switch (_viewModel.IsRibbon ? _viewModel.StandardMode : _viewModel.Mode)
         {
-            geometry.ExpandedWidth = Width;
-        }
-        else
-        {
-            // Compact and the ribbon share one width: the ribbon is that view folded down, and
-            // dragging either wider is the same statement about how much room this may take.
-            geometry.CompactWidth = Width;
+            case DashboardViewMode.Expanded:
+                geometry.ExpandedWidth = Width;
+                break;
+            case DashboardViewMode.Compact:
+                geometry.CompactWidth = Width;
+                break;
         }
 
         // Windows identifies a display by a physical-pixel point, so the window's own units have
@@ -325,9 +330,35 @@ public partial class DashboardWindow : Window
         var previous = _appliedMode;
         _appliedMode = _viewModel.Mode;
 
-        // Read before anything moves: which edge to hold is a question about where the window is
-        // now, and re-shaping it is what makes that unanswerable a moment later.
-        var anchor = AnchorOf();
+        if (_viewModel.IsFullScreen)
+        {
+            // Where the window was before it borrowed the display, so leaving can put it back
+            // against the edge it was actually against.
+            _beforeFullScreen = new Rect(Left, Top, ActualWidth, ActualHeight);
+
+            _applyingMode = true;
+            try
+            {
+                ApplyDetailPaneShare();
+                FillTheDisplay();
+            }
+            finally
+            {
+                _applyingMode = false;
+            }
+
+            return;
+        }
+
+        // Which edge to hold is a question about where the window is now, so it is read before
+        // anything moves. Coming out of full screen the answer is about where it was before it
+        // went in: a window filling the whole display is near no edge in particular, and asking
+        // there would anchor against the middle of a monitor it had only borrowed.
+        var from = previous == DashboardViewMode.Full && _beforeFullScreen is { } outer
+            ? outer
+            : new Rect(Left, Top, ActualWidth, ActualHeight);
+
+        var anchor = AnchorOf(from);
 
         // Re-shaping the window raises a size change per step of the re-shaping, and every one of
         // those looks exactly like the owner resizing it. Held shut for the duration, so the sizes
@@ -337,21 +368,11 @@ public partial class DashboardWindow : Window
         {
             ApplyDetailPaneShare();
 
-            if (_viewModel.IsFullScreen)
-            {
-                FillTheDisplay();
-                return;
-            }
+            Left = from.Left;
+            Top = from.Top;
 
             ApplyModeSize();
-            Width = _viewModel.ShellWidth;
-
-            if (previous == DashboardViewMode.Full)
-            {
-                // Full screen's bounds were the monitor's, so there is no edge of the owner's to
-                // hold on the way out — only the position it was never allowed to overwrite.
-                RestoreSavedPosition();
-            }
+            ApplyModeWidth();
         }
         finally
         {
@@ -361,9 +382,20 @@ public partial class DashboardWindow : Window
         // After layout rather than now: in the ribbon the new height is the content's, and the
         // content has not been measured yet. Applied here, the anchor would be holding an edge
         // against the height of the view being left rather than the one being entered.
-        Dispatcher.BeginInvoke(
-            DispatcherPriority.Loaded,
-            previous == DashboardViewMode.Full ? KeepOnScreen : () => Reanchor(anchor));
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => Reanchor(anchor));
+    }
+
+    /// <summary>
+    /// The width the mode being entered asks for. The ribbon asks for none: collapsing is a
+    /// vertical gesture, so it keeps the width of the view it folded down from and unfolds back to
+    /// exactly the same footprint. Nothing about folding the dashboard away should move it sideways.
+    /// </summary>
+    private void ApplyModeWidth()
+    {
+        if (!_viewModel.IsRibbon)
+        {
+            Width = _viewModel.ShellWidth;
+        }
     }
 
     /// <summary>
@@ -376,15 +408,15 @@ public partial class DashboardWindow : Window
     /// the other side the very next time, with no setting to notice or change.
     /// </para>
     /// </summary>
-    private Anchor AnchorOf()
+    private Anchor AnchorOf(Rect bounds)
     {
-        var area = WindowInterop.WorkAreaAt(Left, Top, DpiScale);
+        var area = WindowInterop.WorkAreaAt(bounds.Left, bounds.Top, DpiScale);
 
         return new Anchor(
-            HoldsRightEdge: Left + (ActualWidth / 2) > area.Left + (area.Width / 2),
-            Right: Left + ActualWidth,
-            HoldsBottomEdge: Top + (ActualHeight / 2) > area.Top + (area.Height / 2),
-            Bottom: Top + ActualHeight);
+            HoldsRightEdge: bounds.Left + (bounds.Width / 2) > area.Left + (area.Width / 2),
+            Right: bounds.Right,
+            HoldsBottomEdge: bounds.Top + (bounds.Height / 2) > area.Top + (area.Height / 2),
+            Bottom: bounds.Bottom);
     }
 
     private void Reanchor(Anchor anchor)
@@ -402,18 +434,6 @@ public partial class DashboardWindow : Window
         KeepOnScreen();
     }
 
-    private void RestoreSavedPosition()
-    {
-        var geometry = _settings.Ui.Geometry;
-        if (geometry.Left is not { } left || geometry.Top is not { } top)
-        {
-            return;
-        }
-
-        var (savedLeft, savedTop) = WindowInterop.Reinterpret(left, top, geometry.DpiScale, DpiScale);
-        Left = savedLeft;
-        Top = savedTop;
-    }
 
     /// <summary>
     /// How tall the window is allowed to be in the mode it is now in. The standard views keep the
