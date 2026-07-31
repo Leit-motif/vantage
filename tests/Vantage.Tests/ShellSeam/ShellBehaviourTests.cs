@@ -112,10 +112,27 @@ public sealed class ShellBehaviourTests
         Assert.AreEqual(DashboardViewMode.Expanded, _viewModel.Mode);
 
         _viewModel.CycleViewModeCommand.Execute(null);
+        Assert.AreEqual(DashboardViewMode.Full, _viewModel.Mode);
+
+        _viewModel.CycleViewModeCommand.Execute(null);
         Assert.AreEqual(
             DashboardViewMode.Compact,
             _viewModel.Mode,
             "Looking for a different size must never fold the dashboard away.");
+    }
+
+    [TestMethod]
+    public void Full_screen_is_a_wider_expanded_view_rather_than_a_different_one()
+    {
+        SixProjects();
+        _viewModel.Filter = DashboardFilter.AllRemaining;
+        Refresh();
+
+        _viewModel.Mode = DashboardViewMode.Full;
+
+        Assert.IsTrue(_viewModel.IsFullScreen);
+        Assert.IsTrue(_viewModel.IsExpanded, "Filling the display is asking to read the evidence, so the detail pane stays.");
+        Assert.AreEqual(6, _viewModel.VisibleProjects.Count, "And every row the filter matched stays with it.");
     }
 
     private void SixProjects()

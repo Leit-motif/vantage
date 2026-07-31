@@ -32,6 +32,9 @@ public partial class DashboardWindow : Window
     /// </summary>
     public const double StandardMinHeight = 220;
 
+    /// <summary>The detail column's width in the views the owner sizes by hand.</summary>
+    public const double DefaultDetailPaneWidth = 320;
+
     private readonly DashboardViewModel _viewModel;
     private readonly DashboardSettings _settings;
     private readonly Action _saveSettings;
@@ -175,6 +178,16 @@ public partial class DashboardWindow : Window
     private void RestoreGeometry()
     {
         var geometry = _settings.Ui.Geometry;
+        ApplyDetailPaneShare();
+
+        if (_viewModel.IsFullScreen)
+        {
+            // Placed on the display the saved position names, then filled: opening full screen on
+            // the primary monitor when the owner left it on a second one is not restoring anything.
+            PlaceForFullScreen(geometry);
+            return;
+        }
+
         ApplyModeSize();
         Width = _viewModel.ShellWidth;
 
@@ -194,6 +207,18 @@ public partial class DashboardWindow : Window
         Top = safeTop;
     }
 
+    private void PlaceForFullScreen(WindowGeometry geometry)
+    {
+        if (geometry.Left is { } left && geometry.Top is { } top)
+        {
+            var (savedLeft, savedTop) = WindowInterop.Reinterpret(left, top, geometry.DpiScale, DpiScale);
+            Left = savedLeft;
+            Top = savedTop;
+        }
+
+        FillTheDisplay();
+    }
+
     private void PlaceNearTopRight()
     {
         var (left, top) = WindowInterop.EnsureOnScreen(double.MinValue, double.MinValue, Width, Height, DpiScale);
@@ -209,6 +234,14 @@ public partial class DashboardWindow : Window
     private void PersistGeometry()
     {
         if (!IsLoaded || WindowState != WindowState.Normal || _applyingMode)
+        {
+            return;
+        }
+
+        // Full screen is the monitor's geometry rather than the owner's. Nothing about where the
+        // window sits or how big it is while it is there describes the view they come back to, so
+        // none of it is theirs to record.
+        if (_viewModel.IsFullScreen)
         {
             return;
         }
@@ -291,6 +324,14 @@ public partial class DashboardWindow : Window
         _applyingMode = true;
         try
         {
+            ApplyDetailPaneShare();
+
+            if (_viewModel.IsFullScreen)
+            {
+                FillTheDisplay();
+                return;
+            }
+
             ApplyModeSize();
             Width = _viewModel.ShellWidth;
         }
@@ -327,6 +368,43 @@ public partial class DashboardWindow : Window
         SizeToContent = SizeToContent.Manual;
         MinHeight = StandardMinHeight;
         Height = restored;
+    }
+
+    /// <summary>
+    /// Fills the display the window is currently on. The working area rather than the whole
+    /// screen, and by explicit bounds rather than by maximizing: a borderless window told to
+    /// maximize covers the taskbar, and this overlay is meant to sit alongside the desktop rather
+    /// than take it over. It also never leaves the monitor the owner had it on for the primary one.
+    /// </summary>
+    private void FillTheDisplay()
+    {
+        SizeToContent = SizeToContent.Manual;
+        MinHeight = StandardMinHeight;
+
+        var area = WindowInterop.WorkAreaAt(Left, Top, DpiScale);
+        Left = area.Left;
+        Top = area.Top;
+        Width = area.Width;
+        Height = area.Height;
+    }
+
+    /// <summary>
+    /// How much of the body the detail column takes. It is a fixed column at the widths the owner
+    /// sizes by hand, because the list is what those views are for; filling the display is them
+    /// asking to read the evidence, so there the column grows with the window instead of leaving
+    /// every sentence in it wrapping at 320 units.
+    /// </summary>
+    private void ApplyDetailPaneShare()
+    {
+        if (_viewModel.IsFullScreen)
+        {
+            DetailColumn.Width = new GridLength(0.5, GridUnitType.Star);
+            DetailPane.Width = double.NaN;
+            return;
+        }
+
+        DetailColumn.Width = GridLength.Auto;
+        DetailPane.Width = DefaultDetailPaneWidth;
     }
 
     private void KeepOnScreen()

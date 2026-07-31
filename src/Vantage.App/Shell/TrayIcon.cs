@@ -88,7 +88,8 @@ public sealed class TrayIcon : IDisposable
         _compactExpand.Text = mode switch
         {
             DashboardViewMode.Ribbon => "Open the dashboard",
-            DashboardViewMode.Expanded => "Compact",
+            DashboardViewMode.Expanded => "Full screen",
+            DashboardViewMode.Full => "Compact",
             _ => "Expand",
         };
 

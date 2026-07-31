@@ -214,7 +214,48 @@ public sealed class RunningShellTests
 
         Assert.IsTrue(_viewModel.IsExpanded);
         Assert.AreEqual(720 * scale, Win32Window.BoundsOf(handle).Width, 2d, "Expanding has to resize the real window.");
-        Assert.AreEqual("Compact", shell.TrayLabelStartingWith("Compact"), "The tray now offers the way back.");
+        Assert.AreEqual("Full screen", shell.TrayLabelStartingWith("Full"), "The tray offers the next step of the cycle.");
+    }
+
+    /// <summary>
+    /// Full screen, asked of Windows: the window has to actually fill the display it was on, stop
+    /// at the taskbar, and hand the owner back the geometry they had when it lets go.
+    /// </summary>
+    [TestMethod]
+    public void Full_screen_fills_the_work_area_and_gives_the_owner_their_own_geometry_back()
+    {
+        _settings.Ui.Geometry.ExpandedWidth = 720;
+        _settings.Ui.Geometry.Height = 520;
+        _viewModel.Mode = DashboardViewMode.Expanded;
+
+        using var shell = Start();
+        var handle = shell.Handle;
+        var scale = WpfTestHost.Run(() => VisualTreeHelper.GetDpi(shell.Window).DpiScaleX);
+        var before = Win32Window.BoundsOf(handle);
+
+        var workArea = WpfTestHost.Run(() =>
+            WindowInterop.WorkAreaAt(shell.Window.Left, shell.Window.Top, scale));
+
+        shell.ClickTray("Full screen");
+        RunningShell.PumpUntil(() => Win32Window.BoundsOf(handle).Width > before.Width, TimeSpan.FromSeconds(2));
+
+        var filled = Win32Window.BoundsOf(handle);
+        Assert.AreEqual(workArea.Width * scale, filled.Width, 2d, "Full screen fills the display it was already on.");
+        Assert.AreEqual(workArea.Height * scale, filled.Height, 2d, "Working area, so the taskbar is still there.");
+
+        var screen = System.Windows.Forms.Screen.FromHandle(handle).Bounds;
+        Assert.IsTrue(
+            filled.Height <= screen.Height,
+            "A borderless window told to maximize covers the taskbar; this one must not.");
+
+        shell.ClickTray("Compact");
+        RunningShell.PumpUntil(() => Win32Window.BoundsOf(handle).Width < filled.Width, TimeSpan.FromSeconds(2));
+        shell.ClickTray("Expand");
+        RunningShell.PumpUntil(() => Win32Window.BoundsOf(handle).Width > 700 * scale, TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(720 * scale, Win32Window.BoundsOf(handle).Width, 2d, "The expanded width they chose survived the trip.");
+        Assert.AreEqual(720, _settings.Ui.Geometry.ExpandedWidth, 0.5d, "Full screen's own size was never written over it.");
+        Assert.AreEqual(520, _settings.Ui.Geometry.Height, 0.5d);
     }
 
     /// <summary>

@@ -97,11 +97,17 @@ public sealed partial class DashboardViewModel : ObservableObject
     /// </summary>
     public bool IsExpanded
     {
-        get => Mode == DashboardViewMode.Expanded;
+        get => Mode is DashboardViewMode.Expanded or DashboardViewMode.Full;
         set => Mode = value ? DashboardViewMode.Expanded : DashboardViewMode.Compact;
     }
 
     public bool IsRibbon => Mode == DashboardViewMode.Ribbon;
+
+    /// <summary>
+    /// Whether the window is filling the display. Its geometry is the monitor's rather than the
+    /// owner's while it is, which is what everything that saves a size needs to know.
+    /// </summary>
+    public bool IsFullScreen => Mode == DashboardViewMode.Full;
 
     /// <summary>Whether the window is showing a project list, and so all the chrome around one.</summary>
     public bool IsStandardView => Mode != DashboardViewMode.Ribbon;
@@ -230,6 +236,7 @@ public sealed partial class DashboardViewModel : ObservableObject
 
         OnPropertyChanged(nameof(IsExpanded));
         OnPropertyChanged(nameof(IsRibbon));
+        OnPropertyChanged(nameof(IsFullScreen));
         OnPropertyChanged(nameof(IsStandardView));
         OnPropertyChanged(nameof(ShellWidth));
 
@@ -246,7 +253,8 @@ public sealed partial class DashboardViewModel : ObservableObject
     public void CycleViewMode() => Mode = Mode switch
     {
         DashboardViewMode.Compact => DashboardViewMode.Expanded,
-        DashboardViewMode.Expanded => DashboardViewMode.Compact,
+        DashboardViewMode.Expanded => DashboardViewMode.Full,
+        DashboardViewMode.Full => DashboardViewMode.Compact,
         // Out of the ribbon this opens the view they were last in, not the start of the cycle.
         _ => _lastStandardMode,
     };

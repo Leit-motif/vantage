@@ -200,6 +200,17 @@ public static partial class WindowInterop
         return (left * saved / current, top * saved / current);
     }
 
+    /// <summary>
+    /// The usable area of the display a window is on, in that window's own layout units. Working
+    /// area rather than the whole screen, so filling it leaves the taskbar where the owner put it.
+    /// </summary>
+    public static Rect WorkAreaAt(double left, double top, double dpiScale = 1d)
+    {
+        var scale = Normalise(dpiScale);
+        var origin = new System.Drawing.Point((int)(left * scale), (int)(top * scale));
+        return InDeviceIndependentUnits(System.Windows.Forms.Screen.FromPoint(origin).WorkingArea, dpiScale);
+    }
+
     /// <summary>A display's physical-pixel rectangle expressed in a window's own layout units.</summary>
     public static Rect InDeviceIndependentUnits(System.Drawing.Rectangle area, double dpiScale)
     {

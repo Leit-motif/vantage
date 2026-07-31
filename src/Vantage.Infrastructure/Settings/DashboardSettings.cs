@@ -27,6 +27,7 @@ public enum DashboardViewMode
     Ribbon,
     Compact,
     Expanded,
+    Full,
 }
 
 public sealed class ProjectRegistryEntry
