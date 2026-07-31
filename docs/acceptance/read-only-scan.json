@@ -1,0 +1,148 @@
+{
+  "Environment": {
+    "OperatingSystem": "Microsoft Windows 10.0.26200",
+    "Runtime": ".NET 10.0.10",
+    "Architecture": "X64",
+    "ProcessorCount": 16,
+    "Commit": "2cbd3f2710430b4ea502828d7dc08acdd102d3d8",
+    "StartedAtUtc": "2026-07-31 04:54:20Z"
+  },
+  "Bounds": {
+    "Roots": 2,
+    "MaxDiscoveryDepth": 6,
+    "MaxProjects": 300,
+    "MaxDirectoriesScanned": 40000,
+    "MaxConcurrentExternalProcesses": 4,
+    "ExternalProcessTimeoutSeconds": 20,
+    "MaxGitHubIssuesPerRepository": 200
+  },
+  "Passes": [
+    {
+      "Name": "cold",
+      "ElapsedMilliseconds": 15909,
+      "Projects": 53,
+      "ProjectsWithProgress": 26,
+      "ProjectsWithRemainingWork": 23,
+      "StaleProjects": 5,
+      "Offline": false,
+      "ScanTruncated": false,
+      "PeakConcurrentProcesses": 4,
+      "DiagnosticCodes": [
+        "BLOCKER_MISSING=70",
+        "EFFORT_EMPTY=1",
+        "GITHUB_UNAVAILABLE=10",
+        "SCAN_TRUNCATED=4",
+        "TICKET_AMBIGUOUS_STATUS=7",
+        "TICKET_UNRECOGNIZED=62"
+      ]
+    },
+    {
+      "Name": "warm",
+      "ElapsedMilliseconds": 15037,
+      "Projects": 53,
+      "ProjectsWithProgress": 26,
+      "ProjectsWithRemainingWork": 23,
+      "StaleProjects": 5,
+      "Offline": false,
+      "ScanTruncated": false,
+      "PeakConcurrentProcesses": 4,
+      "DiagnosticCodes": [
+        "BLOCKER_MISSING=70",
+        "EFFORT_EMPTY=1",
+        "GITHUB_UNAVAILABLE=10",
+        "SCAN_TRUNCATED=4",
+        "TICKET_AMBIGUOUS_STATUS=7",
+        "TICKET_UNRECOGNIZED=62"
+      ]
+    }
+  ],
+  "Cancellation": {
+    "WaitedForIndexingMilliseconds": 3033,
+    "ExternalCommandsSubmittedBeforeCancelling": 20,
+    "ChildProcessesRunningWhenCancelled": 4,
+    "StillRunningWhenCancelled": true,
+    "LatencyMilliseconds": 31.6975,
+    "StoppedByCancellation": true
+  },
+  "Offline": {
+    "GhReportedNoSession": true,
+    "SnapshotMarkedOffline": true,
+    "Projects": 53,
+    "ProjectsWithProgress": 13,
+    "ProjectsWithRemainingWork": 10,
+    "StaleProjects": 33,
+    "ElapsedMilliseconds": 4116
+  },
+  "Associations": {
+    "Projects": 53,
+    "GitRepositories": 49,
+    "ProjectsWithAssociation": 33,
+    "DistinctRepositoriesAssociated": 29,
+    "AssociationMatchesObservedRemote": 33,
+    "AssociationDiffersFromObservedRemote": 0,
+    "RemoteUnreadable": 0,
+    "AssociationAwaitingRelink": 0,
+    "ProjectsCarryingGitHubEvidence": 13,
+    "GitHubEvidenceFromAnotherRepository": 0,
+    "RepositoriesQueried": 29,
+    "RepositoriesQueriedWithoutAnAssociation": 0
+  },
+  "Safety": {
+    "ProjectsFingerprinted": 53,
+    "MonitoredStateChanges": [],
+    "FingerprintGaps": [
+      {
+        "ProjectId": "4fc77b244250",
+        "Subject": "github issues"
+      },
+      {
+        "ProjectId": "4fc77b244250",
+        "Subject": "github labels"
+      },
+      {
+        "ProjectId": "fc8328b6492d",
+        "Subject": "github issues"
+      },
+      {
+        "ProjectId": "fc8328b6492d",
+        "Subject": "github labels"
+      },
+      {
+        "ProjectId": "6680cb5869e7",
+        "Subject": "github issues"
+      },
+      {
+        "ProjectId": "6680cb5869e7",
+        "Subject": "github labels"
+      },
+      {
+        "ProjectId": "b09dfa930ce4",
+        "Subject": "github issues"
+      },
+      {
+        "ProjectId": "b09dfa930ce4",
+        "Subject": "github labels"
+      },
+      {
+        "ProjectId": "c879a17df934",
+        "Subject": "content of a file past the size bound"
+      },
+      {
+        "ProjectId": "98441d409e38",
+        "Subject": "github issues"
+      }
+    ],
+    "RefusedCommands": [],
+    "CommandsIssued": {
+      "git rev-parse": 300,
+      "git config --list": 98,
+      "gh label list": 66,
+      "git log": 202,
+      "gh issue list": 166,
+      "git show-ref": 98,
+      "git status": 98,
+      "gh auth status": 6,
+      "git remote get-url": 279
+    }
+  }
+}

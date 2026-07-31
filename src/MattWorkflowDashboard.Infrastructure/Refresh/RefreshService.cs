@@ -360,7 +360,29 @@ public sealed class RefreshService(
             IsPinned = entry.Pinned,
         });
 
+        // Saved before the freshness marking below: what is worth keeping as last-known-good is the
+        // complete view, not one that is already announcing a missing half.
         cache.SaveProjectSnapshot(view, now);
+
+        // A project associated with a repository that could not be read this pass is showing only
+        // its local half. The counts and progress on it are not wrong, but they are not the whole
+        // answer either, and an unmarked view is indistinguishable from a complete one.
+        if (origin is not null && settings.GitHubEnrichmentEnabled && !gitHub.Available)
+        {
+            return view with
+            {
+                IsStale = true,
+                Diagnostics =
+                [
+                    .. view.Diagnostics,
+                    Diagnostic.Info(
+                        DiagnosticCode.GitHubUnavailable,
+                        "GitHub evidence for this project is missing from this refresh; what is shown is its local half only.",
+                        project.CanonicalPath),
+                ],
+            };
+        }
+
         return view;
     }
 

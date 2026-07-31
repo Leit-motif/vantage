@@ -2,8 +2,17 @@ using MattWorkflowDashboard.Infrastructure.Processes;
 
 namespace MattWorkflowDashboard.Tests.TestSupport;
 
-/// <summary>One external command as the dashboard actually invoked it.</summary>
-public sealed record ProcessInvocation(string FileName, IReadOnlyList<string> Arguments, string? WorkingDirectory);
+/// <summary>
+/// One external command as the dashboard actually invoked it, and when. The times are what makes
+/// overlap observable: two index passes for one project are serialized only if their invocations
+/// never interleave.
+/// </summary>
+public sealed record ProcessInvocation(
+    string FileName,
+    IReadOnlyList<string> Arguments,
+    string? WorkingDirectory,
+    DateTimeOffset StartedAt = default,
+    DateTimeOffset CompletedAt = default);
 
 /// <summary>
 /// A controlled external-process boundary. Success, authentication loss, timeout, malformed
@@ -11,18 +20,51 @@ public sealed record ProcessInvocation(string FileName, IReadOnlyList<string> Ar
 /// </summary>
 public sealed class FakeProcessRunner : IProcessRunner
 {
-    private readonly List<(Func<string, IReadOnlyList<string>, bool> Match, Func<ProcessResult> Respond)> _rules = [];
+    private readonly List<(Func<string, IReadOnlyList<string>, bool> Match, Func<CancellationToken, Task<ProcessResult>> Respond)> _rules = [];
+    private readonly Lock _gate = new();
+    private readonly List<ProcessInvocation> _invocations = [];
 
-    public List<ProcessInvocation> Invocations { get; } = [];
+    /// <summary>
+    /// The commands that ran, in completion order. A copy, because the refresh invokes this from
+    /// several workers at once and a caller reading the list mid-refresh must not see it mutate.
+    /// </summary>
+    public IReadOnlyList<ProcessInvocation> Invocations
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _invocations];
+            }
+        }
+    }
 
     /// <summary>When set, every call delegates here instead — used to exercise real git.</summary>
     public IProcessRunner? Fallback { get; set; }
 
-    public FakeProcessRunner When(Func<string, IReadOnlyList<string>, bool> match, Func<ProcessResult> respond)
+    public FakeProcessRunner When(Func<string, IReadOnlyList<string>, bool> match, Func<ProcessResult> respond) =>
+        When(match, _ => Task.FromResult(respond()));
+
+    public FakeProcessRunner When(
+        Func<string, IReadOnlyList<string>, bool> match,
+        Func<CancellationToken, Task<ProcessResult>> respond)
     {
         _rules.Add((match, respond));
         return this;
     }
+
+    /// <summary>
+    /// Makes a command take real time, so that whether two passes overlap is something the
+    /// recorded invocations can actually answer.
+    /// </summary>
+    public FakeProcessRunner Slow(string fileName, string argument, TimeSpan duration, string stdout = "") =>
+        When(
+            (name, args) => name == fileName && args.Contains(argument),
+            async token =>
+            {
+                await Task.Delay(duration, token).ConfigureAwait(false);
+                return Ok(stdout);
+            });
 
     public FakeProcessRunner WhenCommand(string fileName, string firstArgument, ProcessResult result) =>
         When(
@@ -57,21 +99,36 @@ public sealed class FakeProcessRunner : IProcessRunner
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Invocations.Add(new ProcessInvocation(fileName, [.. arguments], workingDirectory));
+        var startedAt = DateTimeOffset.UtcNow;
 
-        foreach (var (match, respond) in _rules)
+        try
         {
-            if (match(fileName, arguments))
+            foreach (var (match, respond) in _rules)
             {
-                return respond();
+                if (match(fileName, arguments))
+                {
+                    return await respond(cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            if (Fallback is not null)
+            {
+                return await Fallback.RunAsync(fileName, arguments, workingDirectory, cancellationToken).ConfigureAwait(false);
+            }
+
+            return new ProcessResult(1, string.Empty, $"no rule for {fileName} {string.Join(' ', arguments)}", false, false);
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                _invocations.Add(new ProcessInvocation(
+                    fileName,
+                    [.. arguments],
+                    workingDirectory,
+                    startedAt,
+                    DateTimeOffset.UtcNow));
             }
         }
-
-        if (Fallback is not null)
-        {
-            return await Fallback.RunAsync(fileName, arguments, workingDirectory, cancellationToken).ConfigureAwait(false);
-        }
-
-        return new ProcessResult(1, string.Empty, $"no rule for {fileName} {string.Join(' ', arguments)}", false, false);
     }
 }
