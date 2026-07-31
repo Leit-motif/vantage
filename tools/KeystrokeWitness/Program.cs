@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace MattWorkflowDashboard.KeystrokeWitness;
+namespace Vantage.KeystrokeWitness;
 
 /// <summary>
 /// Watches the interactive desktop for synthetic keystrokes while another command runs.

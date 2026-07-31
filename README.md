@@ -53,15 +53,15 @@ adopts the pending origin you were shown, not whatever the remote happens to rea
 
 | Project | Role |
 | --- | --- |
-| `src/MattWorkflowDashboard.Core` | UI-free domain: observed evidence, normalized workflow facts, derived projections |
-| `src/MattWorkflowDashboard.Infrastructure` | Discovery, parsing, Git and `gh` adapters, SQLite cache, settings, logging, the refresh orchestrator |
-| `src/MattWorkflowDashboard.App` | The WPF overlay, tray, and settings window |
-| `tests/MattWorkflowDashboard.Tests` | Tests, driven through the product's refresh boundary |
+| `src/Vantage.Core` | UI-free domain: observed evidence, normalized workflow facts, derived projections |
+| `src/Vantage.Infrastructure` | Discovery, parsing, Git and `gh` adapters, SQLite cache, settings, logging, the refresh orchestrator |
+| `src/Vantage.App` | The WPF overlay, tray, and settings window |
+| `tests/Vantage.Tests` | Tests, driven through the product's refresh boundary |
 
 ## Build and run
 
 ```bash
-dotnet test MattWorkflowDashboard.slnx
+dotnet test Vantage.slnx
 ```
 
 That is the whole suite, including the shell tests that drive a real window with a real keyboard.
@@ -70,19 +70,19 @@ keyboard from what you are doing, and you can carry on working through them. See
 [docs/testing.md](docs/testing.md) for what those tests prove and what they deliberately do not.
 
 ```bash
-dotnet run --project src/MattWorkflowDashboard.App
+dotnet run --project src/Vantage.App
 ```
 
 Shipping configuration — self-contained, single-file, unsigned, untrimmed, no installer and no
 auto-update:
 
 ```bash
-dotnet publish src/MattWorkflowDashboard.App -p:PublishProfile=win-x64 -c Release
+dotnet publish src/Vantage.App -p:PublishProfile=win-x64 -c Release
 ```
 
 ## Where its own state lives
 
-Everything the dashboard writes is under `%LOCALAPPDATA%\MattWorkflowDashboard`:
+Everything the dashboard writes is under `%LOCALAPPDATA%\Vantage`:
 
 - `settings.json` — atomic, schema-versioned configuration
 - `cache.db` — a **disposable** SQLite index (90 days of activity, current ticket snapshots,

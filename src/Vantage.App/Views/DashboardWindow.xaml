@@ -1,0 +1,498 @@
+<Window x:Class="Vantage.App.Views.DashboardWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:conv="clr-namespace:Vantage.App.Converters"
+        xmlns:shell="clr-namespace:Vantage.App.Shell"
+        xmlns:vm="clr-namespace:Vantage.App.ViewModels"
+        Title="Workflow dashboard"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Topmost="True"
+        ResizeMode="CanResizeWithGrip"
+        MinWidth="320"
+        MinHeight="220"
+        Width="{Binding ShellWidth, Mode=OneWay}"
+        Height="520"
+        UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display"
+        AutomationProperties.Name="Workflow dashboard">
+
+  <Window.Resources>
+    <conv:StarLengthConverter x:Key="StarLength" />
+    <conv:CountToVisibilityConverter x:Key="CountToVisibility" />
+    <conv:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+    <conv:FilterEqualsConverter x:Key="FilterEquals" />
+    <conv:EmptyTextToVisibilityConverter x:Key="EmptyTextToVisibility" />
+
+    <!-- The accent is a third cue only; the written label and the glyph already carry the state. -->
+    <Style x:Key="StateIconText" TargetType="TextBlock" BasedOn="{StaticResource IconText}">
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding StateLabel}" Value="In progress">
+          <Setter Property="Foreground" Value="{DynamicResource StateInProgressBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding StateLabel}" Value="Ready">
+          <Setter Property="Foreground" Value="{DynamicResource StateReadyBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding StateLabel}" Value="Blocked">
+          <Setter Property="Foreground" Value="{DynamicResource StateBlockedBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding StateLabel}" Value="Complete">
+          <Setter Property="Foreground" Value="{DynamicResource StateCompleteBrush}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding StateLabel}" Value="Idle">
+          <Setter Property="Foreground" Value="{DynamicResource StateIdleBrush}" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+
+    <!-- Segmented progress: completed share against the remaining track. -->
+    <DataTemplate x:Key="PipelineSegmentTemplate">
+      <StackPanel Margin="0,0,3,0">
+        <Grid Height="4">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="{Binding Completed, Converter={StaticResource StarLength}}" />
+            <ColumnDefinition Width="{Binding Remaining, Converter={StaticResource StarLength}}" />
+          </Grid.ColumnDefinitions>
+          <Border Grid.Column="0" Background="{DynamicResource StateCompleteBrush}" CornerRadius="2,0,0,2" />
+          <Border Grid.Column="1" Background="{DynamicResource TrackBrush}" CornerRadius="0,2,2,0" />
+        </Grid>
+        <TextBlock Style="{StaticResource TertiaryText}" Margin="0,3,0,0"
+                   Text="{Binding Label}" ToolTip="{Binding Kind}" />
+      </StackPanel>
+    </DataTemplate>
+
+    <DataTemplate x:Key="ProjectRowTemplate" DataType="{x:Type vm:ProjectItemViewModel}">
+      <Border Background="{DynamicResource SurfaceRaisedBrush}"
+              BorderBrush="{DynamicResource BorderStrongBrush}"
+              BorderThickness="1"
+              CornerRadius="7"
+              Padding="9,7"
+              Margin="0,0,0,6"
+              AutomationProperties.Name="{Binding AccessibleSummary}">
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
+
+          <!-- Name, state label and glyph, last update -->
+          <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0" Style="{StaticResource StateIconText}" Margin="0,0,6,0"
+                       Text="{Binding StateGlyph}" ToolTip="{Binding StateReason}" />
+
+            <TextBlock Grid.Column="1" Style="{StaticResource BodyText}" FontWeight="SemiBold"
+                       Text="{Binding Name}" ToolTip="{Binding Path}" />
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+              <TextBlock Style="{StaticResource SecondaryText}" Text="{Binding StateLabel}"
+                         ToolTip="{Binding StateReason}" Margin="0,0,6,0" />
+              <TextBlock Style="{StaticResource TertiaryText}" Text="{Binding LastUpdateText}" />
+            </StackPanel>
+          </Grid>
+
+          <!-- Progress and pipeline -->
+          <Grid Grid.Row="1" Margin="0,7,0,0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <ItemsControl Grid.Column="0" ItemsSource="{Binding Pipeline}"
+                          ItemTemplate="{StaticResource PipelineSegmentTemplate}"
+                          VerticalAlignment="Center">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <UniformGrid Rows="1" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+            </ItemsControl>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Top">
+              <TextBlock Style="{StaticResource SecondaryText}" Text="{Binding ProgressText}" />
+              <TextBlock Style="{StaticResource TertiaryText}" Text=" · " />
+              <TextBlock Style="{StaticResource TertiaryText}" Text="{Binding ProgressPercentText}" />
+            </StackPanel>
+          </Grid>
+
+          <!-- Next action and badges -->
+          <Grid Grid.Row="2" Margin="0,7,0,0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+              <TextBlock Style="{StaticResource TertiaryText}" Text="Next: " />
+              <TextBlock Style="{StaticResource SecondaryText}" Text="{Binding NextActionText}"
+                         ToolTip="{Binding NextActionDetail}" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+              <!-- The aggregate warning is a control: it opens this project's conflict evidence. -->
+              <Button Style="{StaticResource GlassButton}" Margin="4,0,0,0" Padding="5,1"
+                      Command="{Binding InspectConflictsCommand}"
+                      Visibility="{Binding ConflictCount, Converter={StaticResource CountToVisibility}}"
+                      AutomationProperties.Name="{Binding ConflictBadgeName}"
+                      ToolTip="Linked sources disagree — inspect the evidence.">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Style="{StaticResource IconText}" Foreground="{DynamicResource ConflictBrush}"
+                             Text="{x:Static vm:Glyphs.Conflict}" />
+                  <TextBlock Style="{StaticResource SecondaryText}" Foreground="{DynamicResource ConflictBrush}"
+                             Text="{Binding ConflictCount}" Margin="3,0,0,0" />
+                </StackPanel>
+              </Button>
+
+              <Border Background="Transparent" Margin="6,0,0,0"
+                      Visibility="{Binding DiagnosticCount, Converter={StaticResource CountToVisibility}}"
+                      ToolTip="Diagnostics recorded for this project.">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.Diagnostic}" />
+                  <TextBlock Style="{StaticResource SecondaryText}" Text="{Binding DiagnosticCount}" Margin="3,0,0,0" />
+                </StackPanel>
+              </Border>
+
+              <TextBlock Style="{StaticResource IconText}" Margin="6,0,0,0"
+                         Foreground="{DynamicResource StateBlockedBrush}"
+                         Text="{x:Static vm:Glyphs.Stale}"
+                         ToolTip="{Binding FreshnessText}"
+                         Visibility="{Binding IsStale, Converter={StaticResource BoolToVisibility}}" />
+            </StackPanel>
+          </Grid>
+        </Grid>
+      </Border>
+    </DataTemplate>
+  </Window.Resources>
+
+  <Border x:Name="GlassRoot"
+          CornerRadius="10"
+          BorderThickness="1"
+          BorderBrush="{DynamicResource BorderStrongBrush}"
+          Padding="0">
+    <Border.Background>
+      <!-- Only the surface is translucent. Content above it stays opaque and legible. -->
+      <SolidColorBrush Color="{DynamicResource SurfaceColor}" Opacity="{Binding SurfaceOpacity}" />
+    </Border.Background>
+
+    <Grid Margin="10,8,10,8">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+
+      <!-- Header: drag handle plus window commands -->
+      <Grid Grid.Row="0" x:Name="HeaderBar" Background="Transparent" MouseLeftButtonDown="OnHeaderDrag">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+          <TextBlock Style="{StaticResource TitleText}" Text="Workflow" />
+          <TextBlock Style="{StaticResource TertiaryText}" Text=" · read-only" VerticalAlignment="Bottom" Margin="0,0,0,2" />
+          <Border Margin="8,0,0,0" Padding="5,1" CornerRadius="8"
+                  Background="{DynamicResource SurfaceOverlayBrush}"
+                  Visibility="{Binding IsOffline, Converter={StaticResource BoolToVisibility}}"
+                  ToolTip="No authenticated gh session; showing local evidence.">
+            <TextBlock Style="{StaticResource TertiaryText}" Text="offline" />
+          </Border>
+          <Border Margin="6,0,0,0" Padding="5,1" CornerRadius="8"
+                  Background="{DynamicResource SurfaceOverlayBrush}"
+                  Visibility="{Binding IsStale, Converter={StaticResource BoolToVisibility}}"
+                  ToolTip="Some evidence came from a last-known-good snapshot.">
+            <TextBlock Style="{StaticResource TertiaryText}" Foreground="{DynamicResource StateBlockedBrush}" Text="stale" />
+          </Border>
+        </StackPanel>
+
+        <StackPanel Grid.Column="1" Orientation="Horizontal">
+          <Button Style="{StaticResource GlassButton}" Command="{Binding RefreshCommand}"
+                  AutomationProperties.Name="Refresh now" ToolTip="Refresh now">
+            <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.Refresh}" />
+          </Button>
+          <Button Style="{StaticResource GlassButton}" Margin="4,0,0,0" Command="{Binding ToggleExpandedCommand}"
+                  AutomationProperties.Name="Toggle expanded view" ToolTip="Compact / expanded">
+            <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.Expand}" />
+          </Button>
+          <Button Style="{StaticResource GlassButton}" Margin="4,0,0,0" Click="OnSettingsClick"
+                  AutomationProperties.Name="Open settings" ToolTip="Settings">
+            <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.Settings}" />
+          </Button>
+          <Button Style="{StaticResource GlassButton}" Margin="4,0,0,0" Click="OnHideClick"
+                  AutomationProperties.Name="Hide to tray" ToolTip="Hide to the notification area">
+            <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.Close}" />
+          </Button>
+        </StackPanel>
+      </Grid>
+
+      <!-- Filters -->
+      <WrapPanel Grid.Row="1" Margin="0,8,0,0">
+        <ToggleButton Style="{StaticResource FilterChip}" Content="Recent 24h"
+                      Command="{Binding SetFilterCommand}" CommandParameter="Recent"
+                      IsChecked="{Binding Filter, Converter={StaticResource FilterEquals}, ConverterParameter=Recent, Mode=OneWay}" />
+        <ToggleButton Style="{StaticResource FilterChip}" Content="All remaining"
+                      Command="{Binding SetFilterCommand}" CommandParameter="AllRemaining"
+                      IsChecked="{Binding Filter, Converter={StaticResource FilterEquals}, ConverterParameter=AllRemaining, Mode=OneWay}" />
+        <ToggleButton Style="{StaticResource FilterChip}" Content="In progress"
+                      Command="{Binding SetFilterCommand}" CommandParameter="InProgress"
+                      IsChecked="{Binding Filter, Converter={StaticResource FilterEquals}, ConverterParameter=InProgress, Mode=OneWay}" />
+        <ToggleButton Style="{StaticResource FilterChip}" Content="Blocked"
+                      Command="{Binding SetFilterCommand}" CommandParameter="Blocked"
+                      IsChecked="{Binding Filter, Converter={StaticResource FilterEquals}, ConverterParameter=Blocked, Mode=OneWay}" />
+        <ToggleButton Style="{StaticResource FilterChip}" Content="Pinned"
+                      Command="{Binding SetFilterCommand}" CommandParameter="Pinned"
+                      IsChecked="{Binding Filter, Converter={StaticResource FilterEquals}, ConverterParameter=Pinned, Mode=OneWay}" />
+        <ToggleButton Style="{StaticResource FilterChip}" Content="Archive"
+                      Command="{Binding SetFilterCommand}" CommandParameter="Archive"
+                      IsChecked="{Binding Filter, Converter={StaticResource FilterEquals}, ConverterParameter=Archive, Mode=OneWay}" />
+        <Grid Width="140" Margin="4,0,0,0">
+          <TextBox x:Name="SearchInput" Style="{StaticResource SearchBox}"
+                   AutomationProperties.Name="Search projects and tickets"
+                   Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=200}" />
+          <TextBlock Style="{StaticResource TertiaryText}" Margin="8,0,0,0" IsHitTestVisible="False"
+                     VerticalAlignment="Center" Text="Search"
+                     Visibility="{Binding SearchText, Converter={StaticResource EmptyTextToVisibility}}" />
+        </Grid>
+      </WrapPanel>
+
+      <!-- Counters -->
+      <WrapPanel Grid.Row="2" Margin="0,8,0,4">
+        <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+          <TextBlock Style="{StaticResource SecondaryText}" Foreground="{DynamicResource StateInProgressBrush}" Text="Active " />
+          <TextBlock Style="{StaticResource BodyText}" Text="{Binding ActiveCount}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+          <TextBlock Style="{StaticResource SecondaryText}" Foreground="{DynamicResource StateReadyBrush}" Text="Ready " />
+          <TextBlock Style="{StaticResource BodyText}" Text="{Binding ReadyCount}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+          <TextBlock Style="{StaticResource SecondaryText}" Foreground="{DynamicResource StateBlockedBrush}" Text="Blocked " />
+          <TextBlock Style="{StaticResource BodyText}" Text="{Binding BlockedCount}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Style="{StaticResource SecondaryText}" Text="Diagnostics " />
+          <TextBlock Style="{StaticResource BodyText}" Text="{Binding DiagnosticCount}" />
+        </StackPanel>
+      </WrapPanel>
+
+      <!-- Body: list, plus a detail column once expanded -->
+      <Grid Grid.Row="3">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" MinWidth="260" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <ListBox Grid.Column="0"
+                 x:Name="ProjectList"
+                 ItemsSource="{Binding VisibleProjects}"
+                 SelectedItem="{Binding SelectedProject}"
+                 ItemTemplate="{StaticResource ProjectRowTemplate}"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 HorizontalContentAlignment="Stretch"
+                 AutomationProperties.Name="Projects">
+          <ListBox.ItemContainerStyle>
+            <Style TargetType="ListBoxItem">
+              <Setter Property="Padding" Value="0" />
+              <Setter Property="Margin" Value="0" />
+              <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+              <Setter Property="Background" Value="Transparent" />
+              <Setter Property="BorderThickness" Value="0" />
+              <Setter Property="Template">
+                <Setter.Value>
+                  <ControlTemplate TargetType="ListBoxItem">
+                    <Border Background="Transparent" SnapsToDevicePixels="True">
+                      <ContentPresenter />
+                    </Border>
+                  </ControlTemplate>
+                </Setter.Value>
+              </Setter>
+            </Style>
+          </ListBox.ItemContainerStyle>
+        </ListBox>
+
+        <ContentControl Grid.Column="1"
+                        x:Name="DetailPane"
+                        Width="320"
+                        Margin="10,0,0,0"
+                        Content="{Binding SelectedProject}"
+                        Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}"
+                        AutomationProperties.Name="Project details">
+          <ContentControl.ContentTemplate>
+            <DataTemplate DataType="{x:Type vm:ProjectItemViewModel}">
+              <Border Background="{DynamicResource SurfaceRaisedBrush}"
+                      BorderBrush="{DynamicResource BorderStrongBrush}"
+                      BorderThickness="1" CornerRadius="7" Padding="10">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                  <StackPanel>
+                    <TextBlock Style="{StaticResource TitleText}" Text="{Binding Name}" />
+                    <TextBlock Style="{StaticResource TertiaryText}" Text="{Binding Path}" TextWrapping="Wrap" />
+                    <TextBlock Style="{StaticResource SecondaryText}" Margin="0,6,0,0" Text="{Binding StateReason}" TextWrapping="Wrap" />
+                    <TextBlock Style="{StaticResource TertiaryText}" Margin="0,2,0,0" Text="{Binding OriginText}" />
+                    <TextBlock Style="{StaticResource TertiaryText}" Text="{Binding FreshnessText}" TextWrapping="Wrap" />
+
+                    <TextBlock Style="{StaticResource SecondaryText}" Margin="0,10,0,2" Text="NEXT ACTION" />
+                    <TextBlock Style="{StaticResource BodyText}" Text="{Binding NextActionText}" TextWrapping="Wrap" />
+                    <TextBlock Style="{StaticResource TertiaryText}" Text="{Binding NextActionDetail}" TextWrapping="Wrap" />
+                    <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap"
+                               Text="{Binding NextActionProvenance}" />
+
+                    <TextBlock Style="{StaticResource SecondaryText}" Margin="0,10,0,2" Text="EFFORTS" />
+                    <ItemsControl ItemsSource="{Binding Efforts}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <StackPanel Margin="0,0,0,8">
+                            <TextBlock Style="{StaticResource BodyText}" Text="{Binding Name}" />
+                            <ItemsControl ItemsSource="{Binding Tickets}" Margin="8,2,0,0">
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                  <Grid Margin="0,1">
+                                    <Grid.ColumnDefinitions>
+                                      <ColumnDefinition Width="*" />
+                                      <ColumnDefinition Width="Auto" />
+                                      <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Style="{StaticResource SecondaryText}"
+                                               Text="{Binding Title}"
+                                               ToolTip="{Binding ProvenanceDescription}" />
+                                    <TextBlock Grid.Column="1" Style="{StaticResource TertiaryText}"
+                                               Text="{Binding Status.RawValue}"
+                                               ToolTip="{Binding Status.Description}" Margin="6,0,0,0" />
+                                    <!-- The conflict is inspectable on the item it is about. -->
+                                    <Button Grid.Column="2" Style="{StaticResource GlassButton}"
+                                            Padding="4,0" Margin="6,0,0,0"
+                                            Command="{Binding InspectConflictsCommand}"
+                                            CommandParameter="{Binding Id}"
+                                            Visibility="{Binding ConflictCount, Converter={StaticResource CountToVisibility}}"
+                                            AutomationProperties.Name="{Binding ConflictControlName}"
+                                            ToolTip="Inspect this item's disagreement.">
+                                      <TextBlock Style="{StaticResource IconText}"
+                                                 Foreground="{DynamicResource ConflictBrush}"
+                                                 Text="{x:Static vm:Glyphs.Conflict}" />
+                                    </Button>
+                                  </Grid>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                          </StackPanel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Style="{StaticResource SecondaryText}" Margin="0,6,0,2" Text="RECENT ACTIVITY"
+                               Visibility="{Binding RecentActivity.Count, Converter={StaticResource CountToVisibility}}" />
+                    <ItemsControl ItemsSource="{Binding RecentActivity}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap"
+                                     Text="{Binding Summary}" ToolTip="{Binding Provenance.Description}" />
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Style="{StaticResource SecondaryText}" Margin="0,10,0,2" Text="BLOCKERS"
+                               Foreground="{DynamicResource StateBlockedBrush}"
+                               Visibility="{Binding BlockerCount, Converter={StaticResource CountToVisibility}}" />
+                    <ItemsControl ItemsSource="{Binding Blockers}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <StackPanel Margin="0,0,0,4" ToolTip="{Binding Provenance}">
+                            <TextBlock Style="{StaticResource SecondaryText}" Text="{Binding Title}" TextWrapping="Wrap" />
+                            <TextBlock Style="{StaticResource TertiaryText}" Text="{Binding HeldBy}" TextWrapping="Wrap" />
+                          </StackPanel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!--
+                      Both sides of every disagreement, which side was kept, and where each side
+                      was observed. An announced region of its own, so the evidence can be
+                      navigated to and read out as one thing.
+                    -->
+                    <StackPanel AutomationProperties.Name="Conflicts"
+                                shell:BringIntoView.OnRequest="{Binding ConflictInspectionRequests}"
+                                Visibility="{Binding ConflictCount, Converter={StaticResource CountToVisibility}}">
+                      <Grid Margin="0,10,0,2">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Style="{StaticResource SecondaryText}"
+                                   Foreground="{DynamicResource ConflictBrush}"
+                                   Text="{Binding ConflictHeading}" TextWrapping="Wrap" />
+                        <Button Grid.Column="1" Style="{StaticResource GlassButton}" Padding="6,0"
+                                Command="{Binding ShowAllConflictsCommand}"
+                                Content="Show all"
+                                AutomationProperties.Name="Show every disagreement in this project"
+                                Visibility="{Binding IsConflictInspectionNarrowed, Converter={StaticResource BoolToVisibility}}" />
+                      </Grid>
+                      <ItemsControl ItemsSource="{Binding InspectedConflicts}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <StackPanel Margin="0,0,0,8" AutomationProperties.Name="{Binding AccessibleSummary}">
+                              <TextBlock Style="{StaticResource SecondaryText}" Foreground="{DynamicResource ConflictBrush}"
+                                         Text="{Binding Headline}" TextWrapping="Wrap" />
+                              <Grid Margin="0,2,0,0">
+                                <Grid.ColumnDefinitions>
+                                  <ColumnDefinition Width="Auto" />
+                                  <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                  <RowDefinition Height="Auto" />
+                                  <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource TertiaryText}" Text="local " />
+                                <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource SecondaryText}"
+                                           Text="{Binding LocalValue}" TextWrapping="Wrap" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource TertiaryText}" Text="remote " />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource SecondaryText}"
+                                           Text="{Binding RemoteValue}" TextWrapping="Wrap" />
+                              </Grid>
+                              <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                         Text="{Binding Resolution}" />
+                              <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap"
+                                         Text="{Binding LocalProvenance}" />
+                              <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap"
+                                         Text="{Binding RemoteProvenance}" />
+                            </StackPanel>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+
+                    <TextBlock Style="{StaticResource SecondaryText}" Margin="0,10,0,2" Text="DIAGNOSTICS"
+                               Visibility="{Binding DiagnosticCount, Converter={StaticResource CountToVisibility}}" />
+                    <ItemsControl ItemsSource="{Binding Diagnostics}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap" Margin="0,0,0,3"
+                                     Text="{Binding Message}" ToolTip="{Binding Locator}" />
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </ScrollViewer>
+              </Border>
+            </DataTemplate>
+          </ContentControl.ContentTemplate>
+        </ContentControl>
+      </Grid>
+
+      <TextBlock Grid.Row="4" Style="{StaticResource TertiaryText}" Margin="0,6,0,0"
+                 Text="{Binding StatusLine}" TextTrimming="CharacterEllipsis"
+                 AutomationProperties.Name="Refresh status" />
+    </Grid>
+  </Border>
+</Window>

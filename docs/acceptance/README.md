@@ -6,6 +6,11 @@ whether the test suite stays off the owner's keyboard, what the running shell do
 itself moves underneath it, and what the overlay actually looks like on a real desktop. All are made
 on the live machine, and all record their evidence here.
 
+The product was named `MattWorkflowDashboard` when these runs were recorded, and was renamed to
+`Vantage` afterwards. The commands above have been updated so they still run; the recorded JSON has
+not, because it is evidence. Where a record names a path, an assembly, or a registry value, it names
+what existed at the commit it is stamped with.
+
 ---
 
 # The keystroke witness
@@ -22,7 +27,7 @@ trust.
 ## Reproducing it
 
 ```bash
-dotnet run -c Release --project tools/KeystrokeWitness -- docs/acceptance/keystroke-witness.json --stamp $(git rev-parse HEAD) dotnet test tests/MattWorkflowDashboard.Tests --configuration Release --no-build
+dotnet run -c Release --project tools/KeystrokeWitness -- docs/acceptance/keystroke-witness.json --stamp $(git rev-parse HEAD) dotnet test tests/Vantage.Tests --configuration Release --no-build
 ```
 
 **Run it while using the machine.** A clean result from an idle desktop is the weakest version of
@@ -79,7 +84,7 @@ real, private, and messier than any fixture.
 ## Reproducing it
 
 ```bash
-dotnet run -c Release --project src/MattWorkflowDashboard.App -- --acceptance "$env:TEMP/mwd-scan" --stamp $(git rev-parse HEAD)
+dotnet run -c Release --project src/Vantage.App -- --acceptance "$env:TEMP/mwd-scan" --stamp $(git rev-parse HEAD)
 ```
 
 **The output directory must be outside every configured root**, and the run refuses to start
@@ -167,7 +172,7 @@ or the key temporarily removed from the owner's own file for the duration of the
 immediately after):
 
 ```bash
-dotnet run -c Release --project src/MattWorkflowDashboard.App -- --acceptance "$env:TEMP/mwd-local-only" --stamp $(git rev-parse HEAD)
+dotnet run -c Release --project src/Vantage.App -- --acceptance "$env:TEMP/mwd-local-only" --stamp $(git rev-parse HEAD)
 ```
 
 Same instrument as the read-only scan above, including its own offline pass — which probes a real
@@ -214,7 +219,7 @@ It writes only when the switch names a file, and it records the shell's own stat
 content, no project or repository names.
 
 ```bash
-dotnet run -c Release --project src/MattWorkflowDashboard.App -- --shell-journal "$env:TEMP/mwd-shell.jsonl"
+dotnet run -c Release --project src/Vantage.App -- --shell-journal "$env:TEMP/mwd-shell.jsonl"
 ```
 
 The items below are then driven by hand — the owner changing Windows, the agent reading the journal
@@ -296,7 +301,7 @@ doing the one thing the ticket is about.
 
 ```bash
 pwsh tools/VisualFixture/New-VisualFixture.ps1
-dotnet run -c Release --project src/MattWorkflowDashboard.App -- --state "$env:PUBLIC/mwd-visual-fixture/state"
+dotnet run -c Release --project src/Vantage.App -- --state "$env:PUBLIC/mwd-visual-fixture/state"
 pwsh tools/VisualFixture/Save-Frame.ps1 -Rect 725,113,775,950 -Path frame.png
 ```
 
