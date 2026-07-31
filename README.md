@@ -57,6 +57,11 @@ adopts the pending origin you were shown, not whatever the remote happens to rea
 dotnet test MattWorkflowDashboard.slnx
 ```
 
+That is the whole suite, including the shell tests that drive a real window with a real keyboard.
+They run on a Windows desktop of their own, so they neither appear on your screen nor take the
+keyboard from what you are doing, and you can carry on working through them. See
+[docs/testing.md](docs/testing.md) for what those tests prove and what they deliberately do not.
+
 ```bash
 dotnet run --project src/MattWorkflowDashboard.App
 ```

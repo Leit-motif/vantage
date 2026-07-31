@@ -59,55 +59,82 @@ public static class Win32Window
 
     public static nint Foreground() => GetForegroundWindow();
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int GetWindowTextW(nint hWnd, char[] lpString, int nMaxCount);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);
+
+    /// <summary>
+    /// A window as a person would recognise it — its title and the process behind it. A test that
+    /// gives up because something else has the foreground has to say what that something was, or
+    /// the report is indistinguishable from the dashboard failing.
+    /// </summary>
+    public static string Describe(nint handle)
+    {
+        if (!Exists(handle))
+        {
+            return handle == 0 ? "no window at all" : $"a window that no longer exists (0x{handle:X})";
+        }
+
+        var buffer = new char[512];
+        var length = GetWindowTextW(handle, buffer, buffer.Length);
+        var title = length > 0 ? new string(buffer, 0, length) : "(untitled)";
+
+        var process = "an unknown process";
+        if (GetWindowThreadProcessId(handle, out var processId) != 0)
+        {
+            try
+            {
+                using var owner = System.Diagnostics.Process.GetProcessById((int)processId);
+                process = $"{owner.ProcessName} ({processId})";
+            }
+            catch (ArgumentException)
+            {
+                process = $"a process that has since exited ({processId})";
+            }
+            catch (InvalidOperationException)
+            {
+                process = $"a process that has since exited ({processId})";
+            }
+        }
+
+        return $"'{title}' in {process}";
+    }
+
     [DllImport("user32.dll")]
-    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, nint dwExtraInfo);
+    private static extern nint GetActiveWindow();
 
-    private const byte VkTab = 0x09;
-
-    public const byte VkControl = 0x11;
-
-    public const byte VkShift = 0x10;
-
-    public const byte VkF9 = 0x78;
-
-    private const uint KeyEventKeyUp = 0x0002;
+    [DllImport("user32.dll")]
+    private static extern nint SetActiveWindow(nint hWnd);
 
     /// <summary>
-    /// Presses a chord as the owner's keyboard would: modifiers down, key, then everything back
-    /// up. Used to deliver a real global hotkey, which is the only way the shell's focus gesture
-    /// can be exercised as the owner experiences it — Windows grants a process the right to take
-    /// the foreground when it receives a hotkey, and withholds it otherwise.
+    /// The window Windows is sending the calling thread's keyboard input to. This is per thread,
+    /// so it answers for the desktop the caller is on and has to be asked from the thread whose
+    /// windows are in question — from anywhere else it describes a different desktop entirely.
+    /// <para>
+    /// Activation rather than the foreground is what these tests read, because the suite runs on a
+    /// desktop of its own and a desktop nobody is looking at has no foreground window at all:
+    /// <c>GetForegroundWindow</c> answers for the one desktop Windows is sending real input to.
+    /// Activation is the part of the same idea that is real on every desktop, and it is the part
+    /// the dashboard actually reacts to — its no-activate refusal is lifted and restored around
+    /// <c>WM_ACTIVATE</c>.
+    /// </para>
     /// </summary>
-    public static void PressChord(byte[] modifiers, byte key)
-    {
-        foreach (var modifier in modifiers)
-        {
-            keybd_event(modifier, 0, 0, 0);
-        }
-
-        keybd_event(key, 0, 0, 0);
-        keybd_event(key, 0, KeyEventKeyUp, 0);
-
-        foreach (var modifier in modifiers.Reverse())
-        {
-            keybd_event(modifier, 0, KeyEventKeyUp, 0);
-        }
-    }
+    public static nint Active() => GetActiveWindow();
 
     /// <summary>
-    /// Presses Tab as the owner's keyboard would, through Windows rather than through WPF. It
-    /// goes wherever the foreground window is, so a caller must have established that first.
+    /// Gives a window the keyboard, as Windows does for a window it has decided should have it.
+    /// <para>
+    /// On the owner's desktop that decision is made by the raw input thread, in response to a
+    /// click or a registered hotkey, and shows up as the foreground changing. The suite's own
+    /// desktop has no input to make it with — so the grant Windows would have performed is
+    /// performed here instead, and the window sees the same <c>WM_ACTIVATE</c> either way. What
+    /// this does not stand in for is the dashboard's own request for the foreground: that is a
+    /// call into Windows that a desktop with no input queue refuses. See docs/testing.md.
+    /// </para>
     /// </summary>
-    public static void PressTab() => PressKey(VkTab);
-
-    /// <summary>Presses and releases one key, through Windows, wherever the foreground is.</summary>
-    public static void PressKey(byte key)
-    {
-        keybd_event(key, 0, 0, 0);
-        keybd_event(key, 0, KeyEventKeyUp, 0);
-    }
-
-    public const byte VkSpace = 0x20;
+    public static void Activate(nint handle) => SetActiveWindow(handle);
 
     public static Rect BoundsOf(nint handle) =>
         GetWindowRect(handle, out var rect) ? rect : throw new InvalidOperationException("The window has no bounds.");

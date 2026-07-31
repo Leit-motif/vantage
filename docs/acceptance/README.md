@@ -1,4 +1,73 @@
-# Runtime acceptance: the read-only scan
+# Runtime acceptance
+
+Two instruments, each answering a question the fixtures cannot: whether the dashboard stays
+read-only against the owner's real workspaces, and whether the test suite stays off the owner's
+keyboard. Both are run on the live machine, and both record their evidence here.
+
+---
+
+# The keystroke witness
+
+`keystroke-witness.json` is the evidence that running the tests does not type into the owner's
+session. It answers the failure this suite actually had: on 2026-07-30 shell tests delivering
+keystrokes with `keybd_event` — which go to whatever window holds the foreground, not to any
+particular window — opened ten Notepad windows on the owner's live desktop.
+
+The tests no longer inject anything, and the windows they drive are on a Windows desktop of their
+own. `docs/testing.md` explains how, and what it costs. This is the part that does not take that on
+trust.
+
+## Reproducing it
+
+```bash
+dotnet run -c Release --project tools/KeystrokeWitness -- docs/acceptance/keystroke-witness.json --stamp $(git rev-parse HEAD) dotnet test tests/MattWorkflowDashboard.Tests --configuration Release --no-build
+```
+
+**Run it while using the machine.** A clean result from an idle desktop is the weakest version of
+this evidence: the hazard it exists to detect only appears when there is a foreground window to
+steal, and somebody there to steal it from.
+
+Exit codes follow the read-only scan's: `0` clean; `3` synthetic keystrokes reached the interactive
+desktop — a safety failure; `4` the instrument could not be trusted, kept apart for the same reason
+as below.
+
+## What it does
+
+It installs a low-level keyboard hook, which sees everything arriving on the interactive desktop,
+and then runs the command it was given while watching.
+
+Before watching anything, it injects one `VK_F24` into the owner's own session and requires the
+hook to see it. This is the whole difference between evidence and an argument from silence: a hook
+that was never installed, or was dropped for not answering its message queue, reports exactly the
+same clean run as a suite that behaved perfectly. A run whose control was not observed is reported
+`void` rather than clean, and exits `4`.
+
+It records the virtual key of every **synthetic** event it sees. Real keystrokes — the owner
+actually typing, which is the condition this is supposed to run under — are counted and discarded
+without being recorded. An instrument that logged them would be a keylogger, and could not
+honestly be run during normal work.
+
+## The run recorded here
+
+Against `d12a93b`, watching a full Release run of all 224 tests for 49 seconds while the machine
+was in use:
+
+| | |
+| --- | --- |
+| Control observed | yes — the hook was demonstrably listening |
+| Synthetic keystrokes on the interactive desktop | **0** |
+| Real key events seen and discarded | 1 — the machine was genuinely in use |
+| Tests | 224 passed, 0 failed |
+
+What is deliberately *not* reproduced here is the same measurement against `4a44566`, the commit
+before the fix. It would be the sharpest possible demonstration that the instrument discriminates,
+and running it means running the old suite, which is the hazard itself. The control keystroke
+already shows the hook detects an injected key on this desktop, which is the only mechanism it has
+to detect.
+
+---
+
+# The read-only scan
 
 `read-only-scan.json` is the evidence from running the built application over the owner's real
 configured roots. It is the answer to the question the fixtures cannot answer: the dashboard is

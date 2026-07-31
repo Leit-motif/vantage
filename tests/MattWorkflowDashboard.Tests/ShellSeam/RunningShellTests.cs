@@ -84,16 +84,25 @@ public sealed class RunningShellTests
     }
 
     [TestMethod]
-    public void Showing_the_dashboard_leaves_the_owner_s_focus_exactly_where_it_was()
+    public void Showing_the_dashboard_leaves_the_keyboard_exactly_where_it_was()
     {
-        var before = Win32Window.Foreground();
+        using var elsewhere = TheOtherWindow.Open();
 
         using var shell = Start();
-        var handle = shell.Handle;
 
-        Assert.AreNotEqual(handle, Win32Window.Foreground(), "The overlay must not become the foreground window.");
-        Assert.AreEqual(before, Win32Window.Foreground(), "Showing the dashboard must not move focus at all.");
+        Assert.AreNotEqual(shell.Handle, ActiveWindow(), "The overlay must not take the keyboard when it is shown.");
+        Assert.AreEqual(
+            elsewhere.Handle,
+            ActiveWindow(),
+            "Showing the dashboard must leave the keyboard with whatever the owner was using.");
     }
+
+    /// <summary>
+    /// The window Windows is sending the keyboard to, asked on the thread that owns the shell's
+    /// windows. It has to be asked there: this is a per-thread question, and the suite's windows
+    /// live on a desktop of their own — see <see cref="IsolatedDesktop"/>.
+    /// </summary>
+    private static nint ActiveWindow() => WpfTestHost.Run(Win32Window.Active);
 
     // ---- Close-to-hide versus a real exit ---------------------------------------------------
 
@@ -174,6 +183,7 @@ public sealed class RunningShellTests
     [TestMethod]
     public void The_tray_hides_and_restores_the_running_window()
     {
+        using var elsewhere = TheOtherWindow.Open();
         using var shell = Start();
         var handle = shell.Handle;
 
@@ -183,7 +193,7 @@ public sealed class RunningShellTests
 
         shell.ClickTray("Show");
         Assert.IsTrue(Win32Window.IsVisible(handle));
-        Assert.AreNotEqual(handle, Win32Window.Foreground(), "Coming back must not steal focus either.");
+        Assert.AreNotEqual(handle, ActiveWindow(), "Coming back must not steal the keyboard either.");
     }
 
     [TestMethod]
@@ -481,49 +491,69 @@ public sealed class RunningShellTests
             "With nothing configured, there is nothing to register.");
     }
 
-    /// <summary>
-    /// The focus gesture as the owner performs it: a global hotkey they configured, bound against
-    /// the real window and pressed on the real keyboard. Driving <c>FocusForKeyboard</c> directly
-    /// would not do — Windows only lets a process take the foreground when it has been given a
-    /// reason to, and receiving a hotkey is that reason. A test that skipped the keystroke would
-    /// be testing a path the owner does not have.
-    /// </summary>
-    private static GlobalHotkey FocusByPressingTheOwner_s_Gesture(RunningShell shell)
+    /// <summary>A gesture that has been pressed, and the registration it was pressed against.</summary>
+    private readonly record struct GestureHeld(GlobalHotkey Hotkey) : IDisposable
     {
+        public void Dispose() => Hotkey.Dispose();
+    }
+
+    /// <summary>
+    /// The focus gesture as the owner performs it: a global hotkey they configured, registered
+    /// against the real window, and answered by the shell's own handler. Driving
+    /// <c>FocusForKeyboard</c> directly would not do — it is the shell's response to the gesture,
+    /// and a test that called it would be asserting that a method it just called ran.
+    /// <para>
+    /// Two halves of the exchange belong to Windows, and they are not equally reproducible here.
+    /// The registration is real: the shell asks Windows to claim <c>Ctrl+Shift+F9</c> against its
+    /// live HWND, and Windows either accepts it or does not. The press is not, and cannot be —
+    /// Windows delivers a hotkey from the desktop that is receiving input, which the suite
+    /// deliberately is not on, so it is delivered here as the message Windows would have posted.
+    /// The grant that follows is stood in for too: the shell does ask Windows for the keyboard,
+    /// and a desktop with no input queue refuses, so the activation is performed alongside it.
+    /// Everything the shell then does — lifting its refusal, moving focus inside itself, restoring
+    /// the refusal when it is deactivated — is its own, driven by the real messages. docs/testing.md
+    /// records what that leaves unproven.
+    /// </para>
+    /// </summary>
+    private static GestureHeld FocusByPressingTheOwner_s_Gesture(RunningShell shell)
+    {
+        var handle = shell.Handle;
+
         var hotkey = WpfTestHost.Run(() =>
-            new GlobalHotkey(shell.Handle, shell.Window.FocusForKeyboard, GlobalHotkey.FocusId));
+            new GlobalHotkey(handle, shell.Window.FocusForKeyboard, GlobalHotkey.FocusId));
 
-        Assert.IsTrue(WpfTestHost.Run(() => hotkey.Bind("Ctrl+Shift+F9")), "The gesture has to register with Windows.");
+        Assert.IsTrue(
+            WpfTestHost.Run(() => hotkey.Bind("Ctrl+Shift+F9")),
+            "The gesture has to register with Windows against the real window.");
 
-        Win32Window.PressChord([Win32Window.VkControl, Win32Window.VkShift], Win32Window.VkF9);
+        WpfTestHost.Run(() => TheKeyboard.PressTheConfiguredGesture(handle, GlobalHotkey.FocusId));
+        RunningShell.Pump();
 
-        // The keystroke travels through Windows, so it arrives on its own schedule.
-        for (var attempt = 0; attempt < 50 && Win32Window.Foreground() != shell.Handle; attempt++)
-        {
-            RunningShell.Pump();
-            Thread.Sleep(20);
-        }
+        WpfTestHost.Run(() => Win32Window.Activate(handle));
+        RunningShell.Pump();
 
-        return hotkey;
+        Assert.AreEqual(
+            handle,
+            ActiveWindow(),
+            "The gesture has to leave the dashboard holding the keyboard, or nothing after it means anything.");
+
+        return new GestureHeld(hotkey);
     }
 
     [TestMethod]
     public void The_dashboard_takes_the_keyboard_only_when_the_owner_asks_for_it()
     {
+        using var elsewhere = TheOtherWindow.Open();
         using var shell = Start();
         var handle = shell.Handle;
 
         Assert.IsTrue(
             Win32Window.HasExtendedStyle(handle, Win32Window.WsExNoActivate),
             "Until asked, the overlay refuses activation so a refresh cannot interrupt typing.");
-        Assert.AreNotEqual(handle, Win32Window.Foreground());
+        Assert.AreEqual(elsewhere.Handle, ActiveWindow(), "Until asked, the keyboard stays where the owner left it.");
 
-        using var hotkey = FocusByPressingTheOwner_s_Gesture(shell);
+        using var focus = FocusByPressingTheOwner_s_Gesture(shell);
 
-        Assert.AreEqual(
-            handle,
-            Win32Window.Foreground(),
-            "The owner's focus gesture has to actually hand the dashboard the keyboard.");
         Assert.IsFalse(
             Win32Window.HasExtendedStyle(handle, Win32Window.WsExNoActivate),
             "A window that still refuses activation cannot hold the keyboard.");
@@ -539,17 +569,13 @@ public sealed class RunningShellTests
         using var shell = Start();
         var handle = shell.Handle;
 
-        using var hotkey = FocusByPressingTheOwner_s_Gesture(shell);
-
-        // Real keyboard input goes to whatever Windows has in front, so this is only a fair test
-        // if the dashboard genuinely holds the foreground first.
-        Assert.AreEqual(handle, Win32Window.Foreground(), "The dashboard has to hold the keyboard before Tab means anything.");
+        using var focus = FocusByPressingTheOwner_s_Gesture(shell);
 
         var before = WpfTestHost.Run(() => Keyboard.FocusedElement);
-        Win32Window.PressTab();
+        WpfTestHost.Run(() => TheKeyboard.Press(handle, TheKeyboard.Tab));
 
-        // The keystroke goes out through Windows and comes back through the window's message
-        // queue, so it lands when it lands.
+        // The key goes onto the window's message queue and comes back out through WPF's own input
+        // handling, so it lands when it lands.
         IInputElement? after = null;
         for (var attempt = 0; attempt < 50; attempt++)
         {
@@ -573,9 +599,9 @@ public sealed class RunningShellTests
     public void A_control_reached_by_keyboard_can_be_operated_by_keyboard()
     {
         using var shell = Start();
-        using var hotkey = FocusByPressingTheOwner_s_Gesture(shell);
+        var handle = shell.Handle;
 
-        Assert.AreEqual(shell.Handle, Win32Window.Foreground(), "The keystroke has to land in the dashboard.");
+        using var focus = FocusByPressingTheOwner_s_Gesture(shell);
 
         // Reaching a control is only half of operable; the owner has to be able to act on it.
         var focused = WpfTestHost.Run(() =>
@@ -589,7 +615,7 @@ public sealed class RunningShellTests
         Assert.IsTrue(focused, "The refresh command has to be reachable from the keyboard at all.");
 
         var before = _viewModel.RefreshId;
-        Win32Window.PressKey(Win32Window.VkSpace);
+        WpfTestHost.Run(() => TheKeyboard.Press(handle, TheKeyboard.Space));
 
         for (var attempt = 0; attempt < 50 && _viewModel.RefreshCommand.ExecutionTask is null; attempt++)
         {
@@ -608,16 +634,21 @@ public sealed class RunningShellTests
     [TestMethod]
     public void The_overlay_goes_back_to_refusing_focus_once_the_owner_moves_on()
     {
+        using var elsewhere = TheOtherWindow.Open();
         using var shell = Start();
         var handle = shell.Handle;
 
-        using var hotkey = FocusByPressingTheOwner_s_Gesture(shell);
+        using var focus = FocusByPressingTheOwner_s_Gesture(shell);
+
         Assert.IsFalse(Win32Window.HasExtendedStyle(handle, Win32Window.WsExNoActivate));
 
-        // Whatever the owner turns to next takes the foreground, and the overlay must let go.
-        WpfTestHost.Run(() => shell.Window.Hide());
+        var before = shell.Deactivations;
+
+        // Whatever the owner turns to next takes the keyboard, and the overlay must let go.
+        elsewhere.TakeTheKeyboard();
         RunningShell.Pump();
 
+        Assert.AreNotEqual(before, shell.Deactivations, "The shell has to actually see itself deactivated.");
         Assert.IsTrue(
             Win32Window.HasExtendedStyle(handle, Win32Window.WsExNoActivate),
             "Leaving activation enabled would let the next refresh take the keyboard.");
