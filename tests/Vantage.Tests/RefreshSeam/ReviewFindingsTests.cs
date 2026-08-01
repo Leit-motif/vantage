@@ -11,18 +11,14 @@ namespace Vantage.Tests.RefreshSeam;
 [TestClass]
 public sealed class ReviewFindingsTests
 {
-    private const string Origin = "https://github.com/acme/widget.git";
-
     private WorkspaceFixture _workspace = null!;
-    private FakeProcessRunner _runner = null!;
     private RefreshHarness _harness = null!;
 
     [TestInitialize]
     public void SetUp()
     {
         _workspace = new WorkspaceFixture();
-        _runner = new FakeProcessRunner().GhAuthenticated();
-        _harness = new RefreshHarness(_workspace, _runner, DateTimeOffset.UtcNow).WithRealGit();
+        _harness = new RefreshHarness(_workspace, new FakeProcessRunner(), DateTimeOffset.UtcNow).WithRealGit();
     }
 
     [TestCleanup]
@@ -32,21 +28,10 @@ public sealed class ReviewFindingsTests
         _workspace.Dispose();
     }
 
-    private string LinkedProject(string ticketBody)
-    {
-        var project = _workspace.NewProject("widget");
-        var effort = _workspace.NewEffort(project, "feature");
-        _workspace.WriteTicket(effort, "001.md", ticketBody);
-        _workspace.InitGitRepository(project, Origin);
-        _workspace.Commit(project, "add planning");
-        return project;
-    }
-
     [TestMethod]
     public async Task A_project_with_no_work_units_is_idle_rather_than_complete()
     {
         _workspace.NewProject("ordinary-repo");
-        _runner.GhIssues(Fixtures.GhIssues());
 
         var view = (await _harness.RefreshAsync()).Project("ordinary-repo");
 
@@ -69,80 +54,39 @@ public sealed class ReviewFindingsTests
         Assert.AreEqual("Write the spec", view.Ticket("001-spec").Title);
     }
 
+    /// <summary>
+    /// Each kind of change is reported for what it is rather than collapsed into "something
+    /// changed". The linked-issue half of this finding went with the remote source; labels,
+    /// assignment and blockers are all things a ticket file states about itself, so the finding is
+    /// asserted against the file the owner actually edits.
+    /// </summary>
     [TestMethod]
-    public async Task An_effort_disagreement_in_a_linked_issue_body_is_a_conflict()
+    public async Task Labels_assignments_and_blockers_each_report_their_own_kind_of_movement()
     {
-        LinkedProject(Fixtures.Ticket("Build the thing", "ready", gitHub: "#7"));
-        _runner.GhIssues(Fixtures.GhIssues(
-            new Fixtures.GhIssue(7, "Build the thing", "OPEN", [], "2026-07-29T10:00:00Z")
-            {
-                Body = "Effort: something-else\nBlocked by: 099\n",
-            }));
+        var project = _workspace.NewProject("widget");
+        var effort = _workspace.NewEffort(project, "feature");
+        _workspace.WriteTicket(effort, "002.md", Fixtures.Ticket("Prerequisite", "open"));
 
-        var view = (await _harness.RefreshAsync()).Project("widget");
+        var ticket = _workspace.WriteTicket(
+            effort,
+            "001.md",
+            Fixtures.Ticket("Build the thing", "ready", labels: "needs-triage"));
 
-        CollectionAssert.Contains(view.Conflicts.Select(c => c.Field).ToArray(), ConflictField.Effort);
-        Assert.AreEqual("feature", view.Conflicts.Single(c => c.Field == ConflictField.Effort).LocalValue);
-    }
-
-    [TestMethod]
-    public async Task Blockers_stated_only_in_a_linked_issue_body_are_compared_against_the_local_ones()
-    {
-        LinkedProject(Fixtures.Ticket("Build the thing", "ready", gitHub: "#7", blockedBy: "002"));
-        _workspace.WriteTicket(
-            Path.Combine(_workspace.WorkspacesRoot, "widget", ".scratch", "feature"),
-            "002.md",
-            Fixtures.Ticket("Prerequisite", "done"));
-
-        _runner.GhIssues(Fixtures.GhIssues(
-            new Fixtures.GhIssue(7, "Build the thing", "OPEN", [], "2026-07-29T10:00:00Z")
-            {
-                Body = "Blocked by: 003\n",
-            }));
-
-        var view = (await _harness.RefreshAsync()).Project("widget");
-
-        CollectionAssert.Contains(view.Conflicts.Select(c => c.Field).ToArray(), ConflictField.Blockers);
-        Assert.IsTrue(view.Ticket("001").IsActionable, "The local blocker is done, and local facts win.");
-    }
-
-    [TestMethod]
-    public async Task Withdrawn_remote_work_leaves_the_totals_instead_of_counting_as_finished()
-    {
-        LinkedProject(Fixtures.Ticket("Local work", "ready"));
-        _runner.GhIssues(Fixtures.GhIssues(
-            new Fixtures.GhIssue(11, "Not doing this", "OPEN", ["wontfix"], "2026-07-29T10:00:00Z")));
-
-        var view = (await _harness.RefreshAsync()).Project("widget");
-
-        Assert.AreEqual(1, view.Progress.Total, "A won't-fix issue is neither remaining work nor completed work.");
-        Assert.AreEqual(0, view.Progress.Completed);
-    }
-
-    [TestMethod]
-    public async Task Labels_assignments_blockers_and_comments_each_report_their_own_kind_of_movement()
-    {
-        LinkedProject(Fixtures.Ticket("Build the thing", "ready", gitHub: "#7"));
-
-        var payload = Fixtures.GhIssues(
-            new Fixtures.GhIssue(7, "Build the thing", "OPEN", ["needs-triage"], "2026-07-29T10:00:00Z"));
-
-        _runner.When((name, args) => name == "gh" && args.Contains("issue"), () => FakeProcessRunner.Ok(payload));
         await _harness.RefreshAsync();
 
-        payload = Fixtures.GhIssues(
-            new Fixtures.GhIssue(7, "Build the thing", "OPEN", ["needs-triage", "ready-for-agent"], DateTimeOffset.UtcNow.ToString("O"))
-            {
-                Assignees = ["someone"],
-                Comments = 2,
-            });
+        _workspace.WriteFile(ticket, Fixtures.Ticket(
+            "Build the thing",
+            "ready",
+            blockedBy: "002",
+            labels: "needs-triage, ready-for-agent",
+            assignee: "someone"));
 
         var view = (await _harness.RefreshAsync()).Project("widget");
         var kinds = view.RecentActivity.Select(a => a.Kind).ToArray();
 
         CollectionAssert.Contains(kinds, ActivityKind.LabelChanged);
         CollectionAssert.Contains(kinds, ActivityKind.AssignmentChanged);
-        CollectionAssert.Contains(kinds, ActivityKind.CommentAdded);
+        CollectionAssert.Contains(kinds, ActivityKind.BlockerChanged);
     }
 
     [TestMethod]

@@ -14,7 +14,7 @@ public sealed class GitActivityTests
     public void SetUp()
     {
         _workspace = new WorkspaceFixture();
-        _harness = new RefreshHarness(_workspace, new FakeProcessRunner().GhUnauthenticated(), DateTimeOffset.UtcNow)
+        _harness = new RefreshHarness(_workspace, new FakeProcessRunner(), DateTimeOffset.UtcNow)
             .WithRealGit();
     }
 

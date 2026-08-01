@@ -17,8 +17,7 @@ public sealed record TicketSnapshot(
     string SourcePath,
     string Labels,
     string Assignees,
-    string Blockers,
-    int CommentCount);
+    string Blockers);
 
 /// <summary>What the cache remembered about a map, spec, or PRD at the end of the previous refresh.</summary>
 public sealed record ArtifactSnapshot(string Path, string Kind, string SemanticHash);
@@ -354,7 +353,7 @@ public sealed class DashboardCache : IDisposable
             using var command = _connection.CreateCommand();
             command.CommandText = """
                 SELECT ticket_id, semantic_hash, title, raw_status, is_complete, source_path,
-                       labels, assignees, blockers, comment_count
+                       labels, assignees, blockers
                 FROM ticket_snapshot WHERE project_path = $path;
                 """;
             command.Parameters.AddWithValue("$path", projectPath);
@@ -372,8 +371,7 @@ public sealed class DashboardCache : IDisposable
                     reader.GetString(5),
                     reader.GetString(6),
                     reader.GetString(7),
-                    reader.GetString(8),
-                    reader.GetInt32(9));
+                    reader.GetString(8));
             }
 
             return snapshots;
@@ -457,12 +455,15 @@ public sealed class DashboardCache : IDisposable
 
             using var insert = _connection.CreateCommand();
             insert.Transaction = transaction;
+            // `comment_count` is left to its default. The column stays because migrations are
+            // forward-only and an existing cache still has it; nothing writes it now that the only
+            // thing which ever counted comments — a linked remote issue — is gone.
             insert.CommandText = """
                 INSERT OR REPLACE INTO ticket_snapshot
                     (project_path, ticket_id, semantic_hash, title, raw_status, is_complete, source_path,
-                     labels, assignees, blockers, comment_count)
+                     labels, assignees, blockers)
                 VALUES ($path, $id, $hash, $title, $status, $complete, $source,
-                        $labels, $assignees, $blockers, $comments);
+                        $labels, $assignees, $blockers);
                 """;
 
             var path = insert.Parameters.Add("$path", SqliteType.Text);
@@ -475,7 +476,6 @@ public sealed class DashboardCache : IDisposable
             var labels = insert.Parameters.Add("$labels", SqliteType.Text);
             var assignees = insert.Parameters.Add("$assignees", SqliteType.Text);
             var blockers = insert.Parameters.Add("$blockers", SqliteType.Text);
-            var comments = insert.Parameters.Add("$comments", SqliteType.Integer);
 
             foreach (var ticket in tickets)
             {
@@ -489,7 +489,6 @@ public sealed class DashboardCache : IDisposable
                 labels.Value = Canonical(ticket.Labels);
                 assignees.Value = Canonical(ticket.Assignees);
                 blockers.Value = Canonical(ticket.Blockers.Select(b => b.NormalizedKey));
-                comments.Value = ticket.CommentCount;
                 insert.ExecuteNonQuery();
             }
 

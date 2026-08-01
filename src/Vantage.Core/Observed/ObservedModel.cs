@@ -34,20 +34,3 @@ public sealed record ObservedCommit(
     string Author,
     string Subject,
     IReadOnlyList<string> ChangedPaths);
-
-/// <summary>An issue read through the authenticated <c>gh</c> CLI for an associated repository.</summary>
-public sealed record ObservedGitHubIssue(
-    int Number,
-    string Title,
-    string State,
-    IReadOnlyList<string> Labels,
-    IReadOnlyList<string> Assignees,
-    DateTimeOffset UpdatedAt,
-    DateTimeOffset? ClosedAt,
-    int CommentCount,
-    string Url,
-    string Body,
-    Provenance Provenance)
-{
-    public bool IsClosed => string.Equals(State, "CLOSED", StringComparison.OrdinalIgnoreCase);
-}

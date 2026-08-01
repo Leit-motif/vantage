@@ -15,8 +15,8 @@ public sealed record ProcessInvocation(
     DateTimeOffset CompletedAt = default);
 
 /// <summary>
-/// A controlled external-process boundary. Success, authentication loss, timeout, malformed
-/// output, partial data, and cancellation are all deterministic here, without a mocking library.
+/// A controlled external-process boundary. Success, timeout, malformed output, partial data, and
+/// cancellation are all deterministic here, without a mocking library.
 /// </summary>
 public sealed class FakeProcessRunner : IProcessRunner
 {
@@ -76,15 +76,6 @@ public sealed class FakeProcessRunner : IProcessRunner
         When(
             (name, args) => name == fileName && args.Contains(firstArgument),
             () => throw new InvalidOperationException($"{fileName} exploded"));
-
-    public FakeProcessRunner GhAuthenticated() =>
-        WhenCommand("gh", "auth", Ok(string.Empty));
-
-    public FakeProcessRunner GhUnauthenticated() =>
-        WhenCommand("gh", "auth", new ProcessResult(1, string.Empty, "gh auth login required: no token found", false, false));
-
-    public FakeProcessRunner GhIssues(string json) =>
-        WhenCommand("gh", "issue", Ok(json));
 
     public static ProcessResult Ok(string stdout) => new(0, stdout, string.Empty, false, false);
 

@@ -72,8 +72,16 @@ public enum ConflictField
 }
 
 /// <summary>
-/// A disagreement between explicitly linked sources. Missing information and timestamp
-/// differences are enrichment, not conflict.
+/// A disagreement between two observations of one subject, each carrying where it was seen, plus
+/// which side was kept and why. Missing information and timestamp differences are enrichment, not
+/// conflict.
+/// <para>
+/// The remote reconciliation that used to produce these is gone; the model is not, because
+/// local-versus-remote was the instance and not the purpose. The producers that replace it — a
+/// working tree against the last commit, a stated edge against the ticket it names, two agents
+/// writing one file — are `03-conflicts-between-any-two-observations.md`, which also renames the
+/// two sides. Until then nothing produces one, and the field names still say local and remote.
+/// </para>
 /// </summary>
 public sealed record ConflictReport(
     string TicketId,
@@ -147,8 +155,6 @@ public sealed record ProjectView
 {
     public required ProjectIdentity Identity { get; init; }
 
-    public GitHubOrigin? Origin { get; init; }
-
     public required ProjectState State { get; init; }
 
     public required string StateReason { get; init; }
@@ -176,8 +182,6 @@ public sealed record ProjectView
 
     public bool GitAvailable { get; init; } = true;
 
-    public bool GitHubAvailable { get; init; } = true;
-
     public bool HasRemainingWork => Progress.Remaining > 0;
 }
 
@@ -201,8 +205,6 @@ public sealed record DashboardSnapshot
 
     /// <summary>True when at least one source was unavailable and cached evidence was shown instead.</summary>
     public bool IsStale { get; init; }
-
-    public bool Offline { get; init; }
 
     /// <summary>True when a bounded scan stopped early; paired with a SCAN_TRUNCATED diagnostic.</summary>
     public bool ScanTruncated { get; init; }

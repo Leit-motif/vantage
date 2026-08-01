@@ -23,7 +23,7 @@ public sealed class BoundsAndConcurrencyTests
     public void TearDown() => _workspace.Dispose();
 
     private RefreshHarness NewHarness() =>
-        new(_workspace, new FakeProcessRunner().GhUnauthenticated(), DateTimeOffset.UtcNow);
+        new(_workspace, new FakeProcessRunner(), DateTimeOffset.UtcNow);
 
     [TestMethod]
     public async Task Traversal_stops_at_the_directory_bound_rather_than_walking_a_large_root()
@@ -109,7 +109,7 @@ public sealed class BoundsAndConcurrencyTests
 
     /// <summary>
     /// Overlapping refreshes must not interleave for one project: a snapshot assembled from two
-    /// half-finished passes is internally inconsistent. Each pass is three git calls, so
+    /// half-finished passes is internally inconsistent. Each pass is two git calls, so
     /// interleaving is visible as those calls arriving out of their per-project order.
     /// </summary>
     [TestMethod]
@@ -124,9 +124,7 @@ public sealed class BoundsAndConcurrencyTests
         }
 
         var runner = new FakeProcessRunner()
-            .GhUnauthenticated()
             .Slow("git", "--is-inside-work-tree", TimeSpan.FromMilliseconds(20), "true")
-            .Slow("git", "get-url", TimeSpan.FromMilliseconds(20))
             .Slow("git", "log", TimeSpan.FromMilliseconds(20));
 
         using var harness = new RefreshHarness(_workspace, runner, DateTimeOffset.UtcNow);
@@ -144,20 +142,18 @@ public sealed class BoundsAndConcurrencyTests
                 .ToList();
 
             Assert.AreEqual(
-                6,
+                4,
                 verbs.Count,
-                $"Each of the two passes over '{Path.GetFileName(project.Key)}' makes three calls.");
+                $"Each of the two passes over '{Path.GetFileName(project.Key)}' makes two calls.");
 
             CollectionAssert.AreEqual(
-                new[] { "probe", "origin", "log", "probe", "origin", "log" },
+                new[] { "probe", "log", "probe", "log" },
                 verbs,
                 $"The two passes over '{Path.GetFileName(project.Key)}' interleaved: {string.Join(", ", verbs)}");
         }
 
         static string Verb(ProcessInvocation invocation) =>
-            invocation.Arguments.Contains("--is-inside-work-tree") ? "probe"
-            : invocation.Arguments.Contains("get-url") ? "origin"
-            : "log";
+            invocation.Arguments.Contains("--is-inside-work-tree") ? "probe" : "log";
     }
 
     [TestMethod]
@@ -175,7 +171,7 @@ public sealed class BoundsAndConcurrencyTests
 
         using var harness = new RefreshHarness(
             _workspace,
-            new FakeProcessRunner().GhUnauthenticated().Throwing("git", "rev-parse"),
+            new FakeProcessRunner().Throwing("git", "rev-parse"),
             DateTimeOffset.UtcNow);
 
         var snapshot = await harness.RefreshAsync();

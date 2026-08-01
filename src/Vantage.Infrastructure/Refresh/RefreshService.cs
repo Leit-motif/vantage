@@ -2,11 +2,9 @@ using System.Collections.Concurrent;
 using Vantage.Core;
 using Vantage.Core.Observed;
 using Vantage.Core.Projection;
-using Vantage.Core.Reconciliation;
 using Vantage.Core.Workflow;
 using Vantage.Infrastructure.Discovery;
 using Vantage.Infrastructure.Git;
-using Vantage.Infrastructure.GitHub;
 using Vantage.Infrastructure.Parsing;
 using Vantage.Infrastructure.Persistence;
 using Vantage.Infrastructure.Processes;
@@ -28,7 +26,6 @@ public sealed class RefreshService(
 {
     private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
     private readonly GitAdapter _git = new(processRunner);
-    private readonly GitHubCliAdapter _gitHub = new(processRunner, settings.MaxGitHubIssuesPerRepository);
     private readonly WorkflowIndexer _indexer = new();
 
     /// <summary>
@@ -48,24 +45,12 @@ public sealed class RefreshService(
 
         var views = new ConcurrentBag<(int Order, ProjectView View)>();
         var failures = new ConcurrentBag<Diagnostic>();
-        bool gitHubAuthenticated;
 
-        // Everything from selection onwards can change registry intent, and every way out of it —
-        // cancellation during the gh session check included — has to leave that intent written.
+        // Everything from selection onwards can change registry intent, and every way out of it has
+        // to leave that intent written.
         try
         {
             var selected = SelectProjects(discovery.Projects, diagnostics);
-
-            gitHubAuthenticated = settings.GitHubEnrichmentEnabled
-                && await _gitHub.IsAuthenticatedAsync(cancellationToken).ConfigureAwait(false);
-
-            if (settings.GitHubEnrichmentEnabled && !gitHubAuthenticated)
-            {
-                diagnostics.Add(Diagnostic.Info(
-                    DiagnosticCode.GitHubUnauthenticated,
-                    "No authenticated gh session; the dashboard is showing local evidence only.",
-                    "gh auth status"));
-            }
 
             await Parallel.ForEachAsync(
                 selected.Select((entry, index) => (entry, index)),
@@ -76,8 +61,7 @@ public sealed class RefreshService(
                 },
                 async (item, token) =>
                 {
-                    var view = await RefreshProjectAsync(
-                            item.entry, refreshId, now, gitHubAuthenticated, failures, token)
+                    var view = await RefreshProjectAsync(item.entry, refreshId, now, failures, token)
                         .ConfigureAwait(false);
                     views.Add((item.index, view));
                 }).ConfigureAwait(false);
@@ -85,8 +69,8 @@ public sealed class RefreshService(
         finally
         {
             // A superseded or failed pass still changed registry intent in memory. Writing it here
-            // means a cancelled refresh cannot quietly drop a discovered project or a remote that
-            // is waiting on confirmation, and a failed write stays outstanding for the next pass.
+            // means a cancelled refresh cannot quietly drop a discovered project, and a failed
+            // write stays outstanding for the next pass.
             PersistRegistry(diagnostics);
         }
 
@@ -113,7 +97,6 @@ public sealed class RefreshService(
             Diagnostics = diagnostics,
             Counters = counters,
             IsStale = ordered.Any(p => p.IsStale),
-            Offline = settings.GitHubEnrichmentEnabled && !gitHubAuthenticated,
             ScanTruncated = discovery.Truncated,
         };
     }
@@ -181,7 +164,7 @@ public sealed class RefreshService(
     /// Registry entries keyed by where their recorded path actually resolves to, for the entries
     /// where those differ. A path recorded before links were resolved through every segment — or
     /// one whose links have since changed — names the same directory under a different name, and
-    /// hidden, excluded, opted-in, and confirmed-origin intent has to follow it there.
+    /// hidden, excluded, and opted-in intent has to follow it there.
     /// </summary>
     private Dictionary<string, ProjectRegistryEntry> IndexEntriesByResolvedPath()
     {
@@ -229,8 +212,8 @@ public sealed class RefreshService(
     }
 
     /// <summary>
-    /// Writes registry intent the refresh itself produced — a newly discovered project, or a
-    /// first-seen or pending remote — so the association the owner sees is the one that comes back
+    /// Writes registry intent the refresh itself produced — a newly discovered project, or an
+    /// entry moved onto the identity discovery emits — so what the owner sees is what comes back
     /// after a restart.
     /// </summary>
     private void PersistRegistry(ICollection<Diagnostic> diagnostics)
@@ -257,7 +240,6 @@ public sealed class RefreshService(
         (DiscoveredProject Project, ProjectRegistryEntry Entry) item,
         string refreshId,
         DateTimeOffset now,
-        bool gitHubAuthenticated,
         ConcurrentBag<Diagnostic> failures,
         CancellationToken cancellationToken)
     {
@@ -267,8 +249,7 @@ public sealed class RefreshService(
 
         try
         {
-            return await IndexProjectAsync(
-                    project, entry, refreshId, now, gitHubAuthenticated, cancellationToken)
+            return await IndexProjectAsync(project, entry, refreshId, now, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -297,7 +278,6 @@ public sealed class RefreshService(
         ProjectRegistryEntry entry,
         string refreshId,
         DateTimeOffset now,
-        bool gitHubAuthenticated,
         CancellationToken cancellationToken)
     {
         var diagnostics = new List<Diagnostic>();
@@ -308,33 +288,19 @@ public sealed class RefreshService(
 
         diagnostics.AddRange(git.Diagnostics);
 
-        var origin = ConfirmOrigin(entry, git, diagnostics);
-
         var index = _indexer.Index(project.CanonicalPath, git.FileFacts, refreshId, cancellationToken);
         diagnostics.AddRange(index.Diagnostics);
-
-        var gitHub = origin is not null && gitHubAuthenticated
-            ? await _gitHub.ReadIssuesAsync(origin, refreshId, cancellationToken).ConfigureAwait(false)
-            : GitHubReadResult.Unavailable([]);
-
-        diagnostics.AddRange(gitHub.Diagnostics);
-
-        var reconciled = TicketReconciler.Reconcile(index.Efforts, gitHub.Issues, origin);
-        diagnostics.AddRange(reconciled.Diagnostics);
 
         var normalized = new NormalizedProject
         {
             Identity = new ProjectIdentity(project.CanonicalPath, project.Name),
-            Origin = origin,
-            Efforts = reconciled.Efforts,
+            Efforts = index.Efforts,
             Commits = git.Commits,
-            GitHubIssues = gitHub.Issues,
             Diagnostics = diagnostics,
             GitAvailable = git.Available,
-            GitHubAvailable = gitHub.Available,
         };
 
-        var artifacts = reconciled.Efforts.SelectMany(e => e.Artifacts).ToList();
+        var artifacts = index.Efforts.SelectMany(e => e.Artifacts).ToList();
 
         var newActivity = DetectSemanticChanges(project.CanonicalPath, normalized.AllTickets.ToList(), now, refreshId);
         newActivity.AddRange(DetectPlanningChanges(project.CanonicalPath, artifacts, now, refreshId));
@@ -356,92 +322,12 @@ public sealed class RefreshService(
             Now = now,
             RecentWindow = TimeSpan.FromHours(settings.RecentWindowHours),
             PersistedActivity = persisted,
-            Conflicts = reconciled.Conflicts,
             IsPinned = entry.Pinned,
         });
 
-        // Saved before the freshness marking below: what is worth keeping as last-known-good is the
-        // complete view, not one that is already announcing a missing half.
         cache.SaveProjectSnapshot(view, now);
 
-        // A project associated with a repository that could not be read this pass is showing only
-        // its local half. The counts and progress on it are not wrong, but they are not the whole
-        // answer either, and an unmarked view is indistinguishable from a complete one.
-        if (origin is not null && settings.GitHubEnrichmentEnabled && !gitHub.Available)
-        {
-            return view with
-            {
-                IsStale = true,
-                Diagnostics =
-                [
-                    .. view.Diagnostics,
-                    Diagnostic.Info(
-                        DiagnosticCode.GitHubUnavailable,
-                        "GitHub evidence for this project is missing from this refresh; what is shown is its local half only.",
-                        project.CanonicalPath),
-                ],
-            };
-        }
-
         return view;
-    }
-
-    /// <summary>
-    /// A remote is an association on the local identity, never the identity itself. A remote that
-    /// differs from the confirmed one is recorded as pending and reported, so a changed origin
-    /// cannot silently attach unrelated GitHub work — and so confirming a relink adopts the origin
-    /// the owner was actually shown rather than whatever the remote reads by then.
-    /// </summary>
-    private GitHubOrigin? ConfirmOrigin(
-        ProjectRegistryEntry entry,
-        GitReadResult git,
-        ICollection<Diagnostic> diagnostics)
-    {
-        var observed = git.Origin;
-
-        if (entry.ConfirmedOrigin is null)
-        {
-            if (observed is not null)
-            {
-                entry.ConfirmedOrigin = observed.Slug;
-                entry.PendingOrigin = null;
-                settings.MarkChanged();
-            }
-
-            return observed;
-        }
-
-        if (observed is null)
-        {
-            // Not being able to read the remote says nothing about it. A relink that is waiting on
-            // the owner must survive an unreadable repository rather than quietly cancelling itself.
-            return GitHubOrigin.TryParse($"https://github.com/{entry.ConfirmedOrigin}");
-        }
-
-        if (string.Equals(entry.ConfirmedOrigin, observed.Slug, StringComparison.OrdinalIgnoreCase))
-        {
-            // The remote agrees with the confirmed association again; there is nothing to confirm.
-            if (entry.PendingOrigin is not null)
-            {
-                entry.PendingOrigin = null;
-                settings.MarkChanged();
-            }
-
-            return GitHubOrigin.TryParse($"https://github.com/{entry.ConfirmedOrigin}");
-        }
-
-        if (!string.Equals(entry.PendingOrigin, observed.Slug, StringComparison.OrdinalIgnoreCase))
-        {
-            entry.PendingOrigin = observed.Slug;
-            settings.MarkChanged();
-        }
-
-        diagnostics.Add(Diagnostic.Warning(
-            DiagnosticCode.OriginChanged,
-            $"The remote changed from '{entry.ConfirmedOrigin}' to '{observed.Slug}'. Confirm the relink in Settings before GitHub evidence is used.",
-            entry.Path));
-
-        return GitHubOrigin.TryParse($"https://github.com/{entry.ConfirmedOrigin}");
     }
 
     /// <summary>
@@ -498,14 +384,6 @@ public sealed class RefreshService(
             if (!string.Equals(before.Blockers, blockers, StringComparison.Ordinal))
             {
                 events.Add(Change(ticket, ActivityKind.BlockerChanged, $"{ticket.Title}: blockers changed"));
-            }
-
-            if (ticket.CommentCount > before.CommentCount)
-            {
-                events.Add(Change(
-                    ticket,
-                    ActivityKind.CommentAdded,
-                    $"{ticket.Title}: {ticket.CommentCount - before.CommentCount} new comment(s)"));
             }
 
             if (string.Equals(before.SemanticHash, ticket.SemanticHash, StringComparison.Ordinal))

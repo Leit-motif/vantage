@@ -4,9 +4,9 @@ using Vantage.Core.Observed;
 namespace Vantage.Core.Workflow;
 
 /// <summary>
-/// The metadata line grammar shared by workflow files and GitHub issue bodies. Plain and bold
-/// syntax are both accepted, and keys are matched case-insensitively, so benign formatting
-/// differences between workflow variants never hide work.
+/// The metadata line grammar every workflow file is read through. Plain and bold syntax are both
+/// accepted, and keys are matched case-insensitively, so benign formatting differences between
+/// workflow variants never hide work.
 /// </summary>
 public static class MetadataGrammar
 {

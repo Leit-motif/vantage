@@ -1,7 +1,6 @@
 using System.Globalization;
 using Vantage.Core;
 using Vantage.Core.Observed;
-using Vantage.Core.Workflow;
 using Vantage.Infrastructure.Parsing;
 using Vantage.Infrastructure.Processes;
 
@@ -9,14 +8,12 @@ namespace Vantage.Infrastructure.Git;
 
 public sealed record GitReadResult(
     bool Available,
-    GitHubOrigin? Origin,
-    string? RawOriginUrl,
     IReadOnlyList<ObservedCommit> Commits,
     GitFileFacts FileFacts,
     IReadOnlyList<Diagnostic> Diagnostics)
 {
     public static GitReadResult Unavailable(IReadOnlyList<Diagnostic> diagnostics) =>
-        new(false, null, null, [], GitFileFacts.None, diagnostics);
+        new(false, [], GitFileFacts.None, diagnostics);
 }
 
 /// <summary>
@@ -49,27 +46,9 @@ public sealed class GitAdapter(IProcessRunner runner, int maxCommits = 2000)
             return GitReadResult.Unavailable(diagnostics);
         }
 
-        var origin = await ReadOriginAsync(projectPath, cancellationToken).ConfigureAwait(false);
         var (commits, fileFacts) = await ReadLogAsync(projectPath, diagnostics, cancellationToken).ConfigureAwait(false);
 
-        return new GitReadResult(
-            true,
-            GitHubOrigin.TryParse(origin),
-            origin,
-            commits,
-            fileFacts,
-            diagnostics);
-    }
-
-    private async Task<string?> ReadOriginAsync(string projectPath, CancellationToken cancellationToken)
-    {
-        var result = await runner.RunAsync(
-            "git",
-            ["-C", projectPath, "remote", "get-url", "origin"],
-            projectPath,
-            cancellationToken).ConfigureAwait(false);
-
-        return result.Succeeded ? result.StandardOutput.Trim() : null;
+        return new GitReadResult(true, commits, fileFacts, diagnostics);
     }
 
     private async Task<(IReadOnlyList<ObservedCommit> Commits, GitFileFacts FileFacts)> ReadLogAsync(

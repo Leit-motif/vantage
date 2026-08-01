@@ -14,34 +14,15 @@ public sealed partial class ProjectRegistryRow : ObservableObject
 {
     private readonly Action _onChanged;
 
-    /// <summary>
-    /// The pending remote as it was when this row was shown. A refresh behind an open Settings
-    /// window can move the entry on to a newer remote, and confirming must never adopt an origin
-    /// that was never on screen.
-    /// </summary>
-    private string? _shownPendingOrigin;
-
     public ProjectRegistryRow(ProjectRegistryEntry entry, Action onChanged)
     {
         Entry = entry;
         _onChanged = onChanged;
-        _shownPendingOrigin = entry.PendingOrigin;
     }
 
     public ProjectRegistryEntry Entry { get; }
 
     public string Path => Entry.Path;
-
-    public string Origin => Entry.ConfirmedOrigin ?? "—";
-
-    /// <summary>The remote waiting on confirmation, if the repository's origin has moved.</summary>
-    public string? PendingOrigin => _shownPendingOrigin;
-
-    public bool HasPendingRelink => _shownPendingOrigin is not null;
-
-    public string RelinkDescription => _shownPendingOrigin is null
-        ? "The remote matches the confirmed association."
-        : $"The remote now reads {_shownPendingOrigin}. Confirm to adopt it.";
 
     public ProjectRegistryState State
     {
@@ -61,43 +42,12 @@ public sealed partial class ProjectRegistryRow : ObservableObject
         set => Set(() => Entry.NestedOptIn = value);
     }
 
-    /// <summary>
-    /// Adopts the pending remote — the one the owner was shown — as the confirmed association.
-    /// Relinking is deliberate: a remote change must never attach unrelated GitHub work on its own.
-    /// </summary>
-    [RelayCommand]
-    public void ConfirmRelink()
-    {
-        if (_shownPendingOrigin is null)
-        {
-            return;
-        }
-
-        Entry.ConfirmedOrigin = _shownPendingOrigin;
-
-        // If the remote has already moved past what was shown, that newer remote is still waiting
-        // on the owner; only the origin actually confirmed here stops being pending.
-        if (string.Equals(Entry.PendingOrigin, _shownPendingOrigin, StringComparison.OrdinalIgnoreCase))
-        {
-            Entry.PendingOrigin = null;
-        }
-
-        _shownPendingOrigin = null;
-
-        OnPropertyChanged(nameof(Origin));
-        OnPropertyChanged(nameof(PendingOrigin));
-        OnPropertyChanged(nameof(HasPendingRelink));
-        OnPropertyChanged(nameof(RelinkDescription));
-        _onChanged();
-    }
-
     /// <summary>Re-reads the entry after something other than this row changed it.</summary>
     public void NotifyEntryChanged()
     {
         OnPropertyChanged(nameof(State));
         OnPropertyChanged(nameof(Pinned));
         OnPropertyChanged(nameof(NestedOptIn));
-        OnPropertyChanged(nameof(Origin));
     }
 
     private void Set(Action mutate, [System.Runtime.CompilerServices.CallerMemberName] string? name = null)
@@ -189,12 +139,6 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         get => _settings.Ui.FocusHotkey ?? string.Empty;
         set => Set(() => _settings.Ui.FocusHotkey = string.IsNullOrWhiteSpace(value) ? null : value.Trim());
-    }
-
-    public bool GitHubEnrichmentEnabled
-    {
-        get => _settings.GitHubEnrichmentEnabled;
-        set => Set(() => _settings.GitHubEnrichmentEnabled = value);
     }
 
     public int RecentWindowHours

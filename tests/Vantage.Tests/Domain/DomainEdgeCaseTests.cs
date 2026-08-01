@@ -49,21 +49,6 @@ public sealed class DomainEdgeCaseTests
     }
 
     [TestMethod]
-    [DataRow("git@github.com:acme/widget.git", "acme/widget")]
-    [DataRow("https://github.com/acme/widget.git", "acme/widget")]
-    [DataRow("https://github.com/acme/widget", "acme/widget")]
-    [DataRow("ssh://git@github.com/acme/widget.git", "acme/widget")]
-    public void A_GitHub_origin_normalizes_to_owner_and_repository(string url, string slug) =>
-        Assert.AreEqual(slug, GitHubOrigin.TryParse(url)!.Slug);
-
-    [TestMethod]
-    [DataRow("https://gitlab.com/acme/widget.git")]
-    [DataRow("")]
-    [DataRow("not a url")]
-    public void A_non_GitHub_remote_produces_no_origin(string url) =>
-        Assert.IsNull(GitHubOrigin.TryParse(url));
-
-    [TestMethod]
     [DataRow("Status: ready", "status", "ready")]
     [DataRow("**Status:** ready", "status", "ready")]
     [DataRow("**Status**: ready", "status", "ready")]

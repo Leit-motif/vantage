@@ -51,18 +51,6 @@ public sealed class ProjectRegistryEntry
     /// back to it. Identity stays <see cref="Path"/>; this is only how the walk gets there.
     /// </summary>
     public string? OptInPath { get; set; }
-
-    /// <summary>
-    /// The GitHub origin the owner confirmed for this path. A remote that no longer matches is
-    /// reported rather than silently adopted, so unrelated remote work cannot attach itself.
-    /// </summary>
-    public string? ConfirmedOrigin { get; set; }
-
-    /// <summary>
-    /// A remote that differs from the confirmed one and is waiting on the owner. Recording it means
-    /// confirming a relink adopts the origin they were shown, not whatever the remote reads later.
-    /// </summary>
-    public string? PendingOrigin { get; set; }
 }
 
 public sealed class WindowGeometry
@@ -136,7 +124,14 @@ public sealed class UiSettings
 /// <summary>Atomic, versioned configuration. The only file the dashboard writes on the owner's behalf.</summary>
 public sealed class DashboardSettings
 {
-    public const int CurrentSchemaVersion = 2;
+    /// <summary>
+    /// 3 dropped the remote source: <c>GitHubEnrichmentEnabled</c>,
+    /// <c>MaxGitHubIssuesPerRepository</c>, and the per-project <c>ConfirmedOrigin</c> and
+    /// <c>PendingOrigin</c>. A file that still carries them loads without complaint and is
+    /// rewritten without them, because a key this build no longer declares is read past rather
+    /// than treated as a file it cannot understand.
+    /// </summary>
+    public const int CurrentSchemaVersion = 3;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
@@ -176,15 +171,6 @@ public sealed class DashboardSettings
     public int MaxConcurrentExternalProcesses { get; set; } = 4;
 
     public int ExternalProcessTimeoutSeconds { get; set; } = 20;
-
-    /// <summary>Bounds the per-repository GitHub read so an associated repo cannot become a crawl.</summary>
-    public int MaxGitHubIssuesPerRepository { get; set; } = 200;
-
-    /// <summary>
-    /// Off by default: v1 ships local-only (#9). Switching it on is the owner's call from Settings;
-    /// nothing about the adapter changes, only whether it runs uninvited.
-    /// </summary>
-    public bool GitHubEnrichmentEnabled { get; set; }
 
     public bool LaunchAtSignIn { get; set; }
 

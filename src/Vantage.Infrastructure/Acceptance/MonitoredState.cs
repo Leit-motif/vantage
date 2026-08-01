@@ -1,14 +1,13 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using Vantage.Infrastructure.Processes;
 
 namespace Vantage.Infrastructure.Acceptance;
 
 /// <summary>
 /// Everything about one monitored project that the dashboard must leave exactly as it found it:
-/// the workflow files it reads, the Git state it reads them alongside, the repository's own
-/// configuration, and the GitHub issues and labels it enriches them with.
+/// the workflow files it reads, the Git state it reads them alongside, and the repository's own
+/// configuration.
 /// <para>
 /// Every field is a digest rather than a value. The comparison only ever asks whether something
 /// changed, so the evidence never has to carry the contents of a private workspace to answer.
@@ -28,11 +27,6 @@ public sealed record MonitoredProjectState(
     string? GitStatusDigest,
     string? GitConfigDigest,
     string? GitRefsDigest,
-    string? OriginId,
-    int GitHubIssueCount,
-    string? GitHubIssuesDigest,
-    int GitHubLabelCount,
-    string? GitHubLabelsDigest,
     IReadOnlyList<string> Unavailable);
 
 /// <summary>One thing that did not survive the run untouched.</summary>
@@ -42,39 +36,12 @@ public sealed record MonitoredStateChange(string ProjectId, string Subject, stri
 public sealed record FingerprintGap(string ProjectId, string Subject);
 
 /// <summary>
-/// What the registry says about a project's repository. The distinction that matters is not whether
-/// the registry has an entry but whether that entry carries a <em>confirmed</em> origin: an entry
-/// written before any remote was seen has nothing to contradict, and the dashboard's own rule for
-/// that case is to adopt the first remote it observes.
-/// </summary>
-public sealed record ProjectAssociation(string? ConfirmedSlug)
-{
-    public static readonly ProjectAssociation None = new((string?)null);
-
-    /// <summary>
-    /// True when a repository has been confirmed for this project, and therefore when it is the only
-    /// one that may be queried — a remote that has since changed is pending the owner's confirmation.
-    /// </summary>
-    public bool IsConfirmed => ConfirmedSlug is not null;
-}
-
-/// <summary>
 /// Reads the monitored state of a set of projects, before and after, using only commands the
 /// <see cref="ReadOnlyProcessRunner"/> will let through.
 /// </summary>
-/// <param name="associationOf">
-/// Which repository a project is allowed to be asked about. For a project the registry already
-/// knows, that is its *confirmed* association and never the remote as it currently reads — a
-/// changed remote is held pending the owner's confirmation, and querying it would reach a
-/// repository they never approved. For a project the registry has never seen there is nothing
-/// pending: the first remote observed is what becomes its association, so reading the remote is
-/// both correct and what the dashboard itself would do.
-/// </param>
 public sealed class MonitoredStateReader(
     IProcessRunner runner,
     Func<string, string> identify,
-    int maxIssues,
-    Func<string, ProjectAssociation>? associationOf = null,
     int? maxWorkflowFiles = null,
     long? maxWorkflowFileBytes = null)
 {
@@ -98,7 +65,6 @@ public sealed class MonitoredStateReader(
 
     public async Task<IReadOnlyList<MonitoredProjectState>> ReadAsync(
         IEnumerable<string> projectPaths,
-        bool includeGitHub,
         CancellationToken cancellationToken)
     {
         var states = new List<MonitoredProjectState>();
@@ -106,7 +72,7 @@ public sealed class MonitoredStateReader(
         foreach (var path in projectPaths)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            states.Add(await ReadOneAsync(path, includeGitHub, cancellationToken).ConfigureAwait(false));
+            states.Add(await ReadOneAsync(path, cancellationToken).ConfigureAwait(false));
         }
 
         return states;
@@ -114,7 +80,6 @@ public sealed class MonitoredStateReader(
 
     private async Task<MonitoredProjectState> ReadOneAsync(
         string projectPath,
-        bool includeGitHub,
         CancellationToken cancellationToken)
     {
         var unavailable = new List<string>();
@@ -141,41 +106,6 @@ public sealed class MonitoredStateReader(
             refs = await GitDigestAsync(projectPath, ["show-ref"], "git refs", unavailable, cancellationToken, emptyWhenReadable: readable).ConfigureAwait(false);
         }
 
-        var association = associationOf?.Invoke(projectPath) ?? ProjectAssociation.None;
-
-        // A project with a confirmed repository is asked about only under that one, never under a
-        // remote that has since changed and is waiting on the owner. A project without one is asked
-        // about under the remote it actually has, which is exactly what the dashboard would adopt
-        // for it — and what keeps the two fingerprints symmetric. Skipping it instead would mean a
-        // project whose origin is confirmed between the two readings shows up as the workspace
-        // changing, which is what the first run with this restriction in place reported.
-        var originSlug = association.IsConfirmed
-            ? association.ConfirmedSlug
-            : isRepository
-                ? await ObservedRemoteAsync(projectPath, unavailable, cancellationToken).ConfigureAwait(false)
-                : null;
-
-        var issues = (Count: 0, Digest: (string?)null);
-        var labels = (Count: 0, Digest: (string?)null);
-
-        if (includeGitHub && originSlug is not null)
-        {
-            issues = await GitHubDigestAsync(
-                ["issue", "list", "--repo", originSlug, "--state", "all", "--limit", maxIssues.ToString(),
-                 "--json", "number,title,state,labels,assignees,body,closedAt,updatedAt,comments"],
-                "github issues",
-                unavailable,
-                cancellationToken).ConfigureAwait(false);
-
-            // gh returns thirty labels unasked; a repository with more would have its later labels
-            // silently outside the comparison.
-            labels = await GitHubDigestAsync(
-                ["label", "list", "--repo", originSlug, "--limit", "500", "--json", "name,color,description"],
-                "github labels",
-                unavailable,
-                cancellationToken).ConfigureAwait(false);
-        }
-
         return new MonitoredProjectState(
             identify(projectPath),
             isRepository,
@@ -185,11 +115,6 @@ public sealed class MonitoredStateReader(
             status,
             config,
             refs,
-            originSlug is null ? null : identify(originSlug),
-            issues.Count,
-            issues.Digest,
-            labels.Count,
-            labels.Digest,
             unavailable);
     }
 
@@ -297,32 +222,6 @@ public sealed class MonitoredStateReader(
         }
     }
 
-    private async Task<string?> ObservedRemoteAsync(
-        string projectPath,
-        ICollection<string> unavailable,
-        CancellationToken cancellationToken)
-    {
-        var result = await runner.RunAsync(
-            "git",
-            ["-C", projectPath, "remote", "get-url", "origin"],
-            projectPath,
-            cancellationToken).ConfigureAwait(false);
-
-        if (!result.Succeeded)
-        {
-            // A repository with no origin at all is not a gap: there is nothing to enrich it with.
-            return null;
-        }
-
-        var slug = Core.Workflow.GitHubOrigin.TryParse(result.StandardOutput.Trim())?.Slug;
-        if (slug is null && result.StandardOutput.Trim().Length > 0)
-        {
-            unavailable.Add("a remote that is not a GitHub origin");
-        }
-
-        return slug;
-    }
-
     /// <param name="emptyWhenReadable">
     /// When the repository is known to be readable, a command that fails with nothing to say is
     /// reporting emptiness rather than refusing to answer. That is a real state worth recording, and
@@ -360,38 +259,6 @@ public sealed class MonitoredStateReader(
         return null;
     }
 
-    private async Task<(int Count, string? Digest)> GitHubDigestAsync(
-        IReadOnlyList<string> arguments,
-        string subject,
-        ICollection<string> unavailable,
-        CancellationToken cancellationToken)
-    {
-        var result = await runner.RunAsync("gh", arguments, null, cancellationToken).ConfigureAwait(false);
-        if (!result.Succeeded)
-        {
-            unavailable.Add(subject);
-            return (0, null);
-        }
-
-        var json = result.StandardOutput.Trim();
-        var count = 0;
-
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            if (document.RootElement.ValueKind == JsonValueKind.Array)
-            {
-                count = document.RootElement.GetArrayLength();
-            }
-        }
-        catch (JsonException)
-        {
-            // The digest still compares; only the count is unavailable.
-        }
-
-        return (count, Digest(json));
-    }
-
     /// <summary>
     /// Everything that differs between two readings of the same projects. A project that appears in
     /// only one of them is itself a change: the run must not have made a project come or go.
@@ -417,8 +284,6 @@ public sealed class MonitoredStateReader(
             Compare("git status", was.GitStatusDigest, now.GitStatusDigest);
             Compare("git config", was.GitConfigDigest, now.GitConfigDigest);
             Compare("git refs", was.GitRefsDigest, now.GitRefsDigest);
-            Compare("github issues", was.GitHubIssuesDigest, now.GitHubIssuesDigest);
-            Compare("github labels", was.GitHubLabelsDigest, now.GitHubLabelsDigest);
 
             void Compare(string subject, string? first, string? second)
             {

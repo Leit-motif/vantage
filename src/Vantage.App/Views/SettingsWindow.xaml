@@ -67,12 +67,6 @@
       <TextBlock Style="{StaticResource TertiaryText}" Margin="140,4,0,0" TextWrapping="Wrap"
                  Text="Optional, and empty by default — for example Ctrl+Alt+K. The dashboard never takes focus on its own, so this is the only way to reach it from the keyboard." />
 
-      <CheckBox Margin="140,10,0,0" IsChecked="{Binding GitHubEnrichmentEnabled}"
-                Content="Enrich from my authenticated gh session"
-                Foreground="{DynamicResource TextPrimaryBrush}" />
-      <TextBlock Style="{StaticResource TertiaryText}" Margin="160,2,0,0" TextWrapping="Wrap"
-                 Text="Only repositories associated with a local project are queried. The account is never enumerated." />
-
       <CheckBox Margin="140,10,0,0" IsChecked="{Binding LaunchAtSignIn}" Content="Launch at sign-in"
                 Foreground="{DynamicResource TextPrimaryBrush}" />
 
@@ -118,15 +112,7 @@
                             Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
                   <CheckBox Margin="10,0,0,0" IsChecked="{Binding NestedOptIn}" Content="Nested opt-in"
                             Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
-                  <TextBlock Style="{StaticResource TertiaryText}" Margin="10,0,0,0" VerticalAlignment="Center"
-                             Text="{Binding Origin}" />
-                  <Button Style="{StaticResource GlassButton}" Margin="8,0,0,0" Content="Confirm relink"
-                          Command="{Binding ConfirmRelinkCommand}"
-                          IsEnabled="{Binding HasPendingRelink}"
-                          ToolTip="{Binding RelinkDescription}" />
                 </StackPanel>
-                <TextBlock Style="{StaticResource TertiaryText}" Margin="0,4,0,0" TextWrapping="Wrap"
-                           Text="{Binding RelinkDescription}" />
               </StackPanel>
             </Border>
           </DataTemplate>

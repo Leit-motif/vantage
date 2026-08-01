@@ -1,5 +1,4 @@
 using Vantage.App.ViewModels;
-using Vantage.Core;
 using Vantage.Infrastructure.Settings;
 using Vantage.Tests.TestSupport;
 
@@ -23,18 +22,14 @@ namespace Vantage.Tests.RefreshSeam;
 [TestClass]
 public sealed class RegistryControlTests
 {
-    private const string Origin = "https://github.com/acme/widget.git";
-
     private WorkspaceFixture _workspace = null!;
-    private FakeProcessRunner _runner = null!;
     private RefreshHarness _harness = null!;
 
     [TestInitialize]
     public void SetUp()
     {
         _workspace = new WorkspaceFixture();
-        _runner = new FakeProcessRunner().GhAuthenticated().GhIssues(Fixtures.GhIssues());
-        _harness = new RefreshHarness(_workspace, _runner, DateTimeOffset.UtcNow).WithRealGit();
+        _harness = new RefreshHarness(_workspace, new FakeProcessRunner(), DateTimeOffset.UtcNow).WithRealGit();
     }
 
     [TestCleanup]
@@ -308,38 +303,6 @@ public sealed class RegistryControlTests
     }
 
     [TestMethod]
-    public async Task A_relink_confirms_the_origin_on_screen_even_when_a_refresh_has_moved_on()
-    {
-        var project = _workspace.NewProject("widget");
-        _workspace.InitGitRepository(project, Origin);
-        _workspace.Commit(project, "initial");
-        await _harness.RefreshAsync();
-
-        _workspace.Git(project, "remote", "set-url", "origin", "https://github.com/someone-else/other.git");
-        await _harness.RefreshAsync();
-
-        // The Settings window is open, showing 'someone-else/other'.
-        var settings = OpenSettings();
-        var row = settings.Projects.Single(p => p.Path == project);
-        Assert.AreEqual("someone-else/other", row.PendingOrigin);
-
-        // A refresh behind the window finds a third remote before the owner clicks.
-        _workspace.Git(project, "remote", "set-url", "origin", "https://github.com/third/party.git");
-        await _harness.RefreshAsync();
-
-        row.ConfirmRelinkCommand.Execute(null);
-
-        Assert.AreEqual(
-            "someone-else/other",
-            PersistedEntry(project).ConfirmedOrigin,
-            "Confirming adopts what was on screen, never an origin the owner never saw.");
-        Assert.AreEqual(
-            "third/party",
-            PersistedEntry(project).PendingOrigin,
-            "The newer remote is still waiting on the owner.");
-    }
-
-    [TestMethod]
     public async Task A_settings_write_that_fails_stays_pending_and_is_written_by_the_next_refresh()
     {
         var hidden = _workspace.NewProject("hidden");
@@ -371,49 +334,5 @@ public sealed class RegistryControlTests
             ProjectRegistryState.Hidden,
             PersistedEntry(hidden).State,
             "The next refresh retries the write rather than losing the choice.");
-    }
-
-    [TestMethod]
-    public async Task A_confirmed_relink_adopts_the_origin_the_owner_was_shown_and_survives_restart()
-    {
-        var project = _workspace.NewProject("widget");
-        _workspace.InitGitRepository(project, Origin);
-        _workspace.Commit(project, "initial");
-        await _harness.RefreshAsync();
-
-        _workspace.Git(project, "remote", "set-url", "origin", "https://github.com/someone-else/other.git");
-        var pending = (await _harness.RefreshAsync()).Project("widget");
-        Assert.IsTrue(pending.HasDiagnostic(DiagnosticCode.OriginChanged));
-        Assert.AreEqual("acme/widget", pending.Origin!.Slug, "Nothing is adopted before the owner confirms.");
-
-        // The remote moves again before the owner acts. Confirming must adopt what they were
-        // shown, never whatever the remote happens to say at the moment of the click.
-        _workspace.Git(project, "remote", "set-url", "origin", "https://github.com/third/party.git");
-
-        var settings = OpenSettings();
-        settings.Projects.Single(p => p.Path == project).ConfirmRelinkCommand.Execute(null);
-
-        Assert.AreEqual("someone-else/other", PersistedEntry(project).ConfirmedOrigin, "A confirmed relink must be written.");
-
-        _harness.Restart();
-        var confirmed = (await _harness.RefreshAsync()).Project("widget");
-
-        Assert.AreEqual("someone-else/other", confirmed.Origin!.Slug, "The confirmed association must survive a restart and refresh.");
-        Assert.IsTrue(
-            confirmed.HasDiagnostic(DiagnosticCode.OriginChanged),
-            "The remote has moved on again, so the next relink is still waiting on the owner.");
-
-        // Refreshing on the confirmed association means querying it: the slug the owner confirmed
-        // is the repository this refresh actually read from.
-        var lastIssueQuery = _runner.Invocations
-            .Where(i => i.FileName == "gh" && i.Arguments.Contains("issue"))
-            .Last()
-            .Arguments
-            .ToList();
-
-        Assert.AreEqual(
-            "someone-else/other",
-            lastIssueQuery[lastIssueQuery.IndexOf("--repo") + 1],
-            "GitHub evidence must be fetched for the confirmed association, not the old one or the pending one.");
     }
 }

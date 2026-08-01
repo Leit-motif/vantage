@@ -275,12 +275,6 @@
           <TextBlock Style="{StaticResource TitleText}" Text="Vantage" />
           <Border Margin="8,0,0,0" Padding="5,1" CornerRadius="8"
                   Background="{DynamicResource SurfaceOverlayBrush}"
-                  Visibility="{Binding IsOffline, Converter={StaticResource BoolToVisibility}}"
-                  ToolTip="No authenticated gh session; showing local evidence.">
-            <TextBlock Style="{StaticResource TertiaryText}" Text="offline" />
-          </Border>
-          <Border Margin="6,0,0,0" Padding="5,1" CornerRadius="8"
-                  Background="{DynamicResource SurfaceOverlayBrush}"
                   Visibility="{Binding IsStale, Converter={StaticResource BoolToVisibility}}"
                   ToolTip="Some evidence came from a last-known-good snapshot.">
             <TextBlock Style="{StaticResource TertiaryText}" Foreground="{DynamicResource StateBlockedBrush}" Text="stale" />
@@ -412,8 +406,8 @@
                     <TextBlock Style="{StaticResource TitleText}" Text="{Binding Name}" />
                     <TextBlock Style="{StaticResource TertiaryText}" Text="{Binding Path}" TextWrapping="Wrap" />
                     <TextBlock Style="{StaticResource SecondaryText}" Margin="0,6,0,0" Text="{Binding StateReason}" TextWrapping="Wrap" />
-                    <TextBlock Style="{StaticResource TertiaryText}" Margin="0,2,0,0" Text="{Binding OriginText}" />
-                    <TextBlock Style="{StaticResource TertiaryText}" Text="{Binding FreshnessText}" TextWrapping="Wrap" />
+                    <TextBlock Style="{StaticResource TertiaryText}" Margin="0,2,0,0"
+                               Text="{Binding FreshnessText}" TextWrapping="Wrap" />
 
                     <TextBlock Style="{StaticResource SecondaryText}" Margin="0,10,0,2" Text="NEXT ACTION" />
                     <TextBlock Style="{StaticResource BodyText}" Text="{Binding NextActionText}" TextWrapping="Wrap" />

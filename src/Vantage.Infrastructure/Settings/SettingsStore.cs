@@ -102,6 +102,11 @@ public sealed class SettingsStore(AppPaths paths)
             settings.Ui.StartCompact = null;
         }
 
+        // Schema 3 removed the remote source's keys, and there is deliberately no step for them.
+        // Deserialization reads past a key this build no longer declares, so a file carrying
+        // GitHubEnrichmentEnabled, MaxGitHubIssuesPerRepository, ConfirmedOrigin or PendingOrigin
+        // is ordinary configuration rather than a file that failed to parse — it loads clean, and
+        // the next save writes the object, which no longer has anywhere to put them.
         settings.SchemaVersion = DashboardSettings.CurrentSchemaVersion;
         return settings;
     }

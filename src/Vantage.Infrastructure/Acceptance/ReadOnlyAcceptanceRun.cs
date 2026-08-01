@@ -26,8 +26,7 @@ public sealed record AcceptanceBounds(
     int MaxProjects,
     int MaxDirectoriesScanned,
     int MaxConcurrentExternalProcesses,
-    int ExternalProcessTimeoutSeconds,
-    int MaxGitHubIssuesPerRepository);
+    int ExternalProcessTimeoutSeconds);
 
 public sealed record AcceptancePass(
     string Name,
@@ -36,7 +35,6 @@ public sealed record AcceptancePass(
     int ProjectsWithProgress,
     int ProjectsWithRemainingWork,
     int StaleProjects,
-    bool Offline,
     bool ScanTruncated,
     int PeakConcurrentProcesses,
     IReadOnlyList<string> DiagnosticCodes);
@@ -53,39 +51,6 @@ public sealed record CancellationEvidence(
     bool StillRunningWhenCancelled,
     double LatencyMilliseconds,
     bool StoppedByCancellation);
-
-/// <summary>
-/// <see cref="GhReportedNoSession"/> is null, not <c>false</c>, when enrichment is off: the probe
-/// that would answer it was never run, and a report must not claim an observation that did not
-/// happen.
-/// </summary>
-public sealed record OfflineEvidence(
-    bool? GhReportedNoSession,
-    bool SnapshotMarkedOffline,
-    int Projects,
-    int ProjectsWithProgress,
-    int ProjectsWithRemainingWork,
-    int StaleProjects,
-    long ElapsedMilliseconds);
-
-/// <summary>
-/// Projects and repositories are counted separately on purpose: several projects can share one
-/// repository — a worktree, a second clone — so a count of distinct slugs is not a count of
-/// projects, and comparing the two would look like an inconsistency.
-/// </summary>
-public sealed record AssociationEvidence(
-    int Projects,
-    int GitRepositories,
-    int ProjectsWithAssociation,
-    int DistinctRepositoriesAssociated,
-    int AssociationMatchesObservedRemote,
-    int AssociationDiffersFromObservedRemote,
-    int RemoteUnreadable,
-    int AssociationAwaitingRelink,
-    int ProjectsCarryingGitHubEvidence,
-    int GitHubEvidenceFromAnotherRepository,
-    int RepositoriesQueried,
-    int RepositoriesQueriedWithoutAnAssociation);
 
 public sealed record SafetyEvidence(
     int ProjectsFingerprinted,
@@ -104,8 +69,6 @@ public sealed record AcceptanceReport(
     AcceptanceBounds Bounds,
     IReadOnlyList<AcceptancePass> Passes,
     CancellationEvidence Cancellation,
-    OfflineEvidence Offline,
-    AssociationEvidence Associations,
     SafetyEvidence Safety)
 {
     /// <summary>Nothing the run observed moved, and nothing it tried to do was stopped.</summary>
@@ -217,21 +180,14 @@ public sealed class ReadOnlyAcceptanceRun(
             settings.MaxProjects,
             settings.MaxDirectoriesScanned,
             settings.MaxConcurrentExternalProcesses,
-            settings.ExternalProcessTimeoutSeconds,
-            settings.MaxGitHubIssuesPerRepository);
+            settings.ExternalProcessTimeoutSeconds);
 
         var discovered = new ProjectDiscovery(settings).Discover(cancellationToken).Projects;
         var projectPaths = discovered.Select(p => p.CanonicalPath).ToList();
 
-        var stateReader = new MonitoredStateReader(
-            runner,
-            Identify,
-            settings.MaxGitHubIssuesPerRepository,
-            AssociationOf);
+        var stateReader = new MonitoredStateReader(runner, Identify);
 
-        var before = await stateReader
-            .ReadAsync(projectPaths, settings.GitHubEnrichmentEnabled, cancellationToken)
-            .ConfigureAwait(false);
+        var before = await stateReader.ReadAsync(projectPaths, cancellationToken).ConfigureAwait(false);
 
         using var cache = DashboardCache.Open(isolatedState.CacheFile);
         var store = new SettingsStore(isolatedState);
@@ -245,25 +201,9 @@ public sealed class ReadOnlyAcceptanceRun(
 
         var cancellation = await CancellationPassAsync(service, runner, bounded, cancellationToken).ConfigureAwait(false);
 
-        // Associations are read off a settled pass rather than the cancelled one: a cancelled pass
-        // has no complete answer to be right or wrong about.
-        var settled = await service.RefreshAsync(cancellationToken).ConfigureAwait(false);
-        var associations = await AssociationsAsync(settled, discovered, runner, cancellationToken).ConfigureAwait(false);
+        var after = await stateReader.ReadAsync(projectPaths, cancellationToken).ConfigureAwait(false);
 
-        var (offline, offlineRunner) = await OfflinePassAsync(cache, store, timeout, cancellationToken)
-            .ConfigureAwait(false);
-
-        var after = await stateReader
-            .ReadAsync(projectPaths, settings.GitHubEnrichmentEnabled, cancellationToken)
-            .ConfigureAwait(false);
-
-        // Both boundaries are reported together. The offline pass runs behind a second runner, and
-        // a refusal it recorded would otherwise never be looked at.
         var issued = runner.Issued.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
-        foreach (var (shape, count) in offlineRunner.Issued)
-        {
-            issued[shape] = issued.GetValueOrDefault(shape) + count;
-        }
 
         var changes = MonitoredStateReader.Diff(before, after);
         var gaps = MonitoredStateReader.Gaps(before, after);
@@ -281,14 +221,7 @@ public sealed class ReadOnlyAcceptanceRun(
             bounds,
             passes,
             cancellation,
-            offline,
-            associations,
-            new SafetyEvidence(
-                before.Count,
-                changes,
-                gaps,
-                [.. runner.Refused, .. offlineRunner.Refused],
-                issued));
+            new SafetyEvidence(before.Count, changes, gaps, runner.Refused, issued));
     }
 
     private static async Task<AcceptancePass> PassAsync(
@@ -308,7 +241,6 @@ public sealed class ReadOnlyAcceptanceRun(
             snapshot.Projects.Count(p => p.Progress.Total > 0),
             snapshot.Projects.Count(p => p.HasRemainingWork),
             snapshot.Projects.Count(p => p.IsStale),
-            snapshot.Offline,
             snapshot.ScanTruncated,
             bounded.PeakConcurrentProcesses,
             [.. snapshot.Projects
@@ -377,164 +309,6 @@ public sealed class ReadOnlyAcceptanceRun(
             latency.Elapsed.TotalMilliseconds,
             stopped);
     }
-
-    /// <summary>
-    /// The same real <c>gh</c>, asked to work without a session: its configuration directory is
-    /// pointed at an empty one and every inherited token is removed from the child's environment.
-    /// Nothing on the machine is changed, and nothing is imitated — the tool itself decides it has
-    /// no session, and the dashboard has to stay useful anyway.
-    /// </summary>
-    private async Task<(OfflineEvidence Evidence, ReadOnlyProcessRunner Runner)> OfflinePassAsync(
-        DashboardCache cache,
-        SettingsStore store,
-        TimeSpan timeout,
-        CancellationToken cancellationToken)
-    {
-        var emptyConfig = Path.Combine(isolatedState.Root, "gh-no-session");
-        Directory.CreateDirectory(emptyConfig);
-
-        using var blinded = new BoundedProcessRunner(
-            settings.MaxConcurrentExternalProcesses,
-            timeout,
-            new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["GH_CONFIG_DIR"] = emptyConfig,
-                ["GH_TOKEN"] = null,
-                ["GITHUB_TOKEN"] = null,
-                ["GH_ENTERPRISE_TOKEN"] = null,
-                ["GITHUB_ENTERPRISE_TOKEN"] = null,
-            });
-
-        var runner = new ReadOnlyProcessRunner(blinded);
-
-        // With enrichment off, the dashboard never asks gh anything, so there is no session to
-        // probe for — asking anyway would be the one gh call a local-only default run must not
-        // make. Left null rather than guessed true: the probe that would answer this was never
-        // run, and this report must not claim an observation that did not happen.
-        bool? ghReportedNoSession = null;
-        if (settings.GitHubEnrichmentEnabled)
-        {
-            var probe = await runner
-                .RunAsync("gh", ["auth", "status"], null, cancellationToken)
-                .ConfigureAwait(false);
-            ghReportedNoSession = !probe.Succeeded;
-        }
-
-        var offlineService = new RefreshService(settings, runner, cache, settingsStore: store);
-
-        var elapsed = Stopwatch.StartNew();
-        var snapshot = await offlineService.RefreshAsync(cancellationToken).ConfigureAwait(false);
-        elapsed.Stop();
-
-        return (
-            new OfflineEvidence(
-                ghReportedNoSession,
-                snapshot.Offline,
-                snapshot.Projects.Count,
-                snapshot.Projects.Count(p => p.Progress.Total > 0),
-                snapshot.Projects.Count(p => p.HasRemainingWork),
-                snapshot.Projects.Count(p => p.IsStale),
-                elapsed.ElapsedMilliseconds),
-            runner);
-    }
-
-    private async Task<AssociationEvidence> AssociationsAsync(
-        Core.Projection.DashboardSnapshot snapshot,
-        IReadOnlyList<DiscoveredProject> discovered,
-        ReadOnlyProcessRunner runner,
-        CancellationToken cancellationToken)
-    {
-        var associated = snapshot.Projects
-            .Where(p => p.Origin is not null)
-            .Select(p => p.Origin!.Slug)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var awaitingRelink = snapshot.Projects
-            .Count(p => p.Diagnostics.Any(d => d.Code == DiagnosticCode.OriginChanged));
-
-        // Each association is compared against the remote read independently here, rather than
-        // inferred from the absence of a diagnostic. A remote that cannot be read, or one that was
-        // removed, produces no diagnostic at all — so counting the projects the refresh did not
-        // complain about would report agreement it never established.
-        var matches = 0;
-        var differs = 0;
-        var unreadable = 0;
-
-        foreach (var project in snapshot.Projects.Where(p => p.Origin is not null))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var result = await runner.RunAsync(
-                "git",
-                ["-C", project.Identity.CanonicalPath, "remote", "get-url", "origin"],
-                project.Identity.CanonicalPath,
-                cancellationToken).ConfigureAwait(false);
-
-            var observed = result.Succeeded
-                ? Core.Workflow.GitHubOrigin.TryParse(result.StandardOutput.Trim())?.Slug
-                : null;
-
-            if (observed is null)
-            {
-                unreadable++;
-            }
-            else if (string.Equals(observed, project.Origin!.Slug, StringComparison.OrdinalIgnoreCase))
-            {
-                matches++;
-            }
-            else
-            {
-                differs++;
-            }
-        }
-
-        var withGitHubEvidence = 0;
-        var foreignEvidence = 0;
-
-        foreach (var project in snapshot.Projects)
-        {
-            var locators = project.Efforts
-                .SelectMany(e => e.Tickets)
-                .Select(t => t.Provenance)
-                .Concat(project.RecentActivity.Select(a => a.Provenance))
-                .Where(p => p.Source == EvidenceSource.GitHubCli)
-                .Select(p => p.Locator)
-                .ToList();
-
-            if (locators.Count == 0)
-            {
-                continue;
-            }
-
-            withGitHubEvidence++;
-
-            var slug = project.Origin?.Slug;
-            foreignEvidence += locators.Count(l =>
-                slug is null || !l.StartsWith(slug + "#", StringComparison.OrdinalIgnoreCase));
-        }
-
-        return new AssociationEvidence(
-            snapshot.Projects.Count,
-            discovered.Count(d => d.IsGitRepository),
-            snapshot.Projects.Count(p => p.Origin is not null),
-            associated.Count,
-            matches,
-            differs,
-            unreadable,
-            awaitingRelink,
-            withGitHubEvidence,
-            foreignEvidence,
-            runner.RepositoriesQueried.Count,
-            runner.RepositoriesQueried.Count(r => !associated.Contains(r)));
-    }
-
-    /// <summary>
-    /// The repository a project is confirmed to be associated with, as the registry records it.
-    /// Not the remote as it currently reads: a changed remote is held pending the owner's
-    /// confirmation, and the fingerprint must not query a repository they have not approved.
-    /// </summary>
-    private ProjectAssociation AssociationOf(string projectPath) =>
-        new(settings.FindProject(projectPath)?.ConfirmedOrigin);
 
     /// <summary>
     /// A stable identifier for a path or a repository within one report, and nothing outside it.

@@ -28,7 +28,7 @@ public sealed class RegistryIntentTests
     public void SetUp()
     {
         _workspace = new WorkspaceFixture();
-        _runner = new FakeProcessRunner().GhAuthenticated().GhIssues(Fixtures.GhIssues());
+        _runner = new FakeProcessRunner();
         _harness = new RefreshHarness(_workspace, _runner, DateTimeOffset.UtcNow).WithRealGit();
     }
 
@@ -66,7 +66,7 @@ public sealed class RegistryIntentTests
         {
             Path = aliasedProject,
             State = ProjectRegistryState.Hidden,
-            ConfirmedOrigin = "acme/widget",
+            Pinned = true,
         });
         _harness.SettingsStore.Save(_harness.Settings);
 
@@ -77,53 +77,8 @@ public sealed class RegistryIntentTests
         var persisted = _harness.SettingsStore.Load().Settings;
         Assert.AreEqual(1, persisted.Projects.Count, "The intent moves to the resolved path; it is not duplicated beside it.");
         Assert.AreEqual(ProjectRegistryState.Hidden, persisted.Projects[0].State);
-        Assert.AreEqual("acme/widget", persisted.Projects[0].ConfirmedOrigin);
+        Assert.IsTrue(persisted.Projects[0].Pinned, "Every choice on the entry travels with it, not just its state.");
         Assert.AreEqual(project, persisted.Projects[0].Path);
-    }
-
-    [TestMethod]
-    public async Task A_first_seen_origin_is_confirmed_once_and_still_requires_confirmation_after_restart()
-    {
-        var project = _workspace.NewProject("widget");
-        _workspace.InitGitRepository(project, Origin);
-        _workspace.Commit(project, "initial");
-
-        var view = (await _harness.RefreshAsync()).Project("widget");
-        Assert.AreEqual("acme/widget", view.Origin!.Slug);
-        Assert.AreEqual("acme/widget", PersistedEntry(project).ConfirmedOrigin, "The confirmed association must persist.");
-
-        _workspace.Git(project, "remote", "set-url", "origin", "https://github.com/someone-else/other.git");
-        _harness.Restart();
-
-        var afterRestart = (await _harness.RefreshAsync()).Project("widget");
-
-        Assert.IsTrue(
-            afterRestart.HasDiagnostic(DiagnosticCode.OriginChanged),
-            "After a restart the association is still the owner's confirmed one, so a changed remote is still a relink.");
-        Assert.AreEqual("acme/widget", afterRestart.Origin!.Slug);
-    }
-
-    [TestMethod]
-    public async Task A_pending_relink_survives_a_repository_whose_remote_cannot_be_read()
-    {
-        var project = _workspace.NewProject("widget");
-        _workspace.InitGitRepository(project, Origin);
-        _workspace.Commit(project, "initial");
-        await _harness.RefreshAsync();
-
-        _workspace.Git(project, "remote", "set-url", "origin", "https://github.com/someone-else/other.git");
-        await _harness.RefreshAsync();
-        Assert.AreEqual("someone-else/other", PersistedEntry(project).PendingOrigin);
-
-        // The remote goes away entirely — a detached checkout, a pruned remote, an unreadable repo.
-        _workspace.Git(project, "remote", "remove", "origin");
-        await _harness.RefreshAsync();
-
-        Assert.AreEqual(
-            "someone-else/other",
-            PersistedEntry(project).PendingOrigin,
-            "Not being able to read the remote must not cancel a relink that is waiting on the owner.");
-        Assert.AreEqual("acme/widget", PersistedEntry(project).ConfirmedOrigin);
     }
 
     [TestMethod]
@@ -160,40 +115,6 @@ public sealed class RegistryIntentTests
             ProjectRegistryState.Enabled,
             PersistedEntry(project).State,
             "A superseded refresh must not drop the registry intent it already produced.");
-    }
-
-    [TestMethod]
-    public async Task A_project_registered_before_a_cancelled_session_check_is_still_registered_after_restart()
-    {
-        var project = _workspace.NewProject("widget");
-
-        // Cancellation lands on the gh session check, before any project is indexed — the earliest
-        // point at which the registry has already changed.
-        using var cancelled = new CancellationTokenSource();
-        var cancellingRunner = new FakeProcessRunner().When(
-            (name, args) => name == "gh" && args.Contains("auth"),
-            () =>
-            {
-                cancelled.Cancel();
-                throw new OperationCanceledException(cancelled.Token);
-            });
-
-        using var cancelledRun = new RefreshHarness(_workspace, cancellingRunner, DateTimeOffset.UtcNow);
-
-        try
-        {
-            await cancelledRun.RefreshAsync(cancelled.Token);
-            Assert.Fail("The refresh was expected to be cancelled.");
-        }
-        catch (OperationCanceledException)
-        {
-            // The point of the test.
-        }
-
-        Assert.AreEqual(
-            ProjectRegistryState.Enabled,
-            PersistedEntry(project).State,
-            "Cancellation during the session check must not drop a project already registered.");
     }
 
     /// <summary>
@@ -296,7 +217,7 @@ public sealed class RegistryIntentTests
         var before = WorkspaceFixture.Fingerprint(_workspace.WorkspacesRoot, excludingSegment: ".git");
         await _harness.RefreshAsync();
 
-        Assert.AreEqual("acme/widget", PersistedEntry(project).ConfirmedOrigin, "The refresh did write registry intent.");
+        Assert.IsNotNull(PersistedEntry(project), "The refresh did write registry intent.");
         Assert.AreEqual(
             before,
             WorkspaceFixture.Fingerprint(_workspace.WorkspacesRoot, excludingSegment: ".git"),

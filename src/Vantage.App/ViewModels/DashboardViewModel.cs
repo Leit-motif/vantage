@@ -152,9 +152,6 @@ public sealed partial class DashboardViewModel : ObservableObject
     [ObservableProperty]
     private bool _isStale;
 
-    [ObservableProperty]
-    private bool _isOffline;
-
     /// <summary>
     /// Surface opacity as WPF wants it (0–1), derived from the percentage the owner sets.
     /// Only the background carries it; content layers stay fully opaque and legible.
@@ -334,11 +331,9 @@ public sealed partial class DashboardViewModel : ObservableObject
         BlockedCount = snapshot.Counters.Blocked;
         DiagnosticCount = snapshot.Counters.Diagnostics;
         IsStale = snapshot.IsStale;
-        IsOffline = snapshot.Offline;
 
         StatusLine = $"{snapshot.Projects.Count} project(s) · refreshed {snapshot.GeneratedAt.ToLocalTime():HH:mm:ss}"
-            + (snapshot.IsStale ? " · showing some cached evidence" : string.Empty)
-            + (snapshot.Offline ? " · offline" : string.Empty);
+            + (snapshot.IsStale ? " · showing some cached evidence" : string.Empty);
 
         OnPropertyChanged(nameof(Diagnostics));
         OnPropertyChanged(nameof(RefreshId));

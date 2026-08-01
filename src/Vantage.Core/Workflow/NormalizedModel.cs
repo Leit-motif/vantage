@@ -26,7 +26,12 @@ public enum WorkUnitKind
     Unrecognized,
 }
 
-/// <summary>An explicit link between a local ticket and a GitHub issue. Never inferred from titles.</summary>
+/// <summary>
+/// An explicit link a ticket file writes about itself, as the <c>.scratch</c> grammar's
+/// <c>GitHub:</c> line states it. It is a local observation, never a remote read: nothing resolves
+/// it, and the dashboard only ever uses the number as one more explicit identifier a map or a
+/// blocker may refer to the ticket by.
+/// </summary>
 public sealed record GitHubLink(string Repository, int Number, string RawValue);
 
 /// <summary>A reference to another ticket within the same effort.</summary>
@@ -66,9 +71,6 @@ public sealed record WorkflowTicket
 
     public IReadOnlyList<string> Assignees { get; init; } = [];
 
-    /// <summary>Comments observed on the linked issue. A new one is movement worth showing.</summary>
-    public int CommentCount { get; init; }
-
     public required string SourcePath { get; init; }
 
     public required string SemanticHash { get; init; }
@@ -77,9 +79,6 @@ public sealed record WorkflowTicket
 
     /// <summary>Additional provenance accumulated by enrichment, kept alongside the primary trail.</summary>
     public IReadOnlyList<Provenance> EnrichmentProvenance { get; init; } = [];
-
-    /// <summary>True when the ticket exists only on GitHub and carries no recognized workflow status.</summary>
-    public bool IsUnclassifiedGitHubIssue { get; init; }
 
     public bool IsComplete => Status.IsComplete;
 
@@ -132,61 +131,18 @@ public sealed record ProjectIdentity(string CanonicalPath, string Name)
     public override int GetHashCode() => StringComparer.OrdinalIgnoreCase.GetHashCode(CanonicalPath);
 }
 
-/// <summary>A GitHub origin normalized to <c>owner/repo</c>, associated with a local identity.</summary>
-public sealed record GitHubOrigin(string Owner, string Repository)
-{
-    public string Slug => $"{Owner}/{Repository}";
-
-    public static GitHubOrigin? TryParse(string? remoteUrl)
-    {
-        if (string.IsNullOrWhiteSpace(remoteUrl))
-        {
-            return null;
-        }
-
-        var value = remoteUrl.Trim();
-        if (value.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
-        {
-            value = value[..^4];
-        }
-
-        // git@github.com:owner/repo
-        var scpIndex = value.IndexOf("github.com:", StringComparison.OrdinalIgnoreCase);
-        if (scpIndex >= 0)
-        {
-            return FromPath(value[(scpIndex + "github.com:".Length)..]);
-        }
-
-        // https://github.com/owner/repo or ssh://git@github.com/owner/repo
-        var hostIndex = value.IndexOf("github.com/", StringComparison.OrdinalIgnoreCase);
-        return hostIndex >= 0 ? FromPath(value[(hostIndex + "github.com/".Length)..]) : null;
-    }
-
-    private static GitHubOrigin? FromPath(string path)
-    {
-        var parts = path.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length >= 2 ? new GitHubOrigin(parts[0], parts[1]) : null;
-    }
-}
-
 /// <summary>The normalized facts for one project, before any dashboard inference.</summary>
 public sealed record NormalizedProject
 {
     public required ProjectIdentity Identity { get; init; }
 
-    public GitHubOrigin? Origin { get; init; }
-
     public IReadOnlyList<WorkflowEffort> Efforts { get; init; } = [];
 
     public IReadOnlyList<ObservedCommit> Commits { get; init; } = [];
 
-    public IReadOnlyList<ObservedGitHubIssue> GitHubIssues { get; init; } = [];
-
     public IReadOnlyList<Diagnostic> Diagnostics { get; init; } = [];
 
     public bool GitAvailable { get; init; } = true;
-
-    public bool GitHubAvailable { get; init; } = true;
 
     public IEnumerable<WorkflowTicket> AllTickets => Efforts.SelectMany(e => e.Tickets);
 }

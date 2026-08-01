@@ -42,29 +42,32 @@ public sealed class ReadOnlyAcceptanceTests
             Assert.IsFalse(result.Succeeded, $"'git {string.Join(' ', arguments)}' was allowed through.");
         }
 
-        string[][] ghWrites =
+        // Every gh call, not only the ones that write. The remote source is gone, so there is no
+        // gh command this dashboard has a reason to start — including the four reads that used to
+        // be allowed here, which is what makes "no gh process is ever started" structural rather
+        // than a property of the calling code.
+        string[][] gh =
         [
             ["issue", "close", "5"],
             ["issue", "comment", "5", "--body", "hello"],
-            ["issue", "edit", "5", "--add-label", "bug"],
             ["label", "create", "bug"],
             ["api", "-X", "POST", "repos/o/r/issues"],
-            ["api", "repos/o/r/issues", "-f", "title=x"],
-
-            // Both of these only read. Both are also a way to enumerate an account, which is the
-            // other promise this boundary is holding.
             ["repo", "list", "Leit-motif"],
-            ["api", "user/repos"],
+
+            ["auth", "status"],
+            ["issue", "list", "--repo", "acme/widget", "--state", "all", "--json", "number"],
+            ["issue", "view", "5", "--repo", "acme/widget"],
+            ["label", "list", "--repo", "acme/widget", "--json", "name"],
         ];
 
-        foreach (var arguments in ghWrites)
+        foreach (var arguments in gh)
         {
             var result = await runner.RunAsync("gh", arguments, null, CancellationToken.None);
             Assert.IsFalse(result.Succeeded, $"'gh {string.Join(' ', arguments)}' was allowed through.");
         }
 
         Assert.AreEqual(
-            writes.Length + ghWrites.Length,
+            writes.Length + gh.Length,
             runner.Refused.Count,
             "Every refusal is recorded; a silent refusal would read as a command that never happened.");
 
@@ -164,11 +167,10 @@ public sealed class ReadOnlyAcceptanceTests
         using var bounded = new BoundedProcessRunner(4, TimeSpan.FromSeconds(30));
         var reader = new MonitoredStateReader(
             new ReadOnlyProcessRunner(bounded),
-            path => path.ToLowerInvariant(),
-            200);
+            path => path.ToLowerInvariant());
 
-        var before = await reader.ReadAsync([project], includeGitHub: false, CancellationToken.None);
-        var after = await reader.ReadAsync([project], includeGitHub: false, CancellationToken.None);
+        var before = await reader.ReadAsync([project], CancellationToken.None);
+        var after = await reader.ReadAsync([project], CancellationToken.None);
 
         Assert.AreEqual(0, MonitoredStateReader.Diff(before, after).Count, "Nothing was observed to change.");
 
@@ -191,7 +193,6 @@ public sealed class ReadOnlyAcceptanceTests
         [
             ["-C", "repo", "rev-parse", "--is-inside-work-tree"],
             ["-C", "repo", "rev-parse", "HEAD"],
-            ["-C", "repo", "remote", "get-url", "origin"],
             ["-C", "repo", "log", "--branches", "--no-color", "-n2000", "--name-only"],
             ["-C", "repo", "status", "--porcelain"],
             ["-C", "repo", "config", "--list", "--local"],
@@ -203,21 +204,8 @@ public sealed class ReadOnlyAcceptanceTests
             await runner.RunAsync("git", arguments, null, CancellationToken.None);
         }
 
-        await runner.RunAsync("gh", ["auth", "status"], null, CancellationToken.None);
-        await runner.RunAsync(
-            "gh",
-            ["issue", "list", "--repo", "acme/widget", "--state", "all", "--limit", "200", "--json", "number"],
-            null,
-            CancellationToken.None);
-        await runner.RunAsync("gh", ["label", "list", "--repo", "acme/widget", "--json", "name"], null, CancellationToken.None);
-
         Assert.AreEqual(0, runner.Refused.Count, $"Refused: {string.Join("; ", runner.Refused.Select(r => r.Shape))}");
-        Assert.AreEqual(reads.Length + 3, inner.Invocations.Count);
-
-        CollectionAssert.AreEquivalent(
-            new[] { "acme/widget" },
-            runner.RepositoriesQueried.ToArray(),
-            "Which repositories gh was pointed at is what proves the account was never enumerated.");
+        Assert.AreEqual(reads.Length, inner.Invocations.Count);
     }
 
     [TestMethod]
@@ -231,10 +219,10 @@ public sealed class ReadOnlyAcceptanceTests
 
         using var bounded = new BoundedProcessRunner(4, TimeSpan.FromSeconds(30));
         var runner = new ReadOnlyProcessRunner(bounded);
-        var reader = new MonitoredStateReader(runner, path => path.ToLowerInvariant(), 200);
+        var reader = new MonitoredStateReader(runner, path => path.ToLowerInvariant());
 
-        var before = await reader.ReadAsync([project], includeGitHub: false, CancellationToken.None);
-        var unchanged = await reader.ReadAsync([project], includeGitHub: false, CancellationToken.None);
+        var before = await reader.ReadAsync([project], CancellationToken.None);
+        var unchanged = await reader.ReadAsync([project], CancellationToken.None);
 
         Assert.AreEqual(0, MonitoredStateReader.Diff(before, unchanged).Count, "Reading twice is not a change.");
         Assert.AreEqual(0, runner.Refused.Count, "The comparison itself must be made of reads.");
@@ -243,7 +231,7 @@ public sealed class ReadOnlyAcceptanceTests
         Assert.IsTrue(before[0].WorkflowFileCount >= 2, "The markers and the whole .scratch tree are compared.");
 
         _workspace.WriteFile(ticket, Fixtures.Ticket("Work", "resolved"));
-        var afterEdit = await reader.ReadAsync([project], includeGitHub: false, CancellationToken.None);
+        var afterEdit = await reader.ReadAsync([project], CancellationToken.None);
 
         var changes = MonitoredStateReader.Diff(before, afterEdit);
         Assert.IsTrue(
@@ -252,70 +240,6 @@ public sealed class ReadOnlyAcceptanceTests
         Assert.IsTrue(
             changes.Any(c => c.Subject == "git status"),
             "The working tree moving has to show up too.");
-    }
-
-    /// <summary>
-    /// A project whose remote changed is waiting on the owner to confirm the relink. Fingerprinting
-    /// the newly observed remote would send issue and label queries to a repository they never
-    /// approved — the exact boundary story 11 draws.
-    /// </summary>
-    [TestMethod]
-    public async Task The_fingerprint_queries_the_confirmed_association_and_not_the_current_remote()
-    {
-        var project = _workspace.NewProject("repo");
-        _workspace.InitGitRepository(project, "https://github.com/someone-else/unapproved.git");
-
-        var inner = new FakeProcessRunner()
-            .GhIssues("[]")
-            .When((name, args) => name == "gh" && args.Contains("label"), () => FakeProcessRunner.Ok("[]"));
-
-        inner.Fallback = new BoundedProcessRunner(4, TimeSpan.FromSeconds(30));
-
-        var runner = new ReadOnlyProcessRunner(inner);
-        var reader = new MonitoredStateReader(
-            runner,
-            path => path.ToLowerInvariant(),
-            200,
-            associationOf: _ => new ProjectAssociation("acme/confirmed"));
-
-        await reader.ReadAsync([project], includeGitHub: true, CancellationToken.None);
-
-        CollectionAssert.AreEquivalent(
-            new[] { "acme/confirmed" },
-            runner.RepositoriesQueried.ToArray(),
-            "Only the confirmed association may be queried, never the remote that is awaiting confirmation.");
-    }
-
-    /// <summary>
-    /// The other side of the same rule. A project the registry has never seen has no confirmed
-    /// association to contradict, and the first remote observed is the one the dashboard itself
-    /// would adopt — so skipping it would make the two fingerprints asymmetric and turn a project
-    /// the registry learned about mid-run into a reported change in the workspace.
-    /// </summary>
-    [TestMethod]
-    public async Task A_project_the_registry_has_never_seen_is_fingerprinted_under_its_own_remote()
-    {
-        var project = _workspace.NewProject("repo");
-        _workspace.InitGitRepository(project, "https://github.com/acme/first-seen.git");
-
-        var inner = new FakeProcessRunner()
-            .GhIssues("[]")
-            .When((name, args) => name == "gh" && args.Contains("label"), () => FakeProcessRunner.Ok("[]"));
-
-        inner.Fallback = new BoundedProcessRunner(4, TimeSpan.FromSeconds(30));
-
-        var runner = new ReadOnlyProcessRunner(inner);
-        var reader = new MonitoredStateReader(
-            runner,
-            path => path.ToLowerInvariant(),
-            200,
-            associationOf: _ => ProjectAssociation.None);
-
-        await reader.ReadAsync([project], includeGitHub: true, CancellationToken.None);
-
-        CollectionAssert.AreEquivalent(
-            new[] { "acme/first-seen" },
-            runner.RepositoriesQueried.ToArray());
     }
 
     [TestMethod]
@@ -328,13 +252,12 @@ public sealed class ReadOnlyAcceptanceTests
         using var bounded = new BoundedProcessRunner(4, TimeSpan.FromSeconds(30));
         var reader = new MonitoredStateReader(
             new ReadOnlyProcessRunner(bounded),
-            path => path.ToLowerInvariant(),
-            200);
+            path => path.ToLowerInvariant());
 
-        var before = await reader.ReadAsync([project], includeGitHub: false, CancellationToken.None);
+        var before = await reader.ReadAsync([project], CancellationToken.None);
 
         File.Move(ticket, Path.Combine(Path.GetDirectoryName(ticket)!, "002.md"));
-        var after = await reader.ReadAsync([project], includeGitHub: false, CancellationToken.None);
+        var after = await reader.ReadAsync([project], CancellationToken.None);
 
         Assert.IsTrue(
             MonitoredStateReader.Diff(before, after).Any(c => c.Subject == "workflow content"),

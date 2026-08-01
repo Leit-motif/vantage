@@ -126,10 +126,9 @@ public sealed class AcceptanceInstrumentTests
         var reader = new MonitoredStateReader(
             new ReadOnlyProcessRunner(bounded),
             path => path.ToLowerInvariant(),
-            200,
             maxWorkflowFiles: 4);
 
-        var states = await reader.ReadAsync([project], includeGitHub: false, CancellationToken.None);
+        var states = await reader.ReadAsync([project], CancellationToken.None);
 
         Assert.AreEqual(4, states.Single().WorkflowFileCount, "The bound is a bound.");
         Assert.IsTrue(
@@ -151,81 +150,24 @@ public sealed class AcceptanceInstrumentTests
         using var bounded = new BoundedProcessRunner(2, TimeSpan.FromSeconds(30));
         var reader = new MonitoredStateReader(
             new ReadOnlyProcessRunner(bounded),
-            path => path.ToLowerInvariant(),
-            200);
+            path => path.ToLowerInvariant());
 
         using var source = new CancellationTokenSource();
         await source.CancelAsync();
 
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(
-            () => reader.ReadAsync([project], includeGitHub: false, source.Token));
+            () => reader.ReadAsync([project], source.Token));
     }
 
     /// <summary>
-    /// The live report's association numbers come out of this code, so they cannot vouch for it.
-    /// Three repositories with known answers — one agreeing with its confirmed association, one
-    /// disagreeing, one whose remote cannot be read — and the run has to count them correctly.
+    /// No <c>gh</c> process is started, under any setting. The fixture is the case that used to
+    /// produce every gh call there was — a project whose remote is a GitHub origin — and there is
+    /// no longer a setting that could turn one on, so the whole run's outward footprint is git.
+    /// The refusal list is asserted alongside the issued one: a gh call stopped at the boundary
+    /// would be recorded rather than run, and that is still a gh call the product tried to make.
     /// </summary>
     [TestMethod]
-    public async Task The_run_counts_agreeing_disagreeing_and_unreadable_remotes_for_what_they_are()
-    {
-        var agrees = _workspace.NewProject("agrees");
-        _workspace.InitGitRepository(agrees, "https://github.com/acme/agrees.git");
-        _workspace.Commit(agrees, "initial");
-
-        var disagrees = _workspace.NewProject("disagrees");
-        _workspace.InitGitRepository(disagrees, "https://github.com/acme/moved-away.git");
-        _workspace.Commit(disagrees, "initial");
-
-        var noRemote = _workspace.NewProject("no-remote");
-        _workspace.InitGitRepository(noRemote);
-        _workspace.Commit(noRemote, "initial");
-
-        var state = new AppPaths(Path.Combine(_workspace.Root, "scan-state"));
-
-        var settings = new DashboardSettings
-        {
-            Roots = [_workspace.WorkspacesRoot],
-
-            // Local-only: the associations are still compared, and no gh call is made for them.
-            GitHubEnrichmentEnabled = false,
-        };
-
-        // Both are recorded as already confirmed, so the run compares a confirmed association
-        // against the remote rather than adopting whatever it reads.
-        settings.Projects.Add(new ProjectRegistryEntry
-        {
-            Path = Infrastructure.Discovery.ProjectDiscovery.CanonicalizeFully(agrees),
-            ConfirmedOrigin = "acme/agrees",
-        });
-
-        settings.Projects.Add(new ProjectRegistryEntry
-        {
-            Path = Infrastructure.Discovery.ProjectDiscovery.CanonicalizeFully(disagrees),
-            ConfirmedOrigin = "acme/still-here",
-        });
-
-        var report = await new ReadOnlyAcceptanceRun(settings, state, "test").ExecuteAsync(CancellationToken.None);
-
-        Assert.AreEqual(3, report.Associations.Projects);
-        Assert.AreEqual(2, report.Associations.ProjectsWithAssociation, "Only the two confirmed ones carry an association.");
-        Assert.AreEqual(1, report.Associations.AssociationMatchesObservedRemote, "'agrees' agrees with its remote.");
-        Assert.AreEqual(
-            1,
-            report.Associations.AssociationDiffersFromObservedRemote,
-            "'disagrees' is confirmed against a repository its remote no longer names, and that is not agreement.");
-
-        Assert.AreEqual(0, report.Safety.MonitoredStateChanges.Count, "Observing a fixture changes nothing in it.");
-        Assert.AreEqual(0, report.Safety.RefusedCommands.Count);
-    }
-
-    /// <summary>
-    /// #9: the acceptance instrument runs its own offline probe (a real <c>gh auth status</c>)
-    /// independent of the product's refresh path, to characterize behaviour with no session. That
-    /// probe must not itself become the one gh invocation a local-only default run makes.
-    /// </summary>
-    [TestMethod]
-    public async Task A_run_with_default_settings_issues_no_gh_command_at_all()
+    public async Task A_run_over_a_repository_with_a_github_remote_issues_no_gh_command_at_all()
     {
         var project = _workspace.NewProject("widget");
         _workspace.InitGitRepository(project, "https://github.com/acme/widget.git");
@@ -234,16 +176,17 @@ public sealed class AcceptanceInstrumentTests
         var state = new AppPaths(Path.Combine(_workspace.Root, "scan-state"));
         var settings = new DashboardSettings { Roots = [_workspace.WorkspacesRoot] };
 
-        Assert.IsFalse(settings.GitHubEnrichmentEnabled, "This proves the shipped default, not an explicit override.");
-
         var report = await new ReadOnlyAcceptanceRun(settings, state, "test").ExecuteAsync(CancellationToken.None);
 
         Assert.IsFalse(
             report.Safety.CommandsIssued.Keys.Any(command => command.StartsWith("gh", StringComparison.Ordinal)),
-            "A local-only default run must not invoke gh, including from the instrument's own offline probe.");
-        Assert.IsNull(
-            report.Offline.GhReportedNoSession,
-            "The probe was skipped, not answered — the report must say so rather than claim an observation that never ran.");
+            $"A run must not invoke gh. Issued: {string.Join(", ", report.Safety.CommandsIssued.Keys)}");
+        Assert.IsFalse(
+            report.Safety.RefusedCommands.Any(c => c.FileName == "gh"),
+            "And it must not have tried to: a refused gh call is still one the product attempted.");
+        Assert.IsTrue(
+            report.Safety.CommandsIssued.Keys.Any(command => command.StartsWith("git", StringComparison.Ordinal)),
+            "Precondition: the run has to have observed the repository at all.");
     }
 
     /// <summary>
@@ -255,11 +198,7 @@ public sealed class AcceptanceInstrumentTests
     {
         _workspace.NewProject("repo");
 
-        var settings = new DashboardSettings
-        {
-            Roots = [_workspace.WorkspacesRoot],
-            GitHubEnrichmentEnabled = false,
-        };
+        var settings = new DashboardSettings { Roots = [_workspace.WorkspacesRoot] };
 
         var inside = new AppPaths(Path.Combine(_workspace.WorkspacesRoot, "repo", "scan"));
 

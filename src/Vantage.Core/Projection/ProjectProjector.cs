@@ -93,7 +93,6 @@ public static class ProjectProjector
         return new ProjectView
         {
             Identity = project.Identity,
-            Origin = project.Origin,
             State = state,
             StateReason = reason,
             Progress = progress,
@@ -107,7 +106,6 @@ public static class ProjectProjector
             IsPinned = options.IsPinned,
             IsStale = options.IsStale,
             GitAvailable = project.GitAvailable,
-            GitHubAvailable = project.GitHubAvailable,
         };
     }
 
@@ -164,7 +162,7 @@ public static class ProjectProjector
         WorkflowTicket ticket,
         BlockerResolution resolution)
     {
-        if (ticket.IsComplete || ticket.IsUnclassifiedGitHubIssue || !ticket.CountsTowardProgress)
+        if (ticket.IsComplete || !ticket.CountsTowardProgress)
         {
             return null;
         }
@@ -265,7 +263,7 @@ public static class ProjectProjector
 
     /// <summary>
     /// Next action precedence: the explicit Wayfinder frontier first, then explicitly Ready or
-    /// ready-for-agent work. Unclassified GitHub issues are remaining work but never a next action.
+    /// ready-for-agent work.
     /// </summary>
     private static NextAction? ChooseNextAction(
         NormalizedProject project,
@@ -383,17 +381,6 @@ public static class ProjectProjector
                 path,
                 null,
                 Provenance.Git($"{path}#{commit.Sha}", commit.CommittedAt, "observed"));
-        }
-
-        foreach (var issue in project.GitHubIssues.Where(i => !i.IsClosed))
-        {
-            yield return new ActivityEvent(
-                issue.UpdatedAt,
-                ActivityKind.TicketChanged,
-                $"#{issue.Number} {issue.Title}",
-                path,
-                $"gh#{issue.Number}",
-                issue.Provenance);
         }
 
         foreach (var persisted in options.PersistedActivity.Where(e => e.Provenance.IsActivityGradeTimestamp))

@@ -20,8 +20,7 @@ public sealed class RefreshHarness : IDisposable
     public RefreshHarness(
         WorkspaceFixture workspace,
         FakeProcessRunner? runner = null,
-        DateTimeOffset? now = null,
-        bool gitHubEnrichmentEnabled = true)
+        DateTimeOffset? now = null)
     {
         Workspace = workspace;
         Runner = runner ?? new FakeProcessRunner();
@@ -33,7 +32,6 @@ public sealed class RefreshHarness : IDisposable
         Settings = new DashboardSettings
         {
             Roots = [workspace.WorkspacesRoot],
-            GitHubEnrichmentEnabled = gitHubEnrichmentEnabled,
         };
 
         // The settings file exists from the start, so a restart re-reads real configuration
@@ -57,7 +55,7 @@ public sealed class RefreshHarness : IDisposable
 
     public DashboardCache Cache => _cache;
 
-    /// <summary>Uses real git while keeping <c>gh</c> scripted, for repository-behaviour tests.</summary>
+    /// <summary>Falls through to the real git, for repository-behaviour tests.</summary>
     public RefreshHarness WithRealGit()
     {
         Runner.Fallback = new BoundedProcessRunner(4, TimeSpan.FromSeconds(30));

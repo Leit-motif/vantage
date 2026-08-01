@@ -20,7 +20,7 @@ public sealed class ResilienceTests
     public void TearDown() => _workspace.Dispose();
 
     private RefreshHarness NewHarness(FakeProcessRunner? runner = null) =>
-        new(_workspace, runner ?? new FakeProcessRunner().GhUnauthenticated(), DateTimeOffset.UtcNow);
+        new(_workspace, runner ?? new FakeProcessRunner(), DateTimeOffset.UtcNow);
 
     [TestMethod]
     public async Task Observing_a_workspace_changes_nothing_in_it()
@@ -31,7 +31,7 @@ public sealed class ResilienceTests
         _workspace.InitGitRepository(project, "https://github.com/acme/widget.git");
         _workspace.Commit(project, "add planning");
 
-        var runner = new FakeProcessRunner().GhAuthenticated().GhIssues(Fixtures.GhIssues());
+        var runner = new FakeProcessRunner();
         using var harness = NewHarness(runner).WithRealGit();
 
         var contentBefore = WorkspaceFixture.Fingerprint(_workspace.WorkspacesRoot, excludingSegment: ".git");
@@ -56,7 +56,7 @@ public sealed class ResilienceTests
         var effort = _workspace.NewEffort(project, "feature");
         _workspace.WriteTicket(effort, "ticket & $(whoami) ; echo.md", "# Hostile\n\n" + hostile);
 
-        var runner = new FakeProcessRunner().GhUnauthenticated();
+        var runner = new FakeProcessRunner();
         using var harness = NewHarness(runner);
 
         var snapshot = await harness.RefreshAsync();
@@ -81,13 +81,13 @@ public sealed class ResilienceTests
         _workspace.InitGitRepository(project);
         _workspace.Commit(project, "add planning");
 
-        using var healthy = NewHarness(new FakeProcessRunner().GhUnauthenticated()).WithRealGit();
+        using var healthy = NewHarness(new FakeProcessRunner()).WithRealGit();
         var before = (await healthy.RefreshAsync()).Project("repo");
         Assert.AreEqual(1, before.Progress.Total);
         Assert.IsFalse(before.IsStale);
         healthy.Dispose();
 
-        using var broken = NewHarness(new FakeProcessRunner().GhUnauthenticated().Throwing("git", "rev-parse"));
+        using var broken = NewHarness(new FakeProcessRunner().Throwing("git", "rev-parse"));
         var after = (await broken.RefreshAsync()).Project("repo");
 
         Assert.IsTrue(after.IsStale, "A stale view must never be mistaken for a fresh one.");
@@ -108,15 +108,15 @@ public sealed class ResilienceTests
         var conflict = new ConflictReport(
             "feature/001",
             ConflictField.Title,
-            "Local title",
-            "Remote title",
-            "Local value kept.",
+            "Working tree title",
+            "Committed title",
+            "Working-tree value kept.",
             provenance,
-            new Provenance(EvidenceSource.GitHubCli, "acme/widget#7", TimestampProvenance.GitHubApi, null, "r1"));
+            new Provenance(EvidenceSource.LocalGit, "001.md@HEAD", TimestampProvenance.GitCommit, null, "r1"));
 
         var ticket = new TicketView(
             "feature/001",
-            "Local title",
+            "Working tree title",
             "feature",
             new StatusReading(WorkflowStatus.Ready, "ready"),
             WorkUnitKind.Implementation,
@@ -148,36 +148,48 @@ public sealed class ResilienceTests
 
         Assert.IsNotNull(loaded);
         Assert.AreEqual(
-            "Remote title",
+            "Committed title",
             loaded.Efforts.Single().Tickets.Single().Conflicts.Single().RemoteValue,
             "A stale item must still offer the disagreement it is the subject of.");
     }
 
     /// <summary>
-    /// A project associated with a repository that could not be read is showing only its local half.
-    /// Its counts are not wrong, but they are not the whole answer, and a view that says nothing is
-    /// indistinguishable from a complete one.
+    /// No <c>gh</c> process is ever started. The fixture is everything that used to make the
+    /// dashboard reach for one — a repository whose remote is a GitHub origin, holding a ticket
+    /// that names an issue — and there is no longer a setting that could turn the reach on. The
+    /// second half matters as much as the first: what the dashboard reports about a project with
+    /// a remote has to be the local evidence, not a smaller answer.
     /// </summary>
     [TestMethod]
-    public async Task A_project_missing_its_github_half_says_so_rather_than_looking_complete()
+    public async Task A_repository_with_a_github_remote_and_a_linked_ticket_starts_no_gh_process()
     {
         var project = _workspace.NewProject("repo");
         var effort = _workspace.NewEffort(project, "feature");
-        _workspace.WriteTicket(effort, "001.md", Fixtures.Ticket("Work", "ready"));
+        _workspace.WriteTicket(effort, "001.md", Fixtures.Ticket("Work", "ready", gitHub: "acme/widget#7"));
+        _workspace.WriteTicket(effort, "002.md", Fixtures.Ticket("Blocked work", "open", blockedBy: "001"));
         _workspace.InitGitRepository(project, "https://github.com/acme/widget.git");
         _workspace.Commit(project, "add planning");
 
-        using var online = NewHarness(new FakeProcessRunner().GhAuthenticated().GhIssues(Fixtures.GhIssues())).WithRealGit();
-        var connected = (await online.RefreshAsync()).Project("repo");
-        Assert.IsFalse(connected.IsStale, "Nothing is missing while the session is good.");
-        online.Dispose();
+        var runner = new FakeProcessRunner();
+        using var harness = NewHarness(runner).WithRealGit();
 
-        using var lost = NewHarness(new FakeProcessRunner().GhUnauthenticated()).WithRealGit();
-        var view = (await lost.RefreshAsync()).Project("repo");
+        var view = (await harness.RefreshAsync()).Project("repo");
 
-        Assert.AreEqual(1, view.Progress.Total, "The local half is still shown.");
-        Assert.IsTrue(view.IsStale, "And it is marked as not being the whole picture.");
-        Assert.IsTrue(view.HasDiagnostic(DiagnosticCode.GitHubUnavailable));
+        Assert.IsFalse(
+            runner.Invocations.Any(i => i.FileName == "gh"),
+            $"Invoked: {string.Join(", ", runner.Invocations.Select(i => i.FileName).Distinct())}");
+        Assert.IsFalse(
+            runner.Invocations.Any(i => i.Arguments.Contains("get-url")),
+            "Nor the remote read that only ever existed to point gh at a repository.");
+
+        Assert.AreEqual(2, view.Progress.Total, "The local work units are all still counted.");
+        Assert.AreEqual("Work", view.NextAction?.Title, "And the local frontier is still chosen.");
+        Assert.AreEqual(
+            "acme/widget#7",
+            view.Ticket("001").Link?.RawValue,
+            "A ticket's own GitHub line is a local fact it states about itself, and is still read.");
+        Assert.IsTrue(view.Ticket("002").IsBlocked, "Local blocking edges resolve exactly as before.");
+        Assert.IsFalse(view.IsStale, "Nothing is missing, so nothing is reported as last-known-good.");
     }
 
     [TestMethod]
@@ -192,7 +204,7 @@ public sealed class ResilienceTests
         var broken = _workspace.NewProject("broken");
         Directory.CreateDirectory(Path.Combine(broken, ".git"));
 
-        using var harness = NewHarness(new FakeProcessRunner().GhUnauthenticated().Throwing("git", "rev-parse"));
+        using var harness = NewHarness(new FakeProcessRunner().Throwing("git", "rev-parse"));
         var snapshot = await harness.RefreshAsync();
 
         Assert.AreEqual(2, snapshot.Projects.Count);
@@ -290,6 +302,68 @@ public sealed class ResilienceTests
         Assert.IsFalse(
             File.ReadAllText(paths.SettingsFile).Contains("StartCompact", StringComparison.Ordinal),
             "The superseded flag is not written back once the mode has been read out of it.");
+    }
+
+    /// <summary>
+    /// The file every installed copy already has. It carries the four keys the remote source
+    /// owned — two on the settings object and two on a project entry — and it has to load like
+    /// ordinary configuration rather than as a file that could not be understood, because
+    /// quarantining it would silently throw away the owner's roots and registry intent.
+    /// </summary>
+    [TestMethod]
+    public void A_settings_file_carrying_the_removed_github_keys_loads_clean_and_is_rewritten_without_them()
+    {
+        var paths = new AppPaths(Path.Combine(_workspace.Root, "appdata"));
+        paths.EnsureCreated();
+        File.WriteAllText(paths.SettingsFile, """
+            {
+              "SchemaVersion": 2,
+              "Roots": ["C:\\Workspaces"],
+              "Projects": [
+                {
+                  "Path": "C:\\Workspaces\\widget",
+                  "State": "Hidden",
+                  "Pinned": true,
+                  "ConfirmedOrigin": "acme/widget",
+                  "PendingOrigin": "someone-else/other"
+                }
+              ],
+              "RecentWindowHours": 12,
+              "MaxGitHubIssuesPerRepository": 200,
+              "GitHubEnrichmentEnabled": true
+            }
+            """);
+
+        var store = new SettingsStore(paths);
+        var result = store.Load();
+
+        Assert.AreEqual(0, result.Diagnostics.Count, "A file carrying removed keys is ordinary configuration, not a broken file.");
+        Assert.IsFalse(File.Exists(paths.SettingsFile + ".invalid"), "So nothing about it is quarantined.");
+
+        var settings = result.Settings;
+        Assert.AreEqual(3, settings.SchemaVersion, "It is read forward to the schema that no longer has those keys.");
+        CollectionAssert.AreEqual(new[] { @"C:\Workspaces" }, settings.Roots, "The owner's roots survive the migration.");
+
+        var entry = settings.FindProject(@"C:\Workspaces\widget");
+        Assert.IsNotNull(entry, "And so does the registry intent recorded beside the origin that went.");
+        Assert.AreEqual(ProjectRegistryState.Hidden, entry.State);
+        Assert.IsTrue(entry.Pinned);
+        Assert.AreEqual(12, settings.RecentWindowHours);
+
+        store.Save(settings);
+        var written = File.ReadAllText(paths.SettingsFile);
+
+        foreach (var key in new[]
+        {
+            "GitHubEnrichmentEnabled", "MaxGitHubIssuesPerRepository", "ConfirmedOrigin", "PendingOrigin",
+        })
+        {
+            Assert.IsFalse(
+                written.Contains(key, StringComparison.Ordinal),
+                $"'{key}' must not survive the first save: {written}");
+        }
+
+        Assert.IsTrue(written.Contains(@"C:\\Workspaces\\widget", StringComparison.Ordinal), "The entry itself is still there.");
     }
 
     [TestMethod]

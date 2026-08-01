@@ -185,12 +185,10 @@ public sealed partial class ProjectItemViewModel : ObservableObject
 
     public bool IsStale => View.IsStale;
 
-    public string OriginText => View.Origin?.Slug ?? "local only";
-
     /// <summary>The freshness sentence shown when evidence came from a cached snapshot.</summary>
     public string FreshnessText => View.IsStale
-        ? "Showing last known good — a source was unavailable."
-        : View.GitHubAvailable ? "Live" : "Local evidence only";
+        ? "Showing last known good — this project could not be read."
+        : "Live";
 
     /// <summary>Everything the row asserts, in one sentence, for screen readers.</summary>
     public string AccessibleSummary =>

@@ -75,11 +75,7 @@ public sealed class WatcherAndResponsivenessTests
         var paths = new AppPaths(Path.Combine(_workspace.Root, "appdata"));
         paths.EnsureCreated();
 
-        var settings = new DashboardSettings
-        {
-            Roots = [_workspace.WorkspacesRoot],
-            GitHubEnrichmentEnabled = false,
-        };
+        var settings = new DashboardSettings { Roots = [_workspace.WorkspacesRoot] };
 
         var store = new SettingsStore(paths);
         store.Save(settings);
@@ -89,7 +85,7 @@ public sealed class WatcherAndResponsivenessTests
             settings,
             store,
             cache,
-            new FakeProcessRunner().GhUnauthenticated(),
+            new FakeProcessRunner(),
             highContrast: () => false);
 
         var scan = Stopwatch.StartNew();

@@ -21,16 +21,11 @@ public static class DiagnosticCode
     public const string BlockerDuplicate = "BLOCKER_DUPLICATE";
     public const string EffortEmpty = "EFFORT_EMPTY";
     public const string GitUnavailable = "GIT_UNAVAILABLE";
-    public const string GitHubUnavailable = "GITHUB_UNAVAILABLE";
-    public const string GitHubUnauthenticated = "GITHUB_UNAUTHENTICATED";
-    public const string GitHubMalformedOutput = "GITHUB_MALFORMED_OUTPUT";
     public const string NoRootsConfigured = "NO_ROOTS_CONFIGURED";
     public const string ProjectScanFailed = "PROJECT_SCAN_FAILED";
     public const string ScanTruncated = "SCAN_TRUNCATED";
     public const string CacheRebuilt = "CACHE_REBUILT";
     public const string SettingsRecovered = "SETTINGS_RECOVERED";
-    public const string OriginChanged = "ORIGIN_CHANGED";
-    public const string LinkTargetMissing = "LINK_TARGET_MISSING";
 }
 
 /// <summary>A visible explanation for something the dashboard could not interpret safely.</summary>
