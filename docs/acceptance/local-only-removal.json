@@ -1,0 +1,78 @@
+{
+  "Environment": {
+    "OperatingSystem": "Microsoft Windows 10.0.26200",
+    "Runtime": ".NET 10.0.10",
+    "Architecture": "X64",
+    "ProcessorCount": 16,
+    "Commit": "3206168eeae1a41e0f9dd4a662003b795dfd9653",
+    "StartedAtUtc": "2026-08-01 16:07:49Z"
+  },
+  "Bounds": {
+    "Roots": 2,
+    "MaxDiscoveryDepth": 6,
+    "MaxProjects": 300,
+    "MaxDirectoriesScanned": 40000,
+    "MaxConcurrentExternalProcesses": 4,
+    "ExternalProcessTimeoutSeconds": 20
+  },
+  "Passes": [
+    {
+      "Name": "cold",
+      "ElapsedMilliseconds": 3022,
+      "Projects": 20,
+      "ProjectsWithProgress": 14,
+      "ProjectsWithRemainingWork": 11,
+      "StaleProjects": 0,
+      "ScanTruncated": false,
+      "PeakConcurrentProcesses": 4,
+      "DiagnosticCodes": [
+        "BLOCKER_MISSING=74",
+        "EFFORT_EMPTY=2",
+        "TICKET_AMBIGUOUS_STATUS=13",
+        "TICKET_UNRECOGNIZED=67"
+      ]
+    },
+    {
+      "Name": "warm",
+      "ElapsedMilliseconds": 2588,
+      "Projects": 20,
+      "ProjectsWithProgress": 14,
+      "ProjectsWithRemainingWork": 11,
+      "StaleProjects": 0,
+      "ScanTruncated": false,
+      "PeakConcurrentProcesses": 4,
+      "DiagnosticCodes": [
+        "BLOCKER_MISSING=74",
+        "EFFORT_EMPTY=2",
+        "TICKET_AMBIGUOUS_STATUS=13",
+        "TICKET_UNRECOGNIZED=67"
+      ]
+    }
+  ],
+  "Cancellation": {
+    "WaitedForIndexingMilliseconds": 2326,
+    "ExternalCommandsSubmittedBeforeCancelling": 22,
+    "ChildProcessesRunningWhenCancelled": 4,
+    "StillRunningWhenCancelled": true,
+    "LatencyMilliseconds": 59.7477,
+    "StoppedByCancellation": true
+  },
+  "Safety": {
+    "ProjectsFingerprinted": 20,
+    "MonitoredStateChanges": [],
+    "FingerprintGaps": [
+      {
+        "ProjectId": "cf94320ee323",
+        "Subject": "content of a file past the size bound"
+      }
+    ],
+    "RefusedCommands": [],
+    "CommandsIssued": {
+      "git log": 44,
+      "git rev-parse": 80,
+      "git config --list": 34,
+      "git show-ref": 34,
+      "git status": 34
+    }
+  }
+}

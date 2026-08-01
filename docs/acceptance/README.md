@@ -1,12 +1,16 @@
 # Runtime acceptance
 
-Five records, each answering a question the fixtures cannot: whether the dashboard stays read-only
+Six records, each answering a question the fixtures cannot: whether the dashboard stays read-only
 against the owner's real workspaces, whether that stayed true with GitHub enrichment off by default,
-whether the test suite stays off the owner's keyboard, what the running shell does when Windows
-itself moves underneath it, and what the overlay actually looks like on a real desktop. All are made
-on the live machine, and all record their evidence here.
+whether it stays true now that there is no enrichment to turn off, whether the test suite stays off
+the owner's keyboard, what the running shell does when Windows itself moves underneath it, and what
+the overlay actually looks like on a real desktop. All are made on the live machine, and all record
+their evidence here.
 
-**Every record below predates the removal of the GitHub adapter**
+`local-only-removal.json` is described last, and is the only one made *after* the adapter was
+removed.
+
+**Every other record below predates the removal of the GitHub adapter**
 (`.scratch/local-only/issues/01-remove-the-github-adapter.md`). They are kept as evidence of what
 was true at the commit each is stamped with, and they are not re-run here. What changed underneath
 them is named where it matters: the instrument no longer has an offline pass, an association pass,
@@ -342,3 +346,58 @@ recorded window styles of each target, the three layouts over a real composited 
 unaffected by a header string, and re-shooting would replace a record the owner approved frame by
 frame with one taken to make a caption tidy. The current interface is in `docs/images/`, rendered
 from the same fixture by `--capture`, which is a different artifact for a different purpose.
+
+---
+
+# After the adapter went
+
+`local-only-removal.json` is the one record made after the GitHub adapter was removed
+(`.scratch/local-only/issues/01-remove-the-github-adapter.md`). It exists because a fixture cannot
+answer the question the ticket actually asks. A test suite can prove the code has no path to `gh`;
+only a run of the real application over the owner's real workspaces can show that the running thing
+starts no such process.
+
+## Reproducing it
+
+```bash
+dotnet run -c Release --project src/Vantage.App -- --acceptance "$env:TEMP/vantage-acceptance" --stamp $(git rev-parse HEAD)
+```
+
+Same instrument as the read-only scan, minus the offline pass, the association pass and the `gh`
+fingerprint — so the report has no `Offline` or `Associations` section, and `Bounds` no longer
+carries `MaxGitHubIssuesPerRepository`.
+
+## The run recorded here
+
+Against `3206168`, over the owner's two real roots and the 20 projects beneath them:
+
+| | |
+| --- | --- |
+| `CommandsIssued` | `git rev-parse` ×80, `git log` ×44, `git config --list` ×34, `git show-ref` ×34, `git status` ×34 — **no `gh` entry, and no `git remote get-url` either** |
+| `RefusedCommands` | `[]` — so the absence of `gh` is the product not asking, not the boundary hiding an attempt |
+| `MonitoredStateChanges` | `[]` across all 20 projects |
+| Projects / with progress / with remaining work / stale | 20 / 14 / 11 / **0** |
+| Cold vs warm | identical on every count |
+| Exit code | `4` — one pre-existing fingerprint gap (a single file past the size bound), not a safety failure |
+
+**The setting was still on.** The owner's live `settings.json` at the time of this run was schema 2
+and still read `"GitHubEnrichmentEnabled": true`, with all 55 of its project entries still carrying
+`ConfirmedOrigin` and `PendingOrigin`. That is what makes this the evidence for *"no `gh` process is
+ever started, under any setting"* rather than for a default: the flag that used to turn the adapter
+on is still sitting there saying `true`, and it makes no difference, because nothing is left to read
+it.
+
+**The migration is in it too.** The run reads the owner's real settings but writes its own under the
+output directory, and the file it wrote — `state/settings.json`, produced by an ordinary refresh
+through `RefreshService.PersistRegistry`, not by anything the instrument does on purpose — came out
+at schema 3 with none of the four removed keys and none of the 55 entries' origin keys. The owner's
+own file was left exactly as it was found.
+
+## What this run does not claim
+
+It is not a before-and-after. Measuring the same roots on the baseline build would mean either
+issuing real `gh` calls against the owner's account or editing their live settings, and neither is
+worth doing for a number. That the *local* answer is unchanged rests on the engine suite, where
+every projection test — progress, next action, blockers, activity, staleness, pipeline — is the one
+that was there before and still passes. What this run adds is that the same answer still comes out
+of the real application over real workspaces, complete, with nothing marked stale.
