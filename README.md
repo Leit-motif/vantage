@@ -42,7 +42,8 @@ grilling, prototypes, implementation, review, and release.
 
 **Vantage is local-only, and not as a default you can switch off.** It reads local files and local
 git, and it does not read GitHub. There is no adapter, no setting, and no `gh` process — the
-removal and the argument for it are [`.scratch/local-only/`](.scratch/local-only).
+removal and the argument for it are recorded in the planning repository, and the evidence for it is
+in [`docs/acceptance/local-only-removal/`](docs/acceptance/local-only-removal).
 
 Git stays, and stays a primitive: it is offline and deterministic, and gives time, attribution and
 "what changed when" with no network, no auth and no availability question. A remote service levies
@@ -103,8 +104,7 @@ similarly named pieces of work are never silently merged into one.
 Removing GitHub removed the only *producer* of disagreements, not the model: local-versus-remote
 was the instance, not the purpose. The producers that replace it — a working tree against the last
 commit, a stated `Blocked by:` against the ticket it names, two agents writing one file — are
-[`.scratch/local-only/issues/03-conflicts-between-any-two-observations.md`](.scratch/local-only/issues/03-conflicts-between-any-two-observations.md).
-Until that lands, the conflict model has no producer.
+specified but not yet built. Until they land, the conflict model has no producer.
 
 ## What it never does
 
@@ -269,12 +269,11 @@ opaque, so translucency never costs legibility.
 
 ## How it was built
 
-Vantage was specified, implemented and reviewed through coding agents, directed by its author. That
-process is inspectable rather than described: [`.scratch/`](.scratch) holds the originating
-specification in [`workflow-dashboard/spec.md`](.scratch/workflow-dashboard/spec.md) and a series of
-tickets, each paired with the acceptance record that answers it. The v1 tickets mostly begin with
-the word *Prove*; they were tracked as GitHub issues at the time and were migrated here when the
-project moved its own planning into files.
+Vantage was specified, implemented and reviewed through coding agents, directed by its author. The
+specifications and tickets that drove it live in a separate planning repository and are not
+published; what *is* published is the part that can be checked — the commit history, and
+[`docs/acceptance/`](docs/acceptance), where each runtime claim is paired with the record that
+answers it, including the fingerprints proving a run over real workspaces changed nothing.
 
 The corrections are the part worth reading. A commit reclassifying a skipped probe from
 *observed* to *unanswered*, and an issue titled *“Shell-seam tests inject keystrokes into the
