@@ -3,6 +3,7 @@ using Vantage.Core.Projection;
 using Vantage.Core.Workflow;
 using Vantage.Infrastructure;
 using Vantage.Infrastructure.Persistence;
+using Vantage.Infrastructure.Refresh;
 using Vantage.Infrastructure.Settings;
 using Vantage.Tests.TestSupport;
 
@@ -353,10 +354,7 @@ public sealed class ResilienceTests
         store.Save(settings);
         var written = File.ReadAllText(paths.SettingsFile);
 
-        foreach (var key in new[]
-        {
-            "GitHubEnrichmentEnabled", "MaxGitHubIssuesPerRepository", "ConfirmedOrigin", "PendingOrigin",
-        })
+        foreach (var key in RemovedSettingsKeys)
         {
             Assert.IsFalse(
                 written.Contains(key, StringComparison.Ordinal),
@@ -365,6 +363,66 @@ public sealed class ResilienceTests
 
         Assert.IsTrue(written.Contains(@"C:\\Workspaces\\widget", StringComparison.Ordinal), "The entry itself is still there.");
     }
+
+    /// <summary>
+    /// And it is rewritten by the product rather than by a caller who knew to ask. Reading a file
+    /// forward is a change that has not been written yet: on an installation where nothing else
+    /// happens to change — every project already registered, no setting touched — the ordinary
+    /// startup path has to be what carries the migration to disk, or the file stays at the old
+    /// schema carrying keys this build has no code left to honour for as long as it is used.
+    /// </summary>
+    [TestMethod]
+    public async Task An_ordinary_refresh_rewrites_a_migrated_settings_file_with_nothing_else_to_save()
+    {
+        var project = _workspace.NewProject("widget");
+        var canonical = Infrastructure.Discovery.ProjectDiscovery.CanonicalizeFully(project);
+
+        var paths = new AppPaths(Path.Combine(_workspace.Root, "appdata"));
+        paths.EnsureCreated();
+
+        // Every discovered project is already registered, so the refresh has no registry intent of
+        // its own to produce. The migration is the only outstanding change there is.
+        File.WriteAllText(paths.SettingsFile, $$"""
+            {
+              "SchemaVersion": 2,
+              "Roots": [{{System.Text.Json.JsonSerializer.Serialize(_workspace.WorkspacesRoot)}}],
+              "Projects": [
+                {
+                  "Path": {{System.Text.Json.JsonSerializer.Serialize(canonical)}},
+                  "State": "Enabled",
+                  "ConfirmedOrigin": "acme/widget",
+                  "PendingOrigin": "someone-else/other"
+                }
+              ],
+              "GitHubEnrichmentEnabled": true,
+              "MaxGitHubIssuesPerRepository": 200
+            }
+            """);
+
+        var store = new SettingsStore(paths);
+        var settings = store.Load().Settings;
+
+        using var cache = DashboardCache.Open(_workspace.CacheFile);
+        var service = new RefreshService(settings, new FakeProcessRunner(), cache, settingsStore: store);
+        await service.RefreshAsync(CancellationToken.None);
+
+        var written = File.ReadAllText(paths.SettingsFile);
+
+        foreach (var key in RemovedSettingsKeys)
+        {
+            Assert.IsFalse(
+                written.Contains(key, StringComparison.Ordinal),
+                $"An ordinary refresh left '{key}' on disk: {written}");
+        }
+
+        Assert.IsTrue(
+            written.Contains("\"SchemaVersion\": 3", StringComparison.Ordinal),
+            $"And the file is at the schema it was read forward to: {written}");
+        Assert.IsFalse(settings.HasUnsavedChanges, "Nothing is left outstanding once the write succeeds.");
+    }
+
+    private static readonly string[] RemovedSettingsKeys =
+        ["GitHubEnrichmentEnabled", "MaxGitHubIssuesPerRepository", "ConfirmedOrigin", "PendingOrigin"];
 
     [TestMethod]
     public void Settings_round_trip_through_an_atomic_write()

@@ -14,8 +14,8 @@ public sealed record ProcessResult(
 }
 
 /// <summary>
-/// The external-process boundary. Tests substitute this to make success, authentication loss,
-/// timeout, malformed output, partial data, and cancellation deterministic.
+/// The external-process boundary. Tests substitute this to make success, timeout, malformed
+/// output, partial data, and cancellation deterministic.
 /// </summary>
 public interface IProcessRunner
 {
@@ -27,9 +27,9 @@ public interface IProcessRunner
 }
 
 /// <summary>
-/// Runs Git and <c>gh</c> as bounded, cancellable child processes. Arguments are passed as a
-/// structured list and never through a shell, so no monitored content can be interpolated into
-/// a command line. Concurrency is capped globally so a large refresh cannot swamp the machine.
+/// Runs Git as a bounded, cancellable child process. Arguments are passed as a structured list and
+/// never through a shell, so no monitored content can be interpolated into a command line.
+/// Concurrency is capped globally so a large refresh cannot swamp the machine.
 /// </summary>
 public sealed class BoundedProcessRunner : IProcessRunner, IDisposable
 {
@@ -132,8 +132,6 @@ public sealed class BoundedProcessRunner : IProcessRunner, IDisposable
         startInfo.Environment["GIT_CONFIG_VALUE_0"] = "false";
         startInfo.Environment["GIT_CONFIG_KEY_1"] = "diff.external";
         startInfo.Environment["GIT_CONFIG_VALUE_1"] = string.Empty;
-        startInfo.Environment["GH_NO_UPDATE_NOTIFIER"] = "1";
-        startInfo.Environment["GH_PROMPT_DISABLED"] = "1";
         startInfo.Environment["NO_COLOR"] = "1";
 
         foreach (var (name, value) in _environment)

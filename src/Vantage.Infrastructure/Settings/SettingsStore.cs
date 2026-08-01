@@ -93,6 +93,8 @@ public sealed class SettingsStore(AppPaths paths)
             return settings;
         }
 
+        var migrated = settings.SchemaVersion != DashboardSettings.CurrentSchemaVersion;
+
         // Before the ribbon there were two views and one flag to choose between them. Keyed off the
         // flag rather than off the schema version: the flag is only ever written by a build that
         // predates modes, so its presence identifies the file more reliably than a version does.
@@ -100,14 +102,27 @@ public sealed class SettingsStore(AppPaths paths)
         {
             settings.Ui.ViewMode = startCompact ? DashboardViewMode.Compact : DashboardViewMode.Expanded;
             settings.Ui.StartCompact = null;
+            migrated = true;
         }
 
         // Schema 3 removed the remote source's keys, and there is deliberately no step for them.
         // Deserialization reads past a key this build no longer declares, so a file carrying
         // GitHubEnrichmentEnabled, MaxGitHubIssuesPerRepository, ConfirmedOrigin or PendingOrigin
-        // is ordinary configuration rather than a file that failed to parse — it loads clean, and
-        // the next save writes the object, which no longer has anywhere to put them.
+        // is ordinary configuration rather than a file that failed to parse: it loads clean, and
+        // the object it loads into has nowhere to put them.
         settings.SchemaVersion = DashboardSettings.CurrentSchemaVersion;
+
+        // Reading a file forward is a change that has not been written yet. Without saying so, an
+        // installation where nothing else happens to change — no setting touched, no project newly
+        // discovered — keeps a settings.json at the old schema, still carrying keys this build has
+        // no code left to honour, for as long as it is used. Marked rather than saved here, because
+        // deciding what to migrate and choosing to write are different jobs: the first refresh
+        // persists it, and a write that fails leaves it outstanding for the next one.
+        if (migrated)
+        {
+            settings.MarkChanged();
+        }
+
         return settings;
     }
 

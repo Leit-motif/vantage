@@ -129,14 +129,13 @@ New-FixtureProject -Name 'tin-whistle-registry' -Effort 'whistle-catalogue' -Tic
     @{ Title = 'Catalogue the bore sizes';     Status = 'Idle';        Type = 'feature';   Stage = 'Build' }
 )
 
-# The state directory the app is pointed at. Roots names only the fixture tree, and GitHub
-# enrichment is off so nothing reaches the network while frames are being taken.
+# The state directory the app is pointed at. Roots names only the fixture tree, so the only thing
+# on screen while frames are being taken is the fixture.
 New-Item -ItemType Directory -Force -Path $StateDirectory | Out-Null
 $settings = [ordered]@{
     SchemaVersion           = 1
     Roots                   = @($Root)
     Projects                = @()
-    GitHubEnrichmentEnabled = $false
     LaunchAtSignIn          = $false
     Ui                      = [ordered]@{
         Theme                 = 'Dark'
