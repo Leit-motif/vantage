@@ -1,15 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    The engine's own suite, on the framework the engine targets. It references Core, Infrastructure
-    and the portable fixtures, and nothing else — a net10.0 project cannot reference a
-    net10.0-windows one, so this compiling at all is what proves the engine stayed portable.
+    Everything that needs Windows to be true: the overlay's own contract, read back from a real
+    HWND, and the registry intent that travels through the Settings view model.
   -->
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <RootNamespace>Vantage.Tests</RootNamespace>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Vantage.Core\Vantage.Core.csproj" />
     <ProjectReference Include="..\..\src\Vantage.Infrastructure\Vantage.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Vantage.App\Vantage.App.csproj" />
     <ProjectReference Include="..\Vantage.Tests.Support\Vantage.Tests.Support.csproj" />
   </ItemGroup>
 

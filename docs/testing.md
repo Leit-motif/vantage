@@ -1,6 +1,34 @@
 # Testing the running shell
 
-Most of this suite needs nothing from Windows. A handful of tests need everything from it: the
+## Two suites, along the line the code already draws
+
+Most of this suite needs nothing from Windows, and now says so in the only way a build can check:
+
+| project | target | holds |
+| --- | --- | --- |
+| `tests/Vantage.Tests` | `net10.0` | the domain and the refresh seam — the engine |
+| `tests/Vantage.Tests.Shell` | `net10.0-windows` | the overlay, and anything that reaches Windows to be true |
+| `tests/Vantage.Tests.Support` | `net10.0` | the fixtures both use |
+
+A `net10.0` project cannot reference a `net10.0-windows` one. So `Vantage.Tests` compiling is itself
+the evidence that `Core` and `Infrastructure` have not acquired a Windows dependency — a property
+this codebase had by good structure and now has by arithmetic.
+
+Two things landed on the Windows side that a reader might expect to find on the other:
+
+- **`RegistryControlTests`.** Its subject is refresh-seam behaviour — registry intent written,
+  reloaded, and honoured — but it drives that through `SettingsViewModel`, which constructs a
+  `StartupRegistration` and reads the `Run` key the moment it is built. That makes it a Windows
+  test whatever it is about. The engine's own registry-intent behaviour, driven through
+  `DashboardSettings` and `SettingsStore` directly, has no portable coverage of its own yet.
+- **Junctions.** `Junction.TryCreate` shells out to `mklink /J`, so on a host with no `cmd.exe` it
+  reports failure rather than throwing, and its callers report inconclusive. The discovery tests
+  that ask whether one place reached by two routes is one project are Windows-only in effect, and
+  a macOS run will say so out loud rather than passing on nothing.
+
+## The shell half
+
+A handful of tests need everything from Windows: the
 dashboard is an overlay whose whole job is described in Win32 terms — stay above other windows,
 stay out of the taskbar, never take the keyboard, come back when the tray asks. A view model that
 agreed to be topmost is not evidence that anything is, so those tests drive a real window with a
@@ -107,4 +135,5 @@ There is none left to classify. An earlier attempt at this problem reported a te
 when another window stole the foreground mid-run, and named the process that took it. That
 distinction was right for tests running on the owner's desktop, and is meaningless on a desktop the
 owner cannot reach: these tests are deterministic now, so a failure is a failure. They run in the
-default `dotnet test` alongside everything else, and CI runs one suite rather than two.
+default `dotnet test` alongside everything else. CI runs the two projects as two steps, so an
+engine that reached for Windows fails in a step that names the engine.

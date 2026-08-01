@@ -1,4 +1,3 @@
-// The WinForms/WPF SDK replaces the default implicit usings and drops System.IO, so the
-// namespaces this test project relies on are declared here explicitly.
-global using System.IO;
+// A plain net10.0 project, so the SDK's implicit usings already cover System.IO. Only the test
+// framework has to be declared.
 global using Microsoft.VisualStudio.TestTools.UnitTesting;

@@ -13,6 +13,12 @@ namespace Vantage.Tests.RefreshSeam;
 /// These are automated tests over temporary fixtures. They drive the view model and the refresh
 /// boundary, not the running WPF application, and they prove nothing about the real configured
 /// roots — live-root and running-shell acceptance belong to their own tickets.
+///
+/// Refresh-seam subject matter, in the shell suite: the door these tests open on it is
+/// <see cref="SettingsViewModel"/>, which builds a <c>StartupRegistration</c> and reads the
+/// Windows <c>Run</c> key on construction. That makes them Windows tests whatever they are about.
+/// The engine's own registry-intent behaviour, driven through <c>DashboardSettings</c> and
+/// <c>SettingsStore</c> directly, has no portable coverage of its own yet.
 /// </summary>
 [TestClass]
 public sealed class RegistryControlTests
@@ -197,7 +203,7 @@ public sealed class RegistryControlTests
 
         var typed = Path.Combine(host, "node_modules", "companion");
         Directory.CreateDirectory(Path.Combine(host, "node_modules"));
-        if (!DiscoveryTests.TryCreateJunction(typed, target))
+        if (!Junction.TryCreate(typed, target))
         {
             Assert.Inconclusive("This host cannot create a directory junction.");
         }
@@ -228,7 +234,7 @@ public sealed class RegistryControlTests
         var target = Path.Combine(_workspace.Root, "external-deps");
         _workspace.WriteFile(Path.Combine(target, "companion", "AGENTS.md"), "# a plain directory inside a linked tree\n");
 
-        if (!DiscoveryTests.TryCreateJunction(Path.Combine(host, "node_modules"), target))
+        if (!Junction.TryCreate(Path.Combine(host, "node_modules"), target))
         {
             Assert.Inconclusive("This host cannot create a directory junction.");
         }
@@ -266,7 +272,7 @@ public sealed class RegistryControlTests
         _workspace.WriteFile(Path.Combine(companion, "AGENTS.md"), "# reachable two ways\n");
         _harness.Settings.Roots.Add(directRoot);
 
-        if (!DiscoveryTests.TryCreateJunction(Path.Combine(host, "node_modules"), directRoot))
+        if (!Junction.TryCreate(Path.Combine(host, "node_modules"), directRoot))
         {
             Assert.Inconclusive("This host cannot create a directory junction.");
         }
@@ -311,7 +317,7 @@ public sealed class RegistryControlTests
         _workspace.WriteFile(Path.Combine(project, "AGENTS.md"), "# recorded under an alias\n");
 
         var alias = Path.Combine(_workspace.Root, "alias");
-        if (!DiscoveryTests.TryCreateJunction(alias, actual))
+        if (!Junction.TryCreate(alias, actual))
         {
             Assert.Inconclusive("This host cannot create a directory junction.");
         }

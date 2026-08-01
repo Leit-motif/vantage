@@ -28,8 +28,13 @@ jobs:
       - name: Build
         run: dotnet build Vantage.slnx --configuration Release --no-restore
 
-      - name: Test
-        run: dotnet test tests/Vantage.Tests/Vantage.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=results.trx"
+      # The portable suite first and on its own, so a Windows dependency reaching the engine is a
+      # distinct red step rather than something buried in a run that also drives a WPF shell.
+      - name: Test the portable engine
+        run: dotnet test tests/Vantage.Tests/Vantage.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=engine.trx"
+
+      - name: Test the Windows shell
+        run: dotnet test tests/Vantage.Tests.Shell/Vantage.Tests.Shell.csproj --configuration Release --no-build --logger "trx;LogFileName=shell.trx"
 
       - name: Validate the shipping publish configuration
         run: dotnet publish src/Vantage.App/Vantage.App.csproj -p:PublishProfile=win-x64 --configuration Release --output ${{ runner.temp }}/publish
