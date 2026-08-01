@@ -153,7 +153,8 @@ The dependency direction is the point: `Core` knows nothing about WPF, SQLite, G
 rules about what may be believed are testable without any of them present. The test split is what
 holds that to account — `Vantage.Tests` targets `net10.0`, and a `net10.0` project cannot reference
 a `net10.0-windows` one, so the engine acquiring a Windows dependency stops being something a reader
-has to notice.
+has to notice. CI also runs that suite on Linux and macOS, because compiling without a Windows
+reference and running without Windows are different claims.
 
 ## Build and run
 

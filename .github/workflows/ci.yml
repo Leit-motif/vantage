@@ -12,6 +12,27 @@ permissions:
   contents: read
 
 jobs:
+  # The engine, on hosts that are not Windows. Targeting net10.0 stops the engine referencing a
+  # Windows assembly, but only running it somewhere else shows that the APIs it calls and the
+  # tools it shells out to are there — which is the claim, and the one a Windows job cannot make.
+  # macOS is where the shell is going; Linux is the cheap early warning.
+  engine:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Test the portable engine off Windows
+        run: dotnet test tests/Vantage.Tests/Vantage.Tests.csproj --configuration Release --logger "trx;LogFileName=engine-${{ matrix.os }}.trx"
+
   build:
     runs-on: windows-latest
 

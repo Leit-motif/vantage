@@ -14,17 +14,27 @@ A `net10.0` project cannot reference a `net10.0-windows` one. So `Vantage.Tests`
 the evidence that `Core` and `Infrastructure` have not acquired a Windows dependency — a property
 this codebase had by good structure and now has by arithmetic.
 
-Two things landed on the Windows side that a reader might expect to find on the other:
+Compiling is not the whole claim, though, and on its own it would be a weak one: it says the engine
+holds no Windows *reference*, not that the APIs it calls and the tools it shells out to exist
+anywhere else. So CI runs `Vantage.Tests` on `ubuntu-latest` and `macos-latest` as well — a job that
+fails if the engine reaches for something only Windows has, which is the thing a Windows job cannot
+notice.
 
-- **`RegistryControlTests`.** Its subject is refresh-seam behaviour — registry intent written,
-  reloaded, and honoured — but it drives that through `SettingsViewModel`, which constructs a
-  `StartupRegistration` and reads the `Run` key the moment it is built. That makes it a Windows
-  test whatever it is about. The engine's own registry-intent behaviour, driven through
-  `DashboardSettings` and `SettingsStore` directly, has no portable coverage of its own yet.
-- **Junctions.** `Junction.TryCreate` shells out to `mklink /J`, so on a host with no `cmd.exe` it
-  reports failure rather than throwing, and its callers report inconclusive. The discovery tests
-  that ask whether one place reached by two routes is one project are Windows-only in effect, and
-  a macOS run will say so out loud rather than passing on nothing.
+Registry intent is split rather than moved wholesale, because only half of it needs Windows:
+
+- **`RegistryIntentTests`** (portable) drives `DashboardSettings` and `SettingsStore` directly —
+  intent written when it is made, carried to a resolved identity, held through a cancelled pass,
+  reported when an opt-in names somewhere unreachable.
+- **`RegistryControlTests`** (Windows) drives the same subject through `SettingsViewModel`, which
+  constructs a `StartupRegistration` and reads the `Run` key the moment it is built. Every test that
+  opens Settings is a Windows test whatever it is about; none of the others is.
+
+`DirectoryLink.TryCreate` is the other place the platforms differ on purpose. Discovery asks whether
+one place on disk reached by two routes is one project or two, and the product answers with
+`DirectoryInfo.ResolveLinkTarget`, which resolves both kinds of link. So the fixture makes a junction
+via `mklink /J` on Windows and a directory symbolic link everywhere else — the same question, asked
+in the local vocabulary — and reports failure rather than throwing if a host refuses, so callers can
+report inconclusive instead of erroring.
 
 ## The shell half
 
@@ -135,5 +145,6 @@ There is none left to classify. An earlier attempt at this problem reported a te
 when another window stole the foreground mid-run, and named the process that took it. That
 distinction was right for tests running on the owner's desktop, and is meaningless on a desktop the
 owner cannot reach: these tests are deterministic now, so a failure is a failure. They run in the
-default `dotnet test` alongside everything else. CI runs the two projects as two steps, so an
-engine that reached for Windows fails in a step that names the engine.
+default `dotnet test` alongside everything else. CI runs the two projects as two steps on Windows,
+so an engine that reached for Windows fails in a step that names the engine, and runs the engine
+again on Linux and macOS where reaching for Windows is not a style question.

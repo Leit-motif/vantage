@@ -36,10 +36,7 @@ public sealed class AcceptanceInstrumentTests
         _workspace.Commit(project, "initial");
 
         var mark = Path.Combine(_workspace.Root, "fsmonitor-ran.txt");
-        var hook = Path.Combine(_workspace.Root, "fsmonitor.bat");
-
-        // A batch file rather than a script: it is what cmd will actually execute on this machine.
-        File.WriteAllText(hook, $"@echo off\r\n> \"{mark}\" echo ran\r\n");
+        var hook = WriteMarkingProgram("fsmonitor", mark);
         _workspace.Git(project, "config", "core.fsmonitor", hook.Replace('\\', '/'));
 
         using var hardened = new BoundedProcessRunner(2, TimeSpan.FromSeconds(30));
@@ -82,7 +79,9 @@ public sealed class AcceptanceInstrumentTests
         _workspace.InitGitRepository(project);
         _workspace.Commit(project, "initial");
 
-        var hook = Path.Combine(_workspace.Root, "difftool.bat").Replace('\\', '/');
+        // Never executed — this test asserts the value git resolves, not a program observed
+        // running — but named the way the platform would name one, so it reads as what it is.
+        var hook = Path.Combine(_workspace.Root, ProgramName("difftool")).Replace('\\', '/');
         _workspace.Git(project, "config", "diff.external", hook);
 
         string[] read = ["-C", project, "config", "--get", "diff.external"];
@@ -270,5 +269,34 @@ public sealed class AcceptanceInstrumentTests
         Assert.IsFalse(
             Directory.Exists(inside.Root),
             "Refusing after creating the directory would already have changed the workspace.");
+    }
+
+    /// <summary>What a program a repository could plant would actually be called on this host.</summary>
+    private static string ProgramName(string stem) =>
+        OperatingSystem.IsWindows() ? $"{stem}.bat" : $"{stem}.sh";
+
+    /// <summary>
+    /// A program git will really run, which leaves a file behind when it does. The attack half of
+    /// these tests has to be able to fire, so this is written in whatever the host actually
+    /// executes — a batch file for cmd, or a shell script with the executable bit set.
+    /// </summary>
+    private string WriteMarkingProgram(string stem, string mark)
+    {
+        var path = Path.Combine(_workspace.Root, ProgramName(stem));
+
+        if (OperatingSystem.IsWindows())
+        {
+            File.WriteAllText(path, $"@echo off\r\n> \"{mark}\" echo ran\r\n");
+            return path;
+        }
+
+        File.WriteAllText(path, $"#!/bin/sh\necho ran > \"{mark}\"\n");
+        File.SetUnixFileMode(
+            path,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+            | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+            | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+
+        return path;
     }
 }
