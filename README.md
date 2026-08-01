@@ -265,10 +265,11 @@ opaque, so translucency never costs legibility.
 ## How it was built
 
 Vantage was specified, implemented and reviewed through coding agents, directed by its author. That
-process is inspectable rather than described: the
-[issue tracker](https://github.com/Leit-motif/vantage/issues) holds the originating specification in
-[#1](https://github.com/Leit-motif/vantage/issues/1) and a series of tickets that mostly begin with
-the word *Prove*, each paired with the acceptance record that answers it.
+process is inspectable rather than described: [`.scratch/`](.scratch) holds the originating
+specification in [`workflow-dashboard/spec.md`](.scratch/workflow-dashboard/spec.md) and a series of
+tickets, each paired with the acceptance record that answers it. The v1 tickets mostly begin with
+the word *Prove*; they were tracked as GitHub issues at the time and were migrated here when the
+project moved its own planning into files.
 
 The corrections are the part worth reading. A commit reclassifying a skipped `gh` probe from
 *observed* to *unanswered*, and an issue titled *“Shell-seam tests inject keystrokes into the

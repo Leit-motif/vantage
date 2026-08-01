@@ -17,6 +17,19 @@ public enum AppTheme
     Light,
 }
 
+/// <summary>
+/// How much of the dashboard is on screen. The ribbon is not a smaller window but a different
+/// thing — one line carrying one project, collapsed out of the way. The rest are the standard
+/// views, which all show a project list, in ascending size.
+/// </summary>
+public enum DashboardViewMode
+{
+    Ribbon,
+    Compact,
+    Expanded,
+    Full,
+}
+
 public sealed class ProjectRegistryEntry
 {
     public string Path { get; set; } = string.Empty;
@@ -88,7 +101,16 @@ public sealed class UiSettings
     /// </summary>
     public int SurfaceOpacityPercent { get; set; } = 80;
 
-    public bool StartCompact { get; set; } = true;
+    /// <summary>Which view the dashboard opens in — the one the owner last left it in.</summary>
+    public DashboardViewMode ViewMode { get; set; } = DashboardViewMode.Compact;
+
+    /// <summary>
+    /// Superseded by <see cref="ViewMode"/>, and kept only long enough to read a file written
+    /// before the ribbon existed: its presence is what identifies such a file. Migration clears it,
+    /// and a null is never written back, so it disappears from settings.json on the first save.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? StartCompact { get; set; }
 
     /// <summary>Off by default, and only ever turned on deliberately: it is hard to undo by mouse.</summary>
     public bool ClickThrough { get; set; }
@@ -114,7 +136,7 @@ public sealed class UiSettings
 /// <summary>Atomic, versioned configuration. The only file the dashboard writes on the owner's behalf.</summary>
 public sealed class DashboardSettings
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 

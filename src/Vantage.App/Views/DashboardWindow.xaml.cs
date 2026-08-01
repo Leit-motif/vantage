@@ -25,17 +25,35 @@ public partial class DashboardWindow : Window
     /// </summary>
     public static readonly TimeSpan GeometrySettleDelay = TimeSpan.FromMilliseconds(750);
 
+    /// <summary>
+    /// The floor for the views that show a project list — enough for the header, the filters and a
+    /// row or two. The ribbon has no floor at all: being exactly as tall as one line of text is the
+    /// thing it exists to be, and any minimum here would be a minimum on that.
+    /// </summary>
+    public const double StandardMinHeight = 220;
+
+    /// <summary>The detail column's width in the views the owner sizes by hand.</summary>
+    public const double DefaultDetailPaneWidth = 320;
+
     private readonly DashboardViewModel _viewModel;
     private readonly DashboardSettings _settings;
     private readonly Action _saveSettings;
     private readonly DispatcherTimer _geometrySettling;
     private bool _reallyExiting;
+    private bool _applyingMode;
+
+    /// <summary>The mode the window is currently shaped for, which is what a change is a change from.</summary>
+    private DashboardViewMode _appliedMode;
+
+    /// <summary>The window's own bounds before it filled the display, which are the ones to come back to.</summary>
+    private Rect? _beforeFullScreen;
 
     public DashboardWindow(DashboardViewModel viewModel, DashboardSettings settings, Action saveSettings)
     {
         _viewModel = viewModel;
         _settings = settings;
         _saveSettings = saveSettings;
+        _appliedMode = viewModel.Mode;
 
         InitializeComponent();
         DataContext = viewModel;
@@ -167,8 +185,18 @@ public partial class DashboardWindow : Window
     private void RestoreGeometry()
     {
         var geometry = _settings.Ui.Geometry;
-        Height = geometry.Height;
-        Width = _viewModel.IsExpanded ? geometry.ExpandedWidth : geometry.CompactWidth;
+        ApplyDetailPaneShare();
+
+        if (_viewModel.IsFullScreen)
+        {
+            // Placed on the display the saved position names, then filled: opening full screen on
+            // the primary monitor when the owner left it on a second one is not restoring anything.
+            PlaceForFullScreen(geometry);
+            return;
+        }
+
+        ApplyModeSize();
+        Width = _viewModel.ShellWidth;
 
         if (geometry.Left is not { } left || geometry.Top is not { } top)
         {
@@ -186,6 +214,18 @@ public partial class DashboardWindow : Window
         Top = safeTop;
     }
 
+    private void PlaceForFullScreen(WindowGeometry geometry)
+    {
+        if (geometry.Left is { } left && geometry.Top is { } top)
+        {
+            var (savedLeft, savedTop) = WindowInterop.Reinterpret(left, top, geometry.DpiScale, DpiScale);
+            Left = savedLeft;
+            Top = savedTop;
+        }
+
+        FillTheDisplay();
+    }
+
     private void PlaceNearTopRight()
     {
         var (left, top) = WindowInterop.EnsureOnScreen(double.MinValue, double.MinValue, Width, Height, DpiScale);
@@ -200,7 +240,15 @@ public partial class DashboardWindow : Window
     /// </summary>
     private void PersistGeometry()
     {
-        if (!IsLoaded || WindowState != WindowState.Normal)
+        if (!IsLoaded || WindowState != WindowState.Normal || _applyingMode)
+        {
+            return;
+        }
+
+        // Full screen is the monitor's geometry rather than the owner's. Nothing about where the
+        // window sits or how big it is while it is there describes the view they come back to, so
+        // none of it is theirs to record.
+        if (_viewModel.IsFullScreen)
         {
             return;
         }
@@ -210,9 +258,18 @@ public partial class DashboardWindow : Window
 
         geometry.Left = Left;
         geometry.Top = Top;
-        geometry.Height = Height;
 
-        if (_viewModel.IsExpanded)
+        // The ribbon's height is its content's rather than a size the owner chose. Writing it would
+        // overwrite the height of the view they collapsed from, and they would come back out of the
+        // ribbon into a one-line-tall window.
+        if (!_viewModel.IsRibbon)
+        {
+            geometry.Height = Height;
+        }
+
+        // The ribbon is the small view folded down, so it shares that view's width: dragging
+        // either one longer is the same statement about how much room the dashboard may take.
+        if (_viewModel.Mode == DashboardViewMode.Expanded)
         {
             geometry.ExpandedWidth = Width;
         }
@@ -266,16 +323,174 @@ public partial class DashboardWindow : Window
     }
 
     /// <summary>Re-applies the size the owner chose for the mode they just switched into.</summary>
-    public void ApplyModeWidth()
+    public void ApplyMode()
     {
-        Width = _viewModel.IsExpanded
-            ? _settings.Ui.Geometry.ExpandedWidth
-            : _settings.Ui.Geometry.CompactWidth;
+        var previous = _appliedMode;
+        _appliedMode = _viewModel.Mode;
 
-        var (left, top) = WindowInterop.EnsureOnScreen(Left, Top, Width, Height, DpiScale);
+        if (_viewModel.IsFullScreen)
+        {
+            // Where the window was before it borrowed the display, so leaving can put it back
+            // against the edge it was actually against.
+            _beforeFullScreen = new Rect(Left, Top, ActualWidth, ActualHeight);
+
+            _applyingMode = true;
+            try
+            {
+                ApplyDetailPaneShare();
+                FillTheDisplay();
+            }
+            finally
+            {
+                _applyingMode = false;
+            }
+
+            return;
+        }
+
+        // Which edge to hold is a question about where the window is now, so it is read before
+        // anything moves. Coming out of full screen the answer is about where it was before it
+        // went in: a window filling the whole display is near no edge in particular, and asking
+        // there would anchor against the middle of a monitor it had only borrowed.
+        var from = previous == DashboardViewMode.Full && _beforeFullScreen is { } outer
+            ? outer
+            : new Rect(Left, Top, ActualWidth, ActualHeight);
+
+        var anchor = AnchorOf(from);
+
+        // Re-shaping the window raises a size change per step of the re-shaping, and every one of
+        // those looks exactly like the owner resizing it. Held shut for the duration, so the sizes
+        // the window passes through on the way are not mistaken for a size they chose.
+        _applyingMode = true;
+        try
+        {
+            ApplyDetailPaneShare();
+
+            Left = from.Left;
+            Top = from.Top;
+
+            ApplyModeSize();
+            Width = _viewModel.ShellWidth;
+        }
+        finally
+        {
+            _applyingMode = false;
+        }
+
+        // After layout rather than now: in the ribbon the new height is the content's, and the
+        // content has not been measured yet. Applied here, the anchor would be holding an edge
+        // against the height of the view being left rather than the one being entered.
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => Reanchor(anchor));
+    }
+
+
+    /// <summary>
+    /// Which edges the window holds still when it changes shape, and where they are. The nearest
+    /// ones, decided from where the window sits right now rather than from anything recorded:
+    /// parked against the right of the screen, growing to the right is growing off it, and the
+    /// window ends up shoved sideways instead of simply opening.
+    /// <para>
+    /// Nothing about this is stored. A window dragged to the other side of the screen anchors to
+    /// the other side the very next time, with no setting to notice or change.
+    /// </para>
+    /// </summary>
+    private Anchor AnchorOf(Rect bounds)
+    {
+        var area = WindowInterop.WorkAreaAt(bounds.Left, bounds.Top, DpiScale);
+
+        return new Anchor(
+            HoldsRightEdge: bounds.Left + (bounds.Width / 2) > area.Left + (area.Width / 2),
+            Right: bounds.Right,
+            HoldsBottomEdge: bounds.Top + (bounds.Height / 2) > area.Top + (area.Height / 2),
+            Bottom: bounds.Bottom);
+    }
+
+    private void Reanchor(Anchor anchor)
+    {
+        if (anchor.HoldsRightEdge)
+        {
+            Left = anchor.Right - ActualWidth;
+        }
+
+        if (anchor.HoldsBottomEdge)
+        {
+            Top = anchor.Bottom - ActualHeight;
+        }
+
+        KeepOnScreen();
+    }
+
+
+    /// <summary>
+    /// How tall the window is allowed to be in the mode it is now in. The standard views keep the
+    /// height the owner sized them to; the ribbon takes the height of its one line, which is why
+    /// the floor has to come off before the content is asked.
+    /// </summary>
+    private void ApplyModeSize()
+    {
+        if (_viewModel.IsRibbon)
+        {
+            MinHeight = 0;
+            SizeToContent = SizeToContent.Height;
+            return;
+        }
+
+        // Read before anything is touched. Restoring the floor and turning manual sizing back on
+        // each resize the window, and reading afterwards would be reading a height the window was
+        // passing through rather than the one being restored.
+        var restored = Math.Max(_settings.Ui.Geometry.Height, StandardMinHeight);
+
+        SizeToContent = SizeToContent.Manual;
+        MinHeight = StandardMinHeight;
+        Height = restored;
+    }
+
+    /// <summary>
+    /// Fills the display the window is currently on. The working area rather than the whole
+    /// screen, and by explicit bounds rather than by maximizing: a borderless window told to
+    /// maximize covers the taskbar, and this overlay is meant to sit alongside the desktop rather
+    /// than take it over. It also never leaves the monitor the owner had it on for the primary one.
+    /// </summary>
+    private void FillTheDisplay()
+    {
+        SizeToContent = SizeToContent.Manual;
+        MinHeight = StandardMinHeight;
+
+        var area = WindowInterop.WorkAreaAt(Left, Top, DpiScale);
+        Left = area.Left;
+        Top = area.Top;
+        Width = area.Width;
+        Height = area.Height;
+    }
+
+    /// <summary>
+    /// How much of the body the detail column takes. It is a fixed column at the widths the owner
+    /// sizes by hand, because the list is what those views are for; filling the display is them
+    /// asking to read the evidence, so there the column grows with the window instead of leaving
+    /// every sentence in it wrapping at 320 units.
+    /// </summary>
+    private void ApplyDetailPaneShare()
+    {
+        if (_viewModel.IsFullScreen)
+        {
+            DetailColumn.Width = new GridLength(0.5, GridUnitType.Star);
+            DetailPane.Width = double.NaN;
+            return;
+        }
+
+        DetailColumn.Width = GridLength.Auto;
+        DetailPane.Width = DefaultDetailPaneWidth;
+    }
+
+    private void KeepOnScreen()
+    {
+        var (left, top) = WindowInterop.EnsureOnScreen(Left, Top, ActualWidth, ActualHeight, DpiScale);
         Left = left;
         Top = top;
     }
 
     public HwndSource? Source => (HwndSource?)PresentationSource.FromVisual(this);
+
+    /// <summary>The edges a re-shaped window holds still, and where they were before it changed.</summary>
+    private readonly record struct Anchor(bool HoldsRightEdge, double Right, bool HoldsBottomEdge, double Bottom);
 }

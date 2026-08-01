@@ -30,6 +30,21 @@ public static class ProjectMarkers
     public const string Scratch = ".scratch";
 
     public static readonly IReadOnlyList<string> All = [Git, Agents, IssueTracker, Scratch];
+
+    /// <summary>
+    /// The markers that make a place a project. A repository is not one on its own: a checkout is
+    /// how code arrives on a machine, not evidence that it is work the owner is doing. Vendored
+    /// dependencies, cloned tools and reference material are all repositories too, and a dashboard
+    /// that lists them is answering a question nobody asked. Each of these, by contrast, is
+    /// somebody having set the place up to be worked in.
+    /// <para>
+    /// <see cref="Git"/> is still detected — it is what the git adapter reads activity from — it
+    /// just does not, by itself, put a row on the dashboard.
+    /// </para>
+    /// </summary>
+    public static readonly IReadOnlyList<string> Qualifying = [Agents, IssueTracker, Scratch];
+
+    public static bool Qualifies(IEnumerable<string> markers) => markers.Any(Qualifying.Contains);
 }
 
 /// <summary>
@@ -143,7 +158,7 @@ public sealed class ProjectDiscovery(DashboardSettings settings)
                 var markers = DetectMarkers(path, diagnostics);
                 var owningProject = owner;
 
-                if (markers.Count > 0)
+                if (ProjectMarkers.Qualifies(markers))
                 {
                     // One place on disk is one project, whichever route arrived at it first.
                     if (emitted.Add(path))

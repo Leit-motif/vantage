@@ -53,6 +53,16 @@ public sealed class GitHubCliAdapter(IProcessRunner runner, int maxIssues = 200)
 
         if (!result.Succeeded)
         {
+            // A repository with its issue tracker switched off has answered the question: it has
+            // no issues. That is a fact about the repository, not a source that could not be
+            // reached, and reporting it as unavailable marks the project as showing cached
+            // evidence for a read that will never succeed — on every refresh, forever. Forks
+            // arrive with issues disabled by default, so this is the ordinary case, not an edge.
+            if (HasIssuesDisabled(result.StandardError))
+            {
+                return new GitHubReadResult(true, [], diagnostics);
+            }
+
             diagnostics.Add(Classify(result, origin));
             return GitHubReadResult.Unavailable(diagnostics);
         }
@@ -159,6 +169,16 @@ public sealed class GitHubCliAdapter(IProcessRunner runner, int maxIssues = 200)
     /// Distinguishes the failures that mean different things to the owner: a missing tool, a lost
     /// session, a hung call, and an ordinary API failure are not the same problem.
     /// </summary>
+    /// <summary>
+    /// Whether gh is reporting a repository whose issue tracker is switched off. Matched on the
+    /// message because gh exits non-zero either way and offers nothing else to tell this apart
+    /// from a read that genuinely failed.
+    /// </summary>
+    private static bool HasIssuesDisabled(string error) =>
+        error.Contains("has disabled issues", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("issues are disabled", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("issues disabled", StringComparison.OrdinalIgnoreCase);
+
     private static Diagnostic Classify(ProcessResult result, GitHubOrigin origin)
     {
         if (result.NotFound)

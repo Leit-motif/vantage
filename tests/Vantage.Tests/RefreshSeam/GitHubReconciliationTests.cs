@@ -1,5 +1,6 @@
 using Vantage.Core;
 using Vantage.Core.Projection;
+using Vantage.Infrastructure.Processes;
 using Vantage.Infrastructure.Settings;
 using Vantage.Tests.TestSupport;
 
@@ -269,6 +270,30 @@ public sealed class GitHubReconciliationTests
 
         Assert.IsTrue(view.HasDiagnostic(DiagnosticCode.GitHubUnavailable));
         Assert.AreEqual(1, view.Progress.Total);
+    }
+
+    /// <summary>
+    /// A repository with its issue tracker switched off has answered the question: it has no
+    /// issues. That is a fact about the repository, not a source that could not be reached — and
+    /// the difference matters, because an unreachable source marks the project as showing cached
+    /// evidence on every refresh for a read that can never succeed. Forks arrive with issues
+    /// disabled by default, so this is the ordinary case rather than an edge.
+    /// </summary>
+    [TestMethod]
+    public async Task A_repository_with_issues_switched_off_has_no_issues_rather_than_no_answer()
+    {
+        LinkedProject(Fixtures.Ticket("Local work", "ready"));
+        _runner.WhenCommand(
+            "gh",
+            "issue",
+            new ProcessResult(1, string.Empty, "the 'owner/widget' repository has disabled issues", false, false));
+
+        var view = (await _harness.RefreshAsync()).Project("widget");
+
+        Assert.IsTrue(view.GitHubAvailable, "Issues being switched off is an answer, not a failure to reach the source.");
+        Assert.IsFalse(view.IsStale, "So the project is not showing last-known-good, and refreshing can clear it.");
+        Assert.IsFalse(view.HasDiagnostic(DiagnosticCode.GitHubUnavailable));
+        Assert.AreEqual(1, view.Progress.Total, "The local half is unaffected.");
     }
 
     [TestMethod]

@@ -214,8 +214,234 @@ public sealed class RunningShellTests
 
         Assert.IsTrue(_viewModel.IsExpanded);
         Assert.AreEqual(720 * scale, Win32Window.BoundsOf(handle).Width, 2d, "Expanding has to resize the real window.");
-        Assert.AreEqual("Compact", shell.TrayLabelStartingWith("Compact"), "The tray now offers the way back.");
+        Assert.AreEqual("Full screen", shell.TrayLabelStartingWith("Full"), "The tray offers the next step of the cycle.");
     }
+
+    /// <summary>
+    /// Full screen, asked of Windows: the window has to actually fill the display it was on, stop
+    /// at the taskbar, and hand the owner back the geometry they had when it lets go.
+    /// </summary>
+    [TestMethod]
+    public void Full_screen_fills_the_work_area_and_gives_the_owner_their_own_geometry_back()
+    {
+        _settings.Ui.Geometry.ExpandedWidth = 720;
+        _settings.Ui.Geometry.Height = 520;
+        _viewModel.Mode = DashboardViewMode.Expanded;
+
+        using var shell = Start();
+        var handle = shell.Handle;
+        var scale = WpfTestHost.Run(() => VisualTreeHelper.GetDpi(shell.Window).DpiScaleX);
+        var before = Win32Window.BoundsOf(handle);
+
+        var workArea = WpfTestHost.Run(() =>
+            WindowInterop.WorkAreaAt(shell.Window.Left, shell.Window.Top, scale));
+
+        shell.ClickTray("Full screen");
+        RunningShell.PumpUntil(() => Win32Window.BoundsOf(handle).Width > before.Width, TimeSpan.FromSeconds(2));
+
+        var filled = Win32Window.BoundsOf(handle);
+        Assert.AreEqual(workArea.Width * scale, filled.Width, 2d, "Full screen fills the display it was already on.");
+        Assert.AreEqual(workArea.Height * scale, filled.Height, 2d, "Working area, so the taskbar is still there.");
+
+        var screen = System.Windows.Forms.Screen.FromHandle(handle).Bounds;
+        Assert.IsTrue(
+            filled.Height <= screen.Height,
+            "A borderless window told to maximize covers the taskbar; this one must not.");
+
+        shell.ClickTray("Compact");
+        RunningShell.PumpUntil(() => Win32Window.BoundsOf(handle).Width < filled.Width, TimeSpan.FromSeconds(2));
+        shell.ClickTray("Expand");
+        RunningShell.PumpUntil(() => Win32Window.BoundsOf(handle).Width > 700 * scale, TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(720 * scale, Win32Window.BoundsOf(handle).Width, 2d, "The expanded width they chose survived the trip.");
+        Assert.AreEqual(720, _settings.Ui.Geometry.ExpandedWidth, 0.5d, "Full screen's own size was never written over it.");
+        Assert.AreEqual(520, _settings.Ui.Geometry.Height, 0.5d);
+    }
+
+    /// <summary>
+    /// The claim the ribbon exists to make, asked of Windows rather than of the view model: a mode
+    /// that says it is one line but leaves a 220-unit window on the desktop has not collapsed
+    /// anything. The bound is a line of body text plus the row's own padding, well under the
+    /// standard view's floor and nowhere near tight enough to be measuring the font.
+    /// </summary>
+    [TestMethod]
+    public void The_ribbon_leaves_a_window_one_line_tall_and_gives_the_owner_their_height_back()
+    {
+        _settings.Ui.Geometry.Height = 520;
+
+        using var shell = Start();
+        var handle = shell.Handle;
+        var scale = WpfTestHost.Run(() => VisualTreeHelper.GetDpi(shell.Window).DpiScaleX);
+
+        var standardHeight = Win32Window.BoundsOf(handle).Height;
+        Assert.AreEqual(520 * scale, standardHeight, 2d, "The standard view opens at the height the owner chose.");
+
+        shell.ClickTray("Expand");
+        WpfTestHost.Run(() => _viewModel.ToggleRibbon());
+        RunningShell.Pump();
+        RunningShell.PumpUntil(() => Win32Window.BoundsOf(handle).Height < standardHeight / 2, TimeSpan.FromSeconds(2));
+
+        var ribbonHeight = Win32Window.BoundsOf(handle).Height;
+        Assert.IsTrue(
+            ribbonHeight <= 44 * scale,
+            $"The ribbon has to be one line, not a small window; it measured {ribbonHeight / scale} units.");
+
+        WpfTestHost.Run(() => _viewModel.ToggleRibbon());
+        RunningShell.Pump();
+        RunningShell.PumpUntil(() => Win32Window.BoundsOf(handle).Height > ribbonHeight, TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(
+            standardHeight,
+            Win32Window.BoundsOf(handle).Height,
+            2d,
+            "Coming back out of the ribbon must restore the height they sized the window to, not the ribbon's.");
+        Assert.AreEqual(520, _settings.Ui.Geometry.Height, 0.5d, "And the ribbon's own height was never written over it.");
+    }
+
+    /// <summary>
+    /// An overlay lives against an edge, and growing to the right from the right of the screen is
+    /// growing off it — after which the window gets shoved sideways to fit, which the owner sees as
+    /// a jump rather than as the view opening. Whichever edge it is nearest has to stay put.
+    /// </summary>
+    [TestMethod]
+    public void Changing_the_view_grows_away_from_the_edge_the_window_is_nearest()
+    {
+        _settings.Ui.Geometry.CompactWidth = 380;
+        _settings.Ui.Geometry.ExpandedWidth = 720;
+        _viewModel.Mode = DashboardViewMode.Compact;
+
+        using var shell = Start();
+        var area = WorkArea(shell);
+
+        // Parked against the right, where an overlay like this normally lives.
+        shell.MoveTo(area.Right - 380 - 8, area.Top + 60);
+        shell.LetGeometrySettle();
+        var rightEdge = Edges(shell).Right;
+
+        shell.ClickTray("Expand");
+        RunningShell.PumpUntil(() => Edges(shell).Width > 700, TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(rightEdge, Edges(shell).Right, 2d, "The edge it is against is the edge that stays.");
+        Assert.IsTrue(Edges(shell).Left < rightEdge - 700, "So the room for the detail pane comes out of the other side.");
+
+        // And dragged to the other side, it anchors to the other side — with nothing recorded and
+        // nothing for the owner to set.
+        shell.MoveTo(area.Left + 8, area.Top + 60);
+        shell.LetGeometrySettle();
+        var leftEdge = Edges(shell).Left;
+
+        WpfTestHost.Run(() => _viewModel.Mode = DashboardViewMode.Compact);
+        RunningShell.PumpUntil(() => Edges(shell).Width < 500, TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(leftEdge, Edges(shell).Left, 2d, "Against the left, the left edge is the one held still.");
+    }
+
+    [TestMethod]
+    public void Collapsing_at_the_bottom_of_the_screen_keeps_the_ribbon_at_the_bottom()
+    {
+        _settings.Ui.Geometry.Height = 520;
+        _viewModel.Mode = DashboardViewMode.Compact;
+
+        using var shell = Start();
+        var area = WorkArea(shell);
+
+        shell.MoveTo(area.Left + 40, area.Bottom - 520 - 8);
+        shell.LetGeometrySettle();
+        var bottomEdge = Edges(shell).Bottom;
+
+        WpfTestHost.Run(() => _viewModel.ToggleRibbon());
+        RunningShell.PumpUntil(() => Edges(shell).Height < 100, TimeSpan.FromSeconds(2));
+
+        var folded = Edges(shell);
+        Assert.IsTrue(folded.Height < 100, $"The window has to have actually folded down; it is {folded.Height} tall.");
+        Assert.AreEqual(
+            bottomEdge,
+            folded.Bottom,
+            2d,
+            "A ribbon folded down at the bottom of the screen must not walk up it.");
+
+        WpfTestHost.Run(() => _viewModel.ToggleRibbon());
+        RunningShell.PumpUntil(() => Edges(shell).Height > 400, TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(bottomEdge, Edges(shell).Bottom, 2d, "And coming back out unfolds upward from the same place.");
+    }
+
+    /// <summary>
+    /// Folding away from full screen is the case that used to go wrong: the window filled the
+    /// display, so it was against every edge and none, and the ribbon came back against the left
+    /// of the screen regardless of which side the owner keeps it on.
+    /// </summary>
+    [TestMethod]
+    public void Folding_away_from_full_screen_lands_small_against_the_edge_it_was_against()
+    {
+        _settings.Ui.Geometry.CompactWidth = 380;
+        _settings.Ui.Geometry.ExpandedWidth = 720;
+        _viewModel.Mode = DashboardViewMode.Expanded;
+
+        using var shell = Start();
+        var area = WorkArea(shell);
+
+        // Expanded and against the right, which is where an overlay like this is kept.
+        shell.MoveTo(area.Right - 720 - 8, area.Top + 60);
+        shell.LetGeometrySettle();
+        var rightEdge = Edges(shell).Right;
+
+        WpfTestHost.Run(() => _viewModel.CycleViewMode());
+        RunningShell.PumpUntil(() => Edges(shell).Width > 900, TimeSpan.FromSeconds(2));
+        Assert.IsTrue(Edges(shell).Width > 900, "The window has to have actually filled the display.");
+
+        WpfTestHost.Run(() => _viewModel.ToggleRibbon());
+        RunningShell.PumpUntil(() => Edges(shell).Height < 100, TimeSpan.FromSeconds(2));
+
+        var folded = Edges(shell);
+        Assert.IsTrue(folded.Height < 100, $"It has to have folded down; it is {folded.Height} tall.");
+        Assert.AreEqual(380, folded.Width, 2d, "The ribbon is the small view folded down, whatever it folded down from.");
+        Assert.AreEqual(rightEdge, folded.Right, 2d, "And it comes back against the edge the window was against.");
+    }
+
+    /// <summary>
+    /// Full screen borrows the whole display, which is near no edge in particular. Coming out of it
+    /// has to answer about where the window was before it went in, or the owner gets their window
+    /// back somewhere they never put it.
+    /// </summary>
+    [TestMethod]
+    public void Leaving_full_screen_returns_to_the_edge_the_window_was_against()
+    {
+        _settings.Ui.Geometry.CompactWidth = 380;
+        _settings.Ui.Geometry.ExpandedWidth = 720;
+        _viewModel.Mode = DashboardViewMode.Expanded;
+
+        using var shell = Start();
+        var area = WorkArea(shell);
+
+        // Expanded and against the right, which is the state the full-screen step is entered from.
+        shell.MoveTo(area.Right - 720 - 8, area.Top + 60);
+        shell.LetGeometrySettle();
+        var rightEdge = Edges(shell).Right;
+
+        WpfTestHost.Run(() => _viewModel.CycleViewMode());
+        RunningShell.PumpUntil(() => Edges(shell).Width > 900, TimeSpan.FromSeconds(2));
+        Assert.IsTrue(Edges(shell).Width > 900, "The full-screen step has to have actually happened.");
+
+        WpfTestHost.Run(() => _viewModel.CycleViewMode());
+        RunningShell.PumpUntil(() => Edges(shell).Width < 500, TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(DashboardViewMode.Compact, _viewModel.Mode);
+        Assert.AreEqual(
+            rightEdge,
+            Edges(shell).Right,
+            2d,
+            "The whole way round the cycle, the edge it was against is the edge it comes back to.");
+    }
+
+    /// <summary>The running window's own bounds, in its own layout units.</summary>
+    private static Rect Edges(RunningShell shell) => WpfTestHost.Run(() =>
+        new Rect(shell.Window.Left, shell.Window.Top, shell.Window.ActualWidth, shell.Window.ActualHeight));
+
+    private static Rect WorkArea(RunningShell shell) => WpfTestHost.Run(() => WindowInterop.WorkAreaAt(
+        shell.Window.Left,
+        shell.Window.Top,
+        VisualTreeHelper.GetDpi(shell.Window).DpiScaleX));
 
     [TestMethod]
     public void The_tray_refresh_command_actually_refreshes_the_dashboard()

@@ -183,7 +183,69 @@
       <SolidColorBrush Color="{DynamicResource SurfaceColor}" Opacity="{Binding SurfaceOpacity}" />
     </Border.Background>
 
-    <Grid Margin="10,8,10,8">
+    <Grid>
+      <!--
+        The collapsed ribbon. Not a small window but a different shape of thing: one line, one
+        project, no chrome. It carries the drag handle itself, because in this mode there is no
+        header bar left to take hold of.
+      -->
+      <Grid x:Name="RibbonRow"
+            Margin="10,5,10,5"
+            Background="Transparent"
+            MouseLeftButtonDown="OnHeaderDrag"
+            Visibility="{Binding IsRibbon, Converter={StaticResource BoolToVisibility}}"
+            AutomationProperties.Name="{Binding RibbonSummary}">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- The same control in the same place as the header's, so collapsing never moves it. -->
+        <Button Grid.Column="0" Style="{StaticResource GlassButton}" Margin="0,0,8,0" Padding="6,1"
+                Command="{Binding ToggleRibbonCommand}"
+                AutomationProperties.Name="Open the dashboard" ToolTip="Open the dashboard">
+          <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.ChevronDown}" />
+        </Button>
+
+        <!--
+          Glyph, name and progress are stated in full at every width. The next action is the one
+          field allowed to ellipsize, because it is the only one with no bound on its length.
+        -->
+        <Grid Grid.Column="1" DataContext="{Binding RibbonProject}"
+              Visibility="{Binding DataContext.HasRibbonProject, RelativeSource={RelativeSource AncestorType=Window},
+                                   Converter={StaticResource BoolToVisibility}}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+
+          <TextBlock Grid.Column="0" Style="{StaticResource StateIconText}" Margin="0,0,6,0"
+                     Text="{Binding StateGlyph}" ToolTip="{Binding StateReason}" />
+
+          <TextBlock Grid.Column="1" Style="{StaticResource BodyText}" FontWeight="SemiBold"
+                     VerticalAlignment="Center" TextTrimming="None"
+                     Text="{Binding Name}" ToolTip="{Binding Path}" />
+
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="10,0,10,0" VerticalAlignment="Center">
+            <TextBlock Style="{StaticResource TertiaryText}" Text="Next: " TextTrimming="None" />
+            <TextBlock Style="{StaticResource SecondaryText}" Text="{Binding NextActionText}"
+                       ToolTip="{Binding NextActionDetail}" />
+          </StackPanel>
+
+          <TextBlock Grid.Column="3" Style="{StaticResource SecondaryText}" Margin="0,0,8,0"
+                     VerticalAlignment="Center" TextTrimming="None"
+                     Text="{Binding ProgressText}" ToolTip="{Binding ProgressPercentText}" />
+        </Grid>
+
+        <TextBlock Grid.Column="1" Style="{StaticResource TertiaryText}" VerticalAlignment="Center"
+                   Text="No projects match the current filter"
+                   Visibility="{Binding HasRibbonProject, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}" />
+      </Grid>
+
+      <Grid x:Name="StandardView" Margin="10,8,10,8"
+            Visibility="{Binding IsStandardView, Converter={StaticResource BoolToVisibility}}">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
@@ -200,6 +262,16 @@
         </Grid.ColumnDefinitions>
 
         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+          <!--
+            The collapse control sits at the left edge in every mode, including the ribbon. It is
+            the one control the ribbon keeps, and a control that lands somewhere different
+            depending on which view you pressed it from is a control you have to look for.
+          -->
+          <Button Style="{StaticResource GlassButton}" Margin="0,0,8,0" Padding="6,1"
+                  Command="{Binding ToggleRibbonCommand}"
+                  AutomationProperties.Name="Collapse to a single line" ToolTip="Collapse to a single line">
+            <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.ChevronUp}" />
+          </Button>
           <TextBlock Style="{StaticResource TitleText}" Text="Vantage" />
           <Border Margin="8,0,0,0" Padding="5,1" CornerRadius="8"
                   Background="{DynamicResource SurfaceOverlayBrush}"
@@ -220,8 +292,8 @@
                   AutomationProperties.Name="Refresh now" ToolTip="Refresh now">
             <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.Refresh}" />
           </Button>
-          <Button Style="{StaticResource GlassButton}" Margin="4,0,0,0" Command="{Binding ToggleExpandedCommand}"
-                  AutomationProperties.Name="Toggle expanded view" ToolTip="Compact / expanded">
+          <Button Style="{StaticResource GlassButton}" Margin="4,0,0,0" Command="{Binding CycleViewModeCommand}"
+                  AutomationProperties.Name="Change the view size" ToolTip="Change the view size">
             <TextBlock Style="{StaticResource IconText}" Text="{x:Static vm:Glyphs.Expand}" />
           </Button>
           <Button Style="{StaticResource GlassButton}" Margin="4,0,0,0" Click="OnSettingsClick"
@@ -289,7 +361,8 @@
       <Grid Grid.Row="3">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" MinWidth="260" />
-          <ColumnDefinition Width="Auto" />
+          <!-- Fixed at hand-sized widths, and a share of the window once it fills the display. -->
+          <ColumnDefinition x:Name="DetailColumn" Width="Auto" />
         </Grid.ColumnDefinitions>
 
         <ListBox Grid.Column="0"
@@ -492,6 +565,7 @@
       <TextBlock Grid.Row="4" Style="{StaticResource TertiaryText}" Margin="0,6,0,0"
                  Text="{Binding StatusLine}" TextTrimming="CharacterEllipsis"
                  AutomationProperties.Name="Refresh status" />
+    </Grid>
     </Grid>
   </Border>
 </Window>

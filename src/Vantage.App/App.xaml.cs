@@ -250,17 +250,18 @@ public partial class App : Application
             Color.FromRgb(0x3A, 0x33, 0x2C),
             45);
 
-        void Frame(string name, bool expanded, double width)
+        void Frame(string name, DashboardViewMode mode, double width)
         {
-            _viewModel.IsExpanded = expanded;
+            _viewModel.Mode = mode;
             _window.Width = width;
             _window.UpdateLayout();
             FrameCapture.Save(_window, Path.Combine(directory, name), backdrop);
         }
 
-        Frame("compact.png", expanded: false, width: 380);
-        Frame("expanded.png", expanded: true, width: 720);
-        Frame("narrow.png", expanded: false, width: 320);
+        Frame("ribbon.png", DashboardViewMode.Ribbon, width: 380);
+        Frame("compact.png", DashboardViewMode.Compact, width: 380);
+        Frame("expanded.png", DashboardViewMode.Expanded, width: 720);
+        Frame("narrow.png", DashboardViewMode.Compact, width: 320);
 
         _window.ExitForReal();
         Shutdown();

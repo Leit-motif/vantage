@@ -60,19 +60,20 @@ public sealed partial class DashboardViewModel : ObservableObject
         // project, a first-seen remote, or a remote now waiting on confirmation.
         _refresh = new RefreshService(settings, processRunner, cache, settingsStore: settingsStore);
 
-        IsExpanded = !settings.Ui.StartCompact;
         Projects = [];
         AllProjects = [];
         VisibleProjects = [];
+
+        // Through the field rather than the property: opening in the view the owner left the
+        // dashboard in is not a change to persist, and the mode's own change handler rebuilds
+        // rows that do not exist until the three collections above are assigned.
+        _mode = settings.Ui.ViewMode;
     }
 
     /// <summary>Everything the current filter matched.</summary>
     public ObservableCollection<ProjectItemViewModel> Projects { get; }
 
-    /// <summary>
-    /// What the window shows: the compact view deliberately stops at three rows so continuous
-    /// awareness costs almost no screen space.
-    /// </summary>
+    /// <summary>What the window currently shows, which is a question the mode answers.</summary>
     public ObservableCollection<ProjectItemViewModel> VisibleProjects { get; }
 
     public ObservableCollection<ProjectItemViewModel> AllProjects { get; }
@@ -80,7 +81,46 @@ public sealed partial class DashboardViewModel : ObservableObject
     public const int CompactRowLimit = 3;
 
     [ObservableProperty]
-    private bool _isExpanded;
+    private DashboardViewMode _mode;
+
+    /// <summary>
+    /// Whether the detail pane is showing. Kept as its own question because the detail pane, the
+    /// tray's label and conflict navigation all ask exactly this and nothing finer; setting it is
+    /// how a caller says "open the evidence" without having to know the mode vocabulary.
+    /// </summary>
+    public bool IsExpanded
+    {
+        get => Mode is DashboardViewMode.Expanded or DashboardViewMode.Full;
+        set => Mode = value ? DashboardViewMode.Expanded : DashboardViewMode.Compact;
+    }
+
+    public bool IsRibbon => Mode == DashboardViewMode.Ribbon;
+
+    /// <summary>
+    /// Whether the window is filling the display. Its geometry is the monitor's rather than the
+    /// owner's while it is, which is what everything that saves a size needs to know.
+    /// </summary>
+    public bool IsFullScreen => Mode == DashboardViewMode.Full;
+
+    /// <summary>Whether the window is showing a project list, and so all the chrome around one.</summary>
+    public bool IsStandardView => Mode != DashboardViewMode.Ribbon;
+
+    /// <summary>
+    /// The one project the ribbon carries: the first pinned project the current filter matched,
+    /// and with nothing pinned, whichever moved most recently. Chosen by stated priority rather
+    /// than by list order, because the filters that do not sort pinned-first would otherwise bury
+    /// the project the owner pinned precisely to keep in sight.
+    /// </summary>
+    public ProjectItemViewModel? RibbonProject =>
+        Projects.FirstOrDefault(p => p.IsPinned)
+        ?? Projects.MaxBy(p => p.LastActivityAt ?? DateTimeOffset.MinValue);
+
+    public bool HasRibbonProject => RibbonProject is not null;
+
+    /// <summary>The whole ribbon read as one sentence, since it is a single control's worth of content.</summary>
+    public string RibbonSummary => RibbonProject is { } project
+        ? $"{project.Name}. {project.StateLabel}. Next action: {project.NextActionText}. Progress {project.ProgressText}."
+        : "No projects match the current filter.";
 
     [ObservableProperty]
     private bool _isRefreshing;
@@ -155,7 +195,12 @@ public sealed partial class DashboardViewModel : ObservableObject
         OnPropertyChanged(nameof(ReducedMotion));
     }
 
-    public double ShellWidth => IsExpanded
+    /// <summary>
+    /// The ribbon is the small view folded down, so it is small-width — the same footprint the
+    /// dashboard returns to when it is opened again. It stays free to be dragged longer: it is a
+    /// strip, so length costs the owner nothing, and only height was ever in their way.
+    /// </summary>
+    public double ShellWidth => Mode == DashboardViewMode.Expanded
         ? _settings.Ui.Geometry.ExpandedWidth
         : _settings.Ui.Geometry.CompactWidth;
 
@@ -174,16 +219,46 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     partial void OnSearchTextChanged(string value) => ApplyFilter();
 
-    partial void OnIsExpandedChanged(bool value)
+    partial void OnModeChanged(DashboardViewMode value)
     {
-        _settings.Ui.StartCompact = !value;
+        _settings.Ui.ViewMode = value;
+
+        OnPropertyChanged(nameof(IsExpanded));
+        OnPropertyChanged(nameof(IsRibbon));
+        OnPropertyChanged(nameof(IsFullScreen));
+        OnPropertyChanged(nameof(IsStandardView));
         OnPropertyChanged(nameof(ShellWidth));
+
         UpdateVisibleProjects();
         SaveSettings();
     }
 
+    /// <summary>
+    /// Steps through the views that show a project list. The ribbon is deliberately not in the
+    /// cycle: it is somewhere the owner goes on purpose, and stepping into it by accident while
+    /// looking for a bigger window would be the opposite of what this control is for.
+    /// </summary>
     [RelayCommand]
-    public void ToggleExpanded() => IsExpanded = !IsExpanded;
+    public void CycleViewMode() => Mode = Mode switch
+    {
+        DashboardViewMode.Expanded => DashboardViewMode.Full,
+        DashboardViewMode.Full => DashboardViewMode.Compact,
+        // Compact, and out of the ribbon, both step to the next size up.
+        _ => DashboardViewMode.Expanded,
+    };
+
+    /// <summary>
+    /// Folds the dashboard away, and opens it again at the small view.
+    /// <para>
+    /// Deliberately not back to whichever size it was folded from. Collapsing is how the owner
+    /// puts the dashboard down, and picking it back up should hand them the same small window
+    /// every time rather than an outcome that depends on what they happened to be doing before —
+    /// most of all when what they were doing was filling the screen.
+    /// </para>
+    /// </summary>
+    [RelayCommand]
+    public void ToggleRibbon() =>
+        Mode = Mode == DashboardViewMode.Ribbon ? DashboardViewMode.Compact : DashboardViewMode.Ribbon;
 
     [RelayCommand]
     public void SetFilter(string filter) =>
@@ -322,16 +397,34 @@ public sealed partial class DashboardViewModel : ObservableObject
         var selected = SelectedProject;
 
         VisibleProjects.Clear();
-        foreach (var project in IsExpanded ? Projects : Projects.Take(CompactRowLimit))
+        foreach (var project in RowsForCurrentMode())
         {
             VisibleProjects.Add(project);
         }
+
+        OnPropertyChanged(nameof(RibbonProject));
+        OnPropertyChanged(nameof(HasRibbonProject));
+        OnPropertyChanged(nameof(RibbonSummary));
 
         // Rebuilding the rows clears the list's own selection. A project that is still on screen
         // has to keep it, or switching between compact and expanded would empty the detail pane
         // and take the owner away from whatever they had just opened.
         SelectedProject = VisibleProjects.FirstOrDefault(p => p.Path == selected?.Path)
             ?? VisibleProjects.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// What the current view puts on screen. The ribbon shows its one project and nothing else;
+    /// compact stops at three rows so continuous awareness costs almost no screen space.
+    /// </summary>
+    private IEnumerable<ProjectItemViewModel> RowsForCurrentMode()
+    {
+        if (Mode == DashboardViewMode.Ribbon)
+        {
+            return RibbonProject is { } single ? [single] : [];
+        }
+
+        return Mode == DashboardViewMode.Compact ? Projects.Take(CompactRowLimit) : Projects;
     }
 
     private void SaveSettings()

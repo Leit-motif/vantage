@@ -76,6 +76,49 @@ public sealed class DiscoveryTests
             snapshot.Projects.Select(p => p.Identity.Name).ToArray());
     }
 
+    /// <summary>
+    /// A checkout is how code arrives on a machine, not evidence that it is work the owner is
+    /// doing. Vendored dependencies, cloned tools and reference material are all repositories, and
+    /// a dashboard listing them is answering a question nobody asked.
+    /// </summary>
+    [TestMethod]
+    public async Task A_repository_on_its_own_is_a_checkout_rather_than_a_project()
+    {
+        var cloned = Path.Combine(_workspace.WorkspacesRoot, "some-dependency");
+        Directory.CreateDirectory(Path.Combine(cloned, ".git"));
+        _workspace.WriteFile(Path.Combine(cloned, "README.md"), "# a tool someone cloned\n");
+
+        _workspace.NewProject("actual-work");
+
+        var snapshot = await _harness.RefreshAsync();
+
+        CollectionAssert.AreEquivalent(
+            new[] { "actual-work" },
+            snapshot.Projects.Select(p => p.Identity.Name).ToArray(),
+            "A bare repository is not somebody having set a place up to be worked in.");
+    }
+
+    /// <summary>
+    /// The rule is about what qualifies, not about what is read: the marker still has to be
+    /// detected, because it is what the git adapter reads a project's activity from.
+    /// </summary>
+    [TestMethod]
+    public async Task A_repository_that_is_also_a_project_still_reports_its_git()
+    {
+        var project = _workspace.NewProject("tracked-and-versioned");
+        _workspace.InitGitRepository(project);
+        _workspace.Commit(project, "first");
+
+        // Against real git: whether the marker is still read is exactly the claim being made, and
+        // a faked runner would answer it either way.
+        var snapshot = await _harness.WithRealGit().RefreshAsync();
+
+        Assert.AreEqual(1, snapshot.Projects.Count);
+        Assert.IsTrue(
+            snapshot.Projects[0].GitAvailable,
+            "Dropping .git as a qualifier must not stop it being read where the project qualifies anyway.");
+    }
+
     [TestMethod]
     public async Task Excludes_projects_nested_in_vendor_and_build_directories()
     {

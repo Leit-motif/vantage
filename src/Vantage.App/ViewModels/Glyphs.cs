@@ -19,6 +19,11 @@ public static class Glyphs
     public static readonly string Settings = Char(0xE713);
     public static readonly string Expand = Char(0xE740);
     public static readonly string Collapse = Char(0xE73F);
+
+    // The pair the ribbon reads by: down folds the dashboard away, up brings it back.
+    public static readonly string ChevronDown = Char(0xE70D);
+    public static readonly string ChevronUp = Char(0xE70E);
+
     public static readonly string Pin = Char(0xE718);
     public static readonly string Conflict = Char(0xE783);     // Error circle
     public static readonly string Diagnostic = Char(0xE946);   // Info
