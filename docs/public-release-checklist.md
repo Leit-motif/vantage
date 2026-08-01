@@ -186,12 +186,12 @@ to a repository nobody had cloned — which is exactly why this was the last che
 - [x] Audit all issue and pull-request threads
 - [x] Remove the author's machine from shipped defaults
 - [x] Remove unreferenced concept art
-- [x] State the copyright posture (`NOTICE.md`)
+- [x] State the copyright posture (`LICENSE`)
 - [x] Set this repository's commit email to the GitHub noreply address
 - [ ] Enable *Block command line pushes that expose my email* in GitHub email settings
 - [x] Land all branches into `main`
 - [x] Run the history rewrite and re-stamp the acceptance records
-- [ ] Confirm `NOTICE.md` reads the way the owner wants. It is a plain-language statement of terms,
+- [ ] Confirm `LICENSE` reads the way the owner wants. It is a plain-language statement of terms,
       not legal advice, and nobody qualified has reviewed it.
 - [ ] Flip visibility
 - [ ] Enable **secret scanning** and **push protection** — free on public repositories, off today

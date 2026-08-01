@@ -8,7 +8,7 @@ to any of it, and shows you where every conclusion came from.
 working reference implementation rather than a product. Windows 11 x64 only.
 
 > Source-available for review and evaluation. **This is not open-source software** — see
-> [NOTICE.md](NOTICE.md).
+> [LICENSE](LICENSE).
 
 ![The expanded layout: five projects with their pipeline progress and next actions on the left, the selected project's provenance, efforts, activity and diagnostics on the right](docs/images/expanded.png)
 
@@ -283,4 +283,4 @@ owner's desktop”*, are both cases of an agent's claim not surviving review.
 
 Copyright © 2026 Amritpal Singh Chana. All rights reserved.
 
-Source-available for review and evaluation only. Not open source. See [NOTICE.md](NOTICE.md).
+Source-available for review and evaluation only. Not open source. See [LICENSE](LICENSE).
