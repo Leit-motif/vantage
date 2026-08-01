@@ -393,11 +393,23 @@ through `RefreshService.PersistRegistry`, not by anything the instrument does on
 at schema 3 with none of the four removed keys and none of the 55 entries' origin keys. The owner's
 own file was left exactly as it was found.
 
-## What this run does not claim
+## The live before-and-after
 
-It is not a before-and-after. Measuring the same roots on the baseline build would mean either
-issuing real `gh` calls against the owner's account or editing their live settings, and neither is
-worth doing for a number. That the *local* answer is unchanged rests on the engine suite, where
-every projection test — progress, next action, blockers, activity, staleness, pipeline — is the one
-that was there before and still passes. What this run adds is that the same answer still comes out
-of the real application over real workspaces, complete, with nothing marked stale.
+Repeated later against the baseline build, over the same two real roots minutes apart, with
+`GitHubEnrichmentEnabled` set to `false` for the duration so both builds read local-only and the
+comparison is like for like. The owner's settings file was restored and verified afterwards.
+
+| | `22094b9` before | `7eec230` after |
+| --- | --- | --- |
+| Projects / with progress / with remaining work / stale | 20 / 14 / 11 / 0 | 20 / 14 / 11 / 0 |
+| Monitored state changes, refused commands | 0, 0 | 0, 0 |
+| `BLOCKER_MISSING`, `EFFORT_EMPTY`, `TICKET_AMBIGUOUS_STATUS`, `TICKET_UNRECOGNIZED` | 74, 2, 13, 69 | 74, 2, 13, 69 |
+| `ORIGIN_CHANGED` | **1** | **absent** |
+| `git remote get-url` | **issued** | **not issued** |
+
+Every local number is identical. The only two differences are the two things that were removed: the
+relink diagnostic one of the owner's repositories was raising, and the remote read that fed it. A
+comparison in which nothing at all differed would have been the suspicious result.
+
+The deterministic version of the same question — over a fixture covering every local shape rather
+than over whatever happens to be on the machine — is in `local-only-removal/`.

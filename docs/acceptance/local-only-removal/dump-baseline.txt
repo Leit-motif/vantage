@@ -1,0 +1,53 @@
+counters 1/2/0
+truncated False
+stale False
+
+PROJECT bare
+  state Idle | No workflow artifacts were found for this project.
+  progress 0/0 excluded 0
+  stale False gitAvailable False
+  pipeline 
+  nextAction none
+  conflicts 0
+  activityKinds 
+
+PROJECT mapped
+  state InProgress | 'Claimed' is claimed.
+  progress 1/6 excluded 0
+  stale False gitAvailable False
+  pipeline Planning=1/1, Implementation=0/4, Review=0/1
+  nextAction feature/002 | WayfinderFrontier | Explicitly Ready, unblocked, and on the map.
+  conflicts 0
+  activityKinds 
+  diagnostic Warning BLOCKER_MISSING | 'Dangling' is blocked by '099', which does not exist in effort 'feature'.
+  diagnostic Info TICKET_AMBIGUOUS_STATUS | 'Odd' has status 'marinating', which is not a recognized state; it stays incomplete.
+  EFFORT .scratch/feature | feature | wayfinder True | 1/6
+    TICKET feature/001 | Plan it | Done(done) | Planning | actionable False | blocked False | blockedBy  | link none | source <root>/workspaces/mapped/.scratch/feature/issues/001.md | provenance LocalFile/FileSystem | conflicts 0
+    TICKET feature/002 | Build it | Ready(ready) | Implementation | actionable True | blocked False | blockedBy feature/001 | link acme/widget#7 | source <root>/workspaces/mapped/.scratch/feature/issues/002.md | provenance LocalFile/FileSystem | conflicts 0
+    TICKET feature/003 | Review it | Open(open) | Review | actionable False | blocked True | blockedBy feature/002 | link none | source <root>/workspaces/mapped/.scratch/feature/issues/003.md | provenance LocalFile/FileSystem | conflicts 0
+    TICKET feature/004 | Dangling | Open(open) | Implementation | actionable False | blocked True | blockedBy  | link none | source <root>/workspaces/mapped/.scratch/feature/issues/004.md | provenance LocalFile/FileSystem | conflicts 0
+    TICKET feature/005 | Odd | Unknown(marinating) | Implementation | actionable True | blocked False | blockedBy  | link none | source <root>/workspaces/mapped/.scratch/feature/issues/005.md | provenance LocalFile/FileSystem | conflicts 0
+    TICKET feature/006 | Claimed | InProgress(in progress) | Implementation | actionable False | blocked False | blockedBy  | link none | source <root>/workspaces/mapped/.scratch/feature/issues/006.md | provenance LocalFile/FileSystem | conflicts 0
+
+PROJECT repo-no-remote
+  state Ready | 1 explicitly actionable unblocked item(s).
+  progress 0/1 excluded 0
+  stale False gitAvailable True
+  pipeline Implementation=0/1
+  nextAction feature/001 | ReadyFallback | Explicitly Ready and unblocked.
+  conflicts 0
+  activityKinds LocalCommit
+  EFFORT .scratch/feature | feature | wayfinder False | 0/1
+    TICKET feature/001 | Tracked work | Ready(ready) | Implementation | actionable True | blocked False | blockedBy  | link none | source <root>/workspaces/repo-no-remote/.scratch/feature/issues/001.md | provenance LocalGit/GitCommit | conflicts 0
+
+PROJECT unmapped
+  state Ready | 1 explicitly actionable unblocked item(s).
+  progress 0/2 excluded 0
+  stale False gitAvailable False
+  pipeline Implementation=0/2
+  nextAction plain/002 | ReadyFallback | Explicitly Ready and unblocked.
+  conflicts 0
+  activityKinds 
+  EFFORT .scratch/plain | plain | wayfinder False | 0/2
+    TICKET plain/001 | Open work | Open(open) | Implementation | actionable False | blocked False | blockedBy  | link none | source <root>/workspaces/unmapped/.scratch/plain/issues/001.md | provenance LocalFile/FileSystem | conflicts 0
+    TICKET plain/002 | Ready work | Ready(ready) | Implementation | actionable True | blocked False | blockedBy  | link none | source <root>/workspaces/unmapped/.scratch/plain/issues/002.md | provenance LocalFile/FileSystem | conflicts 0
