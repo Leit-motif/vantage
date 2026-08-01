@@ -1,6 +1,14 @@
 namespace Vantage.Core;
 
-/// <summary>Which adapter observed a fact.</summary>
+/// <summary>
+/// Which adapter observed a fact.
+/// <para>
+/// <see cref="GitHubCli"/> has no producer since the remote source was removed, and is kept only
+/// so an existing cache stays readable: activity rows store this by name and are read back with
+/// <c>Enum.Parse</c>, so deleting the member would turn every row an earlier build wrote into a
+/// failure to load that project's history. Nothing new is ever written with it.
+/// </para>
+/// </summary>
 public enum EvidenceSource
 {
     LocalFile,
@@ -17,6 +25,8 @@ public enum TimestampProvenance
 {
     Unknown,
     GitCommit,
+
+    /// <summary>Retained for cache compatibility only — see <see cref="EvidenceSource.GitHubCli"/>.</summary>
     GitHubApi,
     WatcherEvent,
 
@@ -46,9 +56,6 @@ public sealed record Provenance(
 
     public static Provenance Git(string locator, DateTimeOffset at, string refreshId) =>
         new(EvidenceSource.LocalGit, locator, TimestampProvenance.GitCommit, at, refreshId);
-
-    public static Provenance GitHub(string locator, DateTimeOffset at, string refreshId) =>
-        new(EvidenceSource.GitHubCli, locator, TimestampProvenance.GitHubApi, at, refreshId);
 
     public static Provenance Watcher(string path, DateTimeOffset at, string refreshId) =>
         new(EvidenceSource.LocalFile, path, TimestampProvenance.WatcherEvent, at, refreshId);

@@ -40,14 +40,18 @@ and reachable local Git history, and projects that evidence into project states,
 recent activity, diagnostics, and progress across the whole pipeline — planning, research,
 grilling, prototypes, implementation, review, and release.
 
-Optionally, it enriches projects you have explicitly linked to a GitHub repository through your
-already-authenticated `gh` session, and reports where local and remote evidence disagree.
+**Vantage is local-only, and not as a default you can switch off.** It reads local files and local
+git, and it does not read GitHub. There is no adapter, no setting, and no `gh` process — the
+removal and the argument for it are [`.scratch/local-only/`](.scratch/local-only).
 
-**v1 ships local-only.** GitHub enrichment is built, specified and tested, but off by default and
-outside v1's acceptance surface — [issue #8](https://github.com/Leit-motif/vantage/issues/8) is the
-complete record of what it adds and what resuming it involves. Anything below that mentions GitHub
-describes behaviour you get after turning on `GitHubEnrichmentEnabled` in Settings, not what a
-default install does.
+Git stays, and stays a primitive: it is offline and deterministic, and gives time, attribution and
+"what changed when" with no network, no auth and no availability question. A remote service levies
+a different tax — auth state, availability, staleness, reconciliation, and an "is this the whole
+answer" question on every read — and the ambition here is a context layer several agents can
+**write** to, which a file tree serves and an issues API does not.
+
+If enrichment ever comes back it is additive, properly: an unreachable remote must never degrade
+the local answer.
 
 ## The rule it is built on
 
@@ -58,7 +62,7 @@ Evidence moves through three stages, and never backwards:
 
 ```
 Observed          exactly what a source said, as it was written
-    |             ObservedArtifact · ObservedCommit · ObservedGitHubIssue
+    |             ObservedArtifact · ObservedCommit
     v
 Normalized        the workflow facts those observations imply
     |             WorkflowEffort · WorkflowTicket · WorkflowStatus
@@ -78,7 +82,6 @@ timestamps are typed rather than merged into one number:
 | `TimestampProvenance` | What it actually means |
 | --- | --- |
 | `GitCommit` | An author committed at this time |
-| `GitHubApi` | A remote system recorded this time |
 | `WatcherEvent` | The filesystem told us while we were watching |
 | `ObservedChange` | We compared two refreshes and saw real movement — but this is when we *noticed*, not when it happened |
 | `FileSystem` | A modification time, and nothing more |
@@ -87,28 +90,26 @@ timestamps are typed rather than merged into one number:
 usually "we don't know — only that it differs from last time." Collapsing that into a real timestamp
 would have been easy, and would have quietly made the entire display untrustworthy.
 
-### When sources disagree
+### When observations disagree
 
-Local files are primary. GitHub fills gaps and supplies remote activity; it never overrules what is
-on disk. Identity comes only from explicit links — title similarity is never an identity signal, so
-two similarly named pieces of work are never silently merged into one.
+Two observations of one subject can disagree, and that is surfaced rather than resolved away. A
+project's conflict badge is a control rather than a decoration: it opens that project's
+disagreements, each one naming the item, what each side says, which side was kept and why, and
+where each side was observed — down to the refresh that produced it.
 
-When the two sides genuinely disagree, that is surfaced rather than resolved away. A project's
-conflict badge is a control rather than a decoration: it opens that project's disagreements, each
-one naming the item, what the local side says, what the remote side says, which side was kept and
-why, and where each side was observed — down to the refresh that produced it.
+Identity comes only from explicit links — title similarity is never an identity signal, so two
+similarly named pieces of work are never silently merged into one.
 
-### Association, not identity
-
-A GitHub origin is an association on a local path, never the project's identity. The first remote
-seen is recorded. If the remote later changes, the new one is held as *pending* and reported, and
-Vantage keeps using the confirmed association until you confirm the relink — which adopts the
-pending origin **you were shown**, not whatever the remote happens to read by the time you click.
+Removing GitHub removed the only *producer* of disagreements, not the model: local-versus-remote
+was the instance, not the purpose. The producers that replace it — a working tree against the last
+commit, a stated `Blocked by:` against the ticket it names, two agents writing one file — are
+[`.scratch/local-only/issues/03-conflicts-between-any-two-observations.md`](.scratch/local-only/issues/03-conflicts-between-any-two-observations.md).
+Until that lands, the conflict model has no producer.
 
 ## What it never does
 
-- Change a workflow file, Git state, a GitHub issue or label, or repository configuration.
-- Enumerate your GitHub account. Only repositories associated with a local project are queried.
+- Change a workflow file, Git state, or repository configuration.
+- Talk to the network. There is no remote adapter to reach one with.
 - Execute anything it reads. Monitored content is data; external commands receive structured
   argument lists and never a shell string.
 - Send telemetry, analytics, or crash reports anywhere.
@@ -141,15 +142,15 @@ bound says so in diagnostics rather than returning a quietly short answer.
 
 | Project | Owns |
 | --- | --- |
-| [`src/Vantage.Core`](src/Vantage.Core) | The domain, with no UI and no I/O: observed evidence, normalized workflow facts, derived projections, provenance, conflict reconciliation |
-| [`src/Vantage.Infrastructure`](src/Vantage.Infrastructure) | Everything touching the outside world: discovery, markdown parsing, the Git and `gh` adapters, the SQLite cache, settings, logging, the refresh orchestrator |
+| [`src/Vantage.Core`](src/Vantage.Core) | The domain, with no UI and no I/O: observed evidence, normalized workflow facts, derived projections, provenance, the conflict model |
+| [`src/Vantage.Infrastructure`](src/Vantage.Infrastructure) | Everything touching the outside world: discovery, markdown parsing, the Git adapter, the SQLite cache, settings, logging, the refresh orchestrator |
 | [`src/Vantage.App`](src/Vantage.App) | The WPF overlay, tray, and settings window |
 | [`tests/Vantage.Tests`](tests/Vantage.Tests) | The engine's suite, driven through the product's real refresh boundary. Targets `net10.0` |
 | [`tests/Vantage.Tests.Shell`](tests/Vantage.Tests.Shell) | The suite that needs Windows to be true: the overlay read back from a real `HWND`, and registry intent through the Settings view model. Targets `net10.0-windows` |
 | [`tests/Vantage.Tests.Support`](tests/Vantage.Tests.Support) | The fixtures both suites use, on the portable framework so the portable suite can |
 | [`tools/`](tools) | A keystroke witness and a synthetic-workspace generator, both used to produce acceptance evidence |
 
-The dependency direction is the point: `Core` knows nothing about WPF, SQLite, Git or GitHub, so the
+The dependency direction is the point: `Core` knows nothing about WPF, SQLite or Git, so the
 rules about what may be believed are testable without any of them present. The test split is what
 holds that to account — `Vantage.Tests` targets `net10.0`, and a `net10.0` project cannot reference
 a `net10.0-windows` one, so the engine acquiring a Windows dependency stops being something a reader
@@ -206,7 +207,7 @@ records that answer them, each stamped with the commit it was made at.
 | Record | The question it answers |
 | --- | --- |
 | `read-only-scan.json` | Does a scan of the author's real workspaces change anything? Fingerprinted before and after. |
-| `local-only-default.json` | With enrichment off by default, does anything still reach the network? |
+| `local-only-default.json` | With enrichment off by default, does anything still reach the network? Superseded: enrichment no longer exists to be off. |
 | `keystroke-witness.json` | Does running the test suite type into the interactive desktop? Witnessed by a calibrated low-level hook. |
 | `running-shell-gaps.json` | What does the running window do when Windows changes underneath it — display scale, light/dark, contrast themes? |
 | `visual-acceptance.json` + `frames/` | What does the overlay look like composited over a real desktop, at the default opacity? |
@@ -214,8 +215,7 @@ records that answer them, each stamped with the commit it was made at.
 They are as useful for what they refuse to claim as for what they establish. The visual record
 measures surface opacity at **79.3%** against a setting of 80% and explains the residual as sRGB
 gamma and 8-bit rounding, rather than rounding it into agreement. The running-shell record leaves
-its cross-monitor half explicitly unproven for want of a second display. A `gh` probe that was
-skipped is recorded as *unanswered*, not as *observed*.
+its cross-monitor half explicitly unproven for want of a second display.
 
 ## Limitations
 
@@ -227,13 +227,12 @@ skipped is recorded as *unanswered*, not as *observed*.
 - **It reads one specific workflow grammar** — the `.scratch` effort layout and the metadata keys
   that go with it. Projects that do not use it are still discovered; there is just less to say about
   them.
-- **GitHub enrichment is off by default** and outside v1's acceptance surface.
 - Only 125% display scaling and only the dark palette were photographed for visual acceptance.
 
 ## Privacy, and where its own state lives
 
-No telemetry, no analytics, no crash reporting. Nothing leaves the machine except `gh` calls you
-have enabled, to repositories you have explicitly linked.
+No telemetry, no analytics, no crash reporting. Nothing leaves the machine, and there is no
+adapter that could take it anywhere.
 
 Everything Vantage writes is under `%LOCALAPPDATA%\Vantage`:
 
@@ -277,7 +276,7 @@ tickets, each paired with the acceptance record that answers it. The v1 tickets 
 the word *Prove*; they were tracked as GitHub issues at the time and were migrated here when the
 project moved its own planning into files.
 
-The corrections are the part worth reading. A commit reclassifying a skipped `gh` probe from
+The corrections are the part worth reading. A commit reclassifying a skipped probe from
 *observed* to *unanswered*, and an issue titled *“Shell-seam tests inject keystrokes into the
 owner's desktop”*, are both cases of an agent's claim not surviving review.
 

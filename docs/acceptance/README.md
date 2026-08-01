@@ -1,10 +1,17 @@
 # Runtime acceptance
 
 Five records, each answering a question the fixtures cannot: whether the dashboard stays read-only
-against the owner's real workspaces, whether that stays true with GitHub enrichment off by default,
+against the owner's real workspaces, whether that stayed true with GitHub enrichment off by default,
 whether the test suite stays off the owner's keyboard, what the running shell does when Windows
 itself moves underneath it, and what the overlay actually looks like on a real desktop. All are made
 on the live machine, and all record their evidence here.
+
+**Every record below predates the removal of the GitHub adapter**
+(`.scratch/local-only/issues/01-remove-the-github-adapter.md`). They are kept as evidence of what
+was true at the commit each is stamped with, and they are not re-run here. What changed underneath
+them is named where it matters: the instrument no longer has an offline pass, an association pass,
+or a `gh` fingerprint, and its report no longer carries `Offline` or `Associations`. A future run
+produces a smaller report than the JSON in this directory.
 
 The product was named `MattWorkflowDashboard` when these runs were recorded, and was renamed to
 `Vantage` afterwards. The commands above have been updated so they still run; the recorded JSON has
@@ -94,9 +101,9 @@ so the comparison would report that nothing moved. This repository is itself ben
 root, so `./scan` is exactly the wrong answer.
 
 Development-only instrumentation, reached only by that switch. It builds no UI. It reads the real
-`settings.json` for the roots and registry intent, but everything it writes — cache, settings,
-the `gh` configuration used for the offline pass — lives under the output directory, so an
-acceptance run leaves the owner's dashboard state as untouched as it leaves their workspaces.
+`settings.json` for the roots and registry intent, but everything it writes — its cache and its
+settings — lives under the output directory, so an acceptance run leaves the owner's dashboard
+state as untouched as it leaves their workspaces.
 
 Exit codes: `0` clean and complete; `3` something monitored changed or a command was refused —
 a safety failure; `4` nothing changed but something could not be read. The last is kept apart on
@@ -112,26 +119,23 @@ moved is unusable exactly when it matters.
 ## What it does
 
 1. Fingerprints every discovered project: workflow file names and contents, `HEAD`, working-tree
-   status, local config, refs, and the GitHub issues and labels of the repository the project is
-   **confirmed** to be associated with — never the remote as it currently reads, because a changed
-   remote is waiting on the owner and must not be queried before they confirm it.
+   status, local config, and refs.
 2. Refreshes cold, then warm.
 3. Starts a third refresh, waits until twenty external commands have been submitted — past
    discovery, with several projects being indexed — then cancels it and times how long it keeps
    going. It records both the number submitted and the number of child processes actually alive at
    that moment; only the second says anything about interrupting work in progress.
-4. Refreshes again with the real `gh` pointed at an empty configuration directory and every
-   inherited token removed from the child's environment, so the tool itself decides it has no
-   session.
-5. Fingerprints everything a second time and reports the difference — **and separately reports every
+4. Fingerprints everything a second time and reports the difference — **and separately reports every
    source it could not read**. Two absent digests compare equal, so without that a source never
    observed would look exactly like one observed twice and found identical, and the report would be
    at its most reassuring when it had seen the least.
 
-Throughout, every external command passes a boundary that refuses anything outside the four `gh`
-reads and the handful of `git` reads the dashboard actually makes. `gh repo list` and `gh api` are
-refused even though both only read, because each is a way to enumerate an account. The check is not
-by verb alone: `git log --output=<path>` reads by verb and writes a file, and `-c` injects
+Throughout, every external command passes a boundary that refuses anything outside the handful of
+`git` reads the dashboard actually makes. `gh` is refused entirely — not only the calls that write,
+but `gh auth status` and `gh issue list` too, because there is no longer a gh command this
+dashboard has a reason to start. That is what makes "no `gh` process is ever started" structural
+rather than a property of the calling code: an attempt would be stopped here and recorded as the
+safety failure it is. The check is not by verb alone: `git log --output=<path>` reads by verb and writes a file, and `-c` injects
 configuration that can name a program to run, so options like those are refused wherever they appear.
 
 Separately, every child process runs with `core.fsmonitor` and `diff.external` forced off through
@@ -165,6 +169,15 @@ worth believing when it was.
 default of `false`, a live run over the owner's real roots issues no `gh` command at all — not
 merely that a `gh` call's result goes unused.
 
+**Superseded.** The setting this record is about no longer exists, and neither does the adapter it
+gated, so the question it answered — *does the shipped default reach the network?* — can no longer
+be posed. The claim it established is now unconditional and is held by the suite instead:
+`ReadOnlyAcceptanceTests` requires the boundary to refuse every `gh` call including the reads,
+`AcceptanceInstrumentTests` requires a whole run over a repository with a GitHub remote to issue
+none, and `ResilienceTests` requires the same of the refresh boundary itself. The record below is
+kept for what was true at `920a732`; re-running the command produces a report without the `Offline`
+and `Associations` sections it cites.
+
 ## Reproducing it
 
 Requires a settings.json without an explicit `GitHubEnrichmentEnabled` override (a fresh install,
@@ -174,14 +187,6 @@ immediately after):
 ```bash
 dotnet run -c Release --project src/Vantage.App -- --acceptance "$env:TEMP/mwd-local-only" --stamp $(git rev-parse HEAD)
 ```
-
-Same instrument as the read-only scan above, including its own offline pass — which probes a real
-`gh auth status` to characterize behaviour with no session. That probe is itself gated on
-`GitHubEnrichmentEnabled` now: with enrichment off there is no session to probe for, so the one gh
-call an earlier version of the instrument still made on a local-only run is gone too. The report's
-`Offline.GhReportedNoSession` is `null` rather than `true` in that case — the probe was skipped, not
-answered, and the report says so instead of claiming an observation that never ran. See
-`OfflinePassAsync` in `ReadOnlyAcceptanceRun.cs`.
 
 ## The run recorded here
 
