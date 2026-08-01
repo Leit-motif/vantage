@@ -27,7 +27,7 @@ trust.
 ## Reproducing it
 
 ```bash
-dotnet run -c Release --project tools/KeystrokeWitness -- docs/acceptance/keystroke-witness.json --stamp $(git rev-parse HEAD) dotnet test tests/Vantage.Tests --configuration Release --no-build
+dotnet run -c Release --project tools/KeystrokeWitness -- docs/acceptance/keystroke-witness.json --stamp $(git rev-parse HEAD) dotnet test Vantage.slnx --configuration Release --no-build
 ```
 
 **Run it while using the machine.** A clean result from an idle desktop is the weakest version of

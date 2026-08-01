@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Fixtures both suites need, targeting the portable framework so the portable suite can use them.
+    Not a test project: it holds no tests, so nothing here is discovered twice.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Vantage.Tests.TestSupport</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The framework only: the adapter and the test SDK belong to the projects that hold tests. -->
+    <PackageReference Include="MSTest.TestFramework" Version="3.10.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Vantage.Core\Vantage.Core.csproj" />
+    <ProjectReference Include="..\..\src\Vantage.Infrastructure\Vantage.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -258,9 +258,9 @@ public sealed class DiscoveryTests
         _workspace.WriteFile(Path.Combine(target, "dep", "AGENTS.md"), "# vendored elsewhere\n");
 
         var junction = Path.Combine(project, "node_modules");
-        if (!TryCreateJunction(junction, target))
+        if (!DirectoryLink.TryCreate(junction, target))
         {
-            Assert.Inconclusive("This host cannot create a directory junction.");
+            Assert.Inconclusive("This host cannot create a directory link.");
         }
 
         var snapshot = await _harness.RefreshAsync();
@@ -280,9 +280,9 @@ public sealed class DiscoveryTests
         _workspace.WriteFile(Path.Combine(target, "other-dep", "AGENTS.md"), "# still vendored\n");
 
         var junction = Path.Combine(project, "node_modules");
-        if (!TryCreateJunction(junction, target))
+        if (!DirectoryLink.TryCreate(junction, target))
         {
-            Assert.Inconclusive("This host cannot create a directory junction.");
+            Assert.Inconclusive("This host cannot create a directory link.");
         }
 
         // Identity is where the project physically is; the route is how the owner reaches it.
@@ -308,9 +308,9 @@ public sealed class DiscoveryTests
         var target = Path.Combine(_workspace.Root, "external-deps");
         _workspace.WriteFile(Path.Combine(target, "companion", "AGENTS.md"), "# opted in, recorded where it lives\n");
 
-        if (!TryCreateJunction(Path.Combine(project, "node_modules"), target))
+        if (!DirectoryLink.TryCreate(Path.Combine(project, "node_modules"), target))
         {
-            Assert.Inconclusive("This host cannot create a directory junction.");
+            Assert.Inconclusive("This host cannot create a directory link.");
         }
 
         // Only the physical path is registered — the walk has to notice that the excluded junction
@@ -339,9 +339,9 @@ public sealed class DiscoveryTests
         _workspace.WriteFile(Path.Combine(target, "companion", "AGENTS.md"), "# only reachable through the junction\n");
 
         var project = _workspace.NewProject("host");
-        if (!TryCreateJunction(Path.Combine(project, "node_modules"), target))
+        if (!DirectoryLink.TryCreate(Path.Combine(project, "node_modules"), target))
         {
-            Assert.Inconclusive("This host cannot create a directory junction.");
+            Assert.Inconclusive("This host cannot create a directory link.");
         }
 
         _harness.Settings.MaxDiscoveryDepth = 3;
@@ -362,22 +362,6 @@ public sealed class DiscoveryTests
         Assert.IsFalse(
             snapshot.Diagnostics.Any(d => d.Message.Contains("was not reached", StringComparison.Ordinal)),
             "Nothing should be reported unreachable when a route to it exists.");
-    }
-
-    /// <summary>A junction needs no elevation, but a host may still refuse it.</summary>
-    internal static bool TryCreateJunction(string link, string target)
-    {
-        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe")
-        {
-            ArgumentList = { "/c", "mklink", "/J", link, target },
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        })!;
-
-        process.WaitForExit();
-        return process.ExitCode == 0 && Directory.Exists(link);
     }
 
     [TestMethod]

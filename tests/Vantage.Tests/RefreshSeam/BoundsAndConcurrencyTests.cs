@@ -191,13 +191,17 @@ public sealed class BoundsAndConcurrencyTests
     /// <summary>
     /// A child process that takes long enough for concurrency to be a real question. Ping against
     /// the loopback address is the shortest way to get a bounded, non-interactive delay out of a
-    /// tool that is present on every Windows install.
+    /// tool present on every platform this runs on; only the flag naming the count differs.
     /// </summary>
     private static async Task<IReadOnlyList<ProcessResult>> RunSlowCommandsAsync(IProcessRunner runner, int count)
     {
+        string[] twoPings = OperatingSystem.IsWindows()
+            ? ["-n", "2", "127.0.0.1"]
+            : ["-c", "2", "127.0.0.1"];
+
         var started = Stopwatch.StartNew();
         var results = await Task.WhenAll(Enumerable.Range(0, count).Select(_ =>
-            runner.RunAsync("ping", ["-n", "2", "127.0.0.1"], null, CancellationToken.None)));
+            runner.RunAsync("ping", twoPings, null, CancellationToken.None)));
 
         Assert.IsTrue(started.Elapsed > TimeSpan.FromMilliseconds(500), "The workload must not be instantaneous.");
         return results;

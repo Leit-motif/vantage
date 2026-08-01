@@ -6,6 +6,8 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Vantage.Tests/Vantage.Tests.csproj" />
+    <Project Path="tests/Vantage.Tests.Shell/Vantage.Tests.Shell.csproj" />
+    <Project Path="tests/Vantage.Tests.Support/Vantage.Tests.Support.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/KeystrokeWitness/KeystrokeWitness.csproj" />

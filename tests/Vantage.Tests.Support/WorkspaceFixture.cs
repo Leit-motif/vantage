@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
+using Vantage.Infrastructure.Discovery;
 
 namespace Vantage.Tests.TestSupport;
 
@@ -12,7 +13,16 @@ public sealed class WorkspaceFixture : IDisposable
 {
     public WorkspaceFixture()
     {
-        Root = Path.Combine(Path.GetTempPath(), "mwd-tests", Guid.NewGuid().ToString("n"));
+        // Canonical from the start, because a project's identity is its resolved path and the
+        // fixture has to hand out the name the dashboard will actually emit. On Windows the temp
+        // path already is that name; on macOS it is not — `Path.GetTempPath()` returns
+        // `/var/folders/…` and `/var` is a symbolic link to `/private/var`, so every path built
+        // from it names a project by an alias, and every assertion comparing the two disagrees.
+        // Resolving the whole path rather than its last segment is the point: the link is several
+        // segments above anything this fixture creates.
+        Root = ProjectDiscovery.CanonicalizeFully(
+            Path.Combine(Path.GetTempPath(), "mwd-tests", Guid.NewGuid().ToString("n")));
+
         Directory.CreateDirectory(Root);
         CacheFile = Path.Combine(Root, "cache", "cache.db");
     }

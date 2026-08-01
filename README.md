@@ -144,11 +144,17 @@ bound says so in diagnostics rather than returning a quietly short answer.
 | [`src/Vantage.Core`](src/Vantage.Core) | The domain, with no UI and no I/O: observed evidence, normalized workflow facts, derived projections, provenance, conflict reconciliation |
 | [`src/Vantage.Infrastructure`](src/Vantage.Infrastructure) | Everything touching the outside world: discovery, markdown parsing, the Git and `gh` adapters, the SQLite cache, settings, logging, the refresh orchestrator |
 | [`src/Vantage.App`](src/Vantage.App) | The WPF overlay, tray, and settings window |
-| [`tests/Vantage.Tests`](tests/Vantage.Tests) | The whole suite, driven through the product's real refresh boundary |
+| [`tests/Vantage.Tests`](tests/Vantage.Tests) | The engine's suite, driven through the product's real refresh boundary. Targets `net10.0` |
+| [`tests/Vantage.Tests.Shell`](tests/Vantage.Tests.Shell) | The suite that needs Windows to be true: the overlay read back from a real `HWND`, and registry intent through the Settings view model. Targets `net10.0-windows` |
+| [`tests/Vantage.Tests.Support`](tests/Vantage.Tests.Support) | The fixtures both suites use, on the portable framework so the portable suite can |
 | [`tools/`](tools) | A keystroke witness and a synthetic-workspace generator, both used to produce acceptance evidence |
 
 The dependency direction is the point: `Core` knows nothing about WPF, SQLite, Git or GitHub, so the
-rules about what may be believed are testable without any of them present.
+rules about what may be believed are testable without any of them present. The test split is what
+holds that to account — `Vantage.Tests` targets `net10.0`, and a `net10.0` project cannot reference
+a `net10.0-windows` one, so the engine acquiring a Windows dependency stops being something a reader
+has to notice. CI also runs that suite on Linux and macOS, because compiling without a Windows
+reference and running without Windows are different claims.
 
 ## Build and run
 
