@@ -29,14 +29,21 @@ new public repo, which is what you want.
 
 1. Rename the existing repository to `vantage-internal` and set it **private**. Nothing moves; the
    exposure stops at that moment.
-2. Create a new **public** repository named `vantage`. Leave it empty — no README, no licence, no
-   `.gitignore`. The first publish force-pushes a filtered history and an initial commit would only
-   be in the way.
-3. Point the working clone at the renamed private repo:
+2. **Immediately** repoint the working clone, before the next step:
 
    ```
    git remote set-url origin https://github.com/Leit-motif/vantage-internal.git
    ```
+
+   This one is not housekeeping. `origin` still reads
+   `github.com/Leit-motif/vantage.git`, which GitHub resolves by redirect while no repository holds
+   that name. Create the new public repo first and that name resolves to *it* — so the next
+   ordinary `git push origin main` would push the entire private history, planning tree included,
+   straight to the public repo. Repoint first and the hazard cannot arise.
+
+3. Create a new **public** repository named `vantage`. Leave it empty — no README, no licence, no
+   `.gitignore`. The first publish force-pushes a filtered history and an initial commit would only
+   be in the way.
 
 4. Confirm the filter is present. It is installed on the author's machine already:
 
