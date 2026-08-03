@@ -152,6 +152,29 @@ public sealed class SingleInstanceTests
     }
 
     /// <summary>
+    /// The other half of the same rule. Routing the guard through <see cref="TestSession"/> is what
+    /// the test above requires; this is what stops that route being used to claim the dashboard's
+    /// own session anyway, which it would otherwise carry as happily as any other string.
+    /// </summary>
+    [TestMethod]
+    public void A_session_this_suite_did_not_issue_itself_cannot_be_claimed_through_it_either()
+    {
+        var refused = Assert.ThrowsExactly<InvalidOperationException>(
+            () => TestSession.Claim(SingleInstanceGuard.DashboardSession),
+            "Handing the dashboard's own session to the sanctioned route must not be a way round it.");
+
+        StringAssert.Contains(
+            refused.Message,
+            SingleInstanceGuard.DashboardSession,
+            "The refusal has to name what was asked for, or the next reader cannot tell what happened.");
+
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => TestSession.Claim(@"Local\Vantage.SingleInstanceTests.0.0"),
+            "Nor is a name that merely looks like one of the suite's, which is how the real one "
+            + "would come back: spelled out rather than asked for.");
+    }
+
+    /// <summary>
     /// Runs the built application with the flag that makes it decide, report, and exit without
     /// ever building a window — about the session it is given rather than about the owner's.
     /// </summary>
