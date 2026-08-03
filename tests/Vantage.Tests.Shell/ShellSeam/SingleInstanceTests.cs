@@ -86,6 +86,35 @@ public sealed class SingleInstanceTests
             + "by accident, which is the whole failure this ticket is about.");
     }
 
+    /// <summary>
+    /// The escape hatch the suite needs must not be one the product has. Asserted about the
+    /// resolution itself, because the only other way to ask is to start a real dashboard.
+    /// </summary>
+    [TestMethod]
+    public void Only_the_probe_may_decide_about_a_session_other_than_the_dashboard_s()
+    {
+        Assert.AreEqual(
+            @"Local\Vantage.SomeoneElses",
+            LaunchSession.For([LaunchSession.ProbeArgument, LaunchSession.NameArgument, @"Local\Vantage.SomeoneElses"]),
+            "The probe has to be able to decide about a session the suite owns.");
+
+        Assert.AreEqual(
+            SingleInstanceGuard.DashboardSession,
+            LaunchSession.For([LaunchSession.NameArgument, @"Local\Vantage.SomeoneElses"]),
+            "An ordinary launch decides about the dashboard's own session whatever it is asked to, "
+            + "or the argument is a way to run two dashboards over one cache.");
+
+        Assert.AreEqual(
+            SingleInstanceGuard.DashboardSession,
+            LaunchSession.For([LaunchSession.ProbeArgument]),
+            "A probe that names nothing asks about the dashboard's own session, as it always did.");
+
+        Assert.AreEqual(SingleInstanceGuard.DashboardSession, LaunchSession.For([]));
+
+        Assert.IsTrue(LaunchSession.IsProbe([LaunchSession.ProbeArgument]));
+        Assert.IsFalse(LaunchSession.IsProbe([LaunchSession.NameArgument, "x"]));
+    }
+
     [TestMethod]
     public void The_names_this_suite_claims_are_its_own_and_never_repeat()
     {
@@ -133,7 +162,7 @@ public sealed class SingleInstanceTests
 
         using var process = Process.Start(new ProcessStartInfo(executable)
         {
-            ArgumentList = { "--single-instance-probe", "--instance-name", session },
+            ArgumentList = { LaunchSession.ProbeArgument, LaunchSession.NameArgument, session },
             UseShellExecute = false,
             CreateNoWindow = true,
         }) ?? throw new InvalidOperationException($"Could not launch {executable}.");
