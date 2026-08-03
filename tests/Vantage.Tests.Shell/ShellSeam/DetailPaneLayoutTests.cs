@@ -88,21 +88,30 @@ public sealed class DetailPaneLayoutTests
         WpfTestHost.Run(() =>
         {
             var themed = ThemeThickness();
+            var system = SystemParameters.VerticalScrollBarWidth;
             var bar = VerticalBar(pane);
+
+            // Stated as a measurement rather than only as a lookup, because the defect was a
+            // measurement: the bar arranged at the system metric while the theme's number sat
+            // there unread. A test that only compared against the resource would go red on the
+            // unfixed code for the resource being absent, which is a different fact.
+            Assert.IsTrue(
+                bar.ActualWidth < system,
+                $"The pane's bar arranged at {bar.ActualWidth}, which is the system metric "
+                    + $"({system}) rather than anything the theme asked for.");
 
             Assert.AreEqual(
                 RequiredThickness,
                 themed,
                 0.01,
-                $"The theme's ScrollBarThickness is {themed}, not the {RequiredThickness} the ticket "
-                    + "settled on.");
+                $"The theme publishes {themed} as ScrollBarThickness — NaN means it publishes none "
+                    + $"— not the {RequiredThickness} the ticket settled on.");
 
             Assert.AreEqual(
                 themed,
                 bar.ActualWidth,
                 0.01,
-                $"The pane's bar arranged at {bar.ActualWidth}, not the {themed} the theme sets. "
-                    + $"The system metric is {SystemParameters.VerticalScrollBarWidth}.");
+                $"The pane's bar arranged at {bar.ActualWidth}, not the {themed} the theme sets.");
         });
     }
 
@@ -272,6 +281,10 @@ public sealed class DetailPaneLayoutTests
 
             var bar = OwnBar(scroller);
 
+            Assert.IsTrue(
+                bar.ActualWidth < SystemParameters.VerticalScrollBarWidth,
+                $"The settings bar arranged at {bar.ActualWidth}, the system metric rather than "
+                    + "the theme's.");
             Assert.AreEqual(
                 ThemeThickness(),
                 bar.ActualWidth,
@@ -295,9 +308,13 @@ public sealed class DetailPaneLayoutTests
         });
     }
 
-    /// <summary>The thickness the running theme actually publishes, not a copy of it.</summary>
+    /// <summary>
+    /// The thickness the running theme actually publishes, not a copy of it. A theme that
+    /// publishes none reads as NaN rather than throwing, so a test that depends on it fails on
+    /// its own assertion with its own message instead of on a resource lookup.
+    /// </summary>
     private static double ThemeThickness() =>
-        (double)System.Windows.Application.Current.FindResource("ScrollBarThickness");
+        System.Windows.Application.Current.TryFindResource("ScrollBarThickness") as double? ?? double.NaN;
 
     /// <summary>
     /// What the text would take if nothing constrained it. Read from the glyphs rather than from
