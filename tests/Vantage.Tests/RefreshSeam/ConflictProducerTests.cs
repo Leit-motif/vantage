@@ -1,5 +1,6 @@
 using System.Reflection;
 using Vantage.Core.Projection;
+using Vantage.Infrastructure.Persistence;
 using Vantage.Tests.TestSupport;
 
 namespace Vantage.Tests.RefreshSeam;
@@ -219,6 +220,74 @@ public sealed class ConflictProducerTests
         var view = (await harness.RefreshAsync()).Project("repo");
 
         Assert.AreEqual(0, view.Conflicts.Count);
+    }
+
+    /// <summary>
+    /// The cost of the rename, paid where it falls. A projection stored by an earlier build names
+    /// a conflict's sides local and remote, and this build would read neither — leaving a
+    /// disagreement on screen with two blank halves. A stored projection is the one thing in the
+    /// cache the next refresh rebuilds in full, so it is dropped; activity, which cannot be
+    /// rederived, has to survive the same migration.
+    /// </summary>
+    [TestMethod]
+    public void A_projection_stored_under_the_old_side_names_is_dropped_rather_than_read_back_blank()
+    {
+        var path = Path.Combine(_workspace.Root, "cache", "schema3.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+        const string LegacyPayload = """
+            {"Identity":{"CanonicalPath":"c:/legacy","Name":"legacy"},"State":"Ready","StateReason":"because",
+             "Progress":{"Completed":0,"Total":1,"Excluded":0},"Efforts":[],
+             "Conflicts":[{"TicketId":"feature/001","Field":"Title","LocalValue":"Working tree title",
+               "RemoteValue":"Committed title","Resolution":"Working-tree value kept.",
+               "LocalProvenance":{"Source":"LocalFile","Locator":"001.md","TimestampKind":"FileSystem","RefreshId":"r1"},
+               "RemoteProvenance":{"Source":"LocalGit","Locator":"001.md@HEAD","TimestampKind":"GitCommit","RefreshId":"r1"}}]}
+            """;
+
+        using (var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}"))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE activity (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, project_path TEXT NOT NULL, occurred_at TEXT NOT NULL,
+                    kind TEXT NOT NULL, summary TEXT NOT NULL, ticket_id TEXT NULL, source TEXT NOT NULL,
+                    locator TEXT NOT NULL, timestamp_kind TEXT NOT NULL, refresh_id TEXT NOT NULL,
+                    UNIQUE (project_path, occurred_at, kind, locator, summary));
+                CREATE INDEX ix_activity_project_time ON activity (project_path, occurred_at);
+                CREATE TABLE ticket_snapshot (
+                    project_path TEXT NOT NULL, ticket_id TEXT NOT NULL, semantic_hash TEXT NOT NULL,
+                    title TEXT NOT NULL, raw_status TEXT NOT NULL, is_complete INTEGER NOT NULL,
+                    source_path TEXT NOT NULL, labels TEXT NOT NULL DEFAULT '', assignees TEXT NOT NULL DEFAULT '',
+                    blockers TEXT NOT NULL DEFAULT '', comment_count INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (project_path, ticket_id));
+                CREATE TABLE project_snapshot (
+                    project_path TEXT PRIMARY KEY, payload TEXT NOT NULL, captured_at TEXT NOT NULL);
+                CREATE TABLE artifact_snapshot (
+                    project_path TEXT NOT NULL, path TEXT NOT NULL, kind TEXT NOT NULL,
+                    semantic_hash TEXT NOT NULL, PRIMARY KEY (project_path, path));
+                INSERT INTO activity (project_path, occurred_at, kind, summary, ticket_id, source, locator, timestamp_kind, refresh_id)
+                    VALUES ('c:/legacy', '2026-07-30T09:00:00.0000000+00:00', 'LocalCommit', 'A commit nobody can rederive',
+                            NULL, 'LocalGit', 'c:/legacy#abc123', 'GitCommit', 'r0');
+                PRAGMA user_version=3;
+                """;
+            command.ExecuteNonQuery();
+            command.CommandText = "INSERT INTO project_snapshot VALUES ('c:/legacy', $payload, '2026-07-30T09:00:00.0000000+00:00');";
+            command.Parameters.AddWithValue("$payload", LegacyPayload);
+            command.ExecuteNonQuery();
+        }
+
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+
+        using var cache = DashboardCache.Open(path);
+
+        Assert.AreEqual(0, cache.Diagnostics.Count, "A migratable cache must be migrated, not discarded.");
+
+        var (view, _) = cache.LoadProjectSnapshot("c:/legacy");
+        Assert.IsNull(view, "A projection whose sides this build cannot read must not be offered as last-known-good.");
+
+        var activity = cache.LoadActivity("c:/legacy", DateTimeOffset.Parse("2026-07-01T00:00:00Z"));
+        Assert.AreEqual(1, activity.Count, "History is not derived from anything, so a migration must never drop it.");
     }
 
     /// <summary>
