@@ -1,4 +1,5 @@
 using System.Reflection;
+using Vantage.Core;
 using Vantage.Core.Projection;
 using Vantage.Infrastructure.Persistence;
 using Vantage.Tests.TestSupport;
@@ -190,6 +191,7 @@ public sealed class ConflictProducerTests
         var conflict = Single(view, ConflictField.WorkflowStatus);
         Assert.AreEqual("resolved", conflict.First.Value);
         StringAssert.Contains(conflict.Second.Value, "1 of 2");
+        StringAssert.Contains(conflict.Second.Value, "acceptance");
         Assert.AreNotEqual(
             conflict.First.Provenance.Origin,
             conflict.Second.Provenance.Origin,
@@ -197,11 +199,13 @@ public sealed class ConflictProducerTests
     }
 
     /// <summary>
-    /// The near-miss for producer three, twice over: a finished ticket whose boxes are all ticked,
-    /// and an unfinished one whose boxes are not. Neither is a disagreement.
+    /// The near-miss for producer three, three ways: a finished ticket whose acceptance boxes are
+    /// all ticked, an unfinished one whose boxes are not, and — the one a whole document scan gets
+    /// wrong — a finished ticket carrying open boxes that are not acceptance at all. A ticket that
+    /// records deferred work under its own heading is not contradicting its status.
     /// </summary>
     [TestMethod]
-    public async Task Unticked_boxes_on_work_that_does_not_claim_to_be_finished_report_nothing()
+    public async Task Unticked_boxes_that_are_not_acceptance_report_nothing()
     {
         var project = _workspace.NewProject("repo");
         var effort = _workspace.NewEffort(project, "feature");
@@ -209,17 +213,132 @@ public sealed class ConflictProducerTests
         _workspace.WriteTicket(
             effort,
             "001.md",
-            Fixtures.Ticket("Ship it", "resolved") + "\n- [x] Built\n- [X] Proven\n");
+            Fixtures.Ticket("Ship it", "resolved") + "\n## Acceptance\n\n- [x] Built\n- [X] Proven\n");
 
         _workspace.WriteTicket(
             effort,
             "002.md",
-            Fixtures.Ticket("Still going", "ready") + "\n- [ ] Built\n- [ ] Proven\n");
+            Fixtures.Ticket("Still going", "ready") + "\n## Acceptance\n\n- [ ] Built\n- [ ] Proven\n");
+
+        _workspace.WriteTicket(
+            effort,
+            "003.md",
+            Fixtures.Ticket("Shipped, with follow-ups", "resolved")
+            + "\n## Acceptance\n\n- [x] Built\n\n## Deferred\n\n- [ ] The nice-to-have\n- [ ] The other one\n");
 
         using var harness = NewHarness();
         var view = (await harness.RefreshAsync()).Project("repo");
 
-        Assert.AreEqual(0, view.Conflicts.Count);
+        Assert.AreEqual(
+            0,
+            view.Conflicts.Count,
+            $"Reported: {string.Join(", ", view.Conflicts.Select(c => $"{c.TicketId} {c.Second.Value}"))}");
+    }
+
+    /// <summary>
+    /// A satisfied edge is one row per edge, because a value assembled from three files cannot be
+    /// attributed to anywhere a reader could go and look — which is the property that separates a
+    /// conflict from a warning.
+    /// </summary>
+    [TestMethod]
+    public async Task Each_satisfied_edge_is_reported_against_the_file_that_states_it()
+    {
+        var project = _workspace.NewProject("repo");
+        var effort = _workspace.NewEffort(project, "feature");
+
+        _workspace.WriteTicket(effort, "001.md", Fixtures.Ticket("Decide the shape", "resolved"));
+        _workspace.WriteTicket(effort, "002.md", Fixtures.Ticket("Prepare the way", "done"));
+        _workspace.WriteTicket(effort, "003.md", Fixtures.Ticket("Build it", "blocked", blockedBy: "001, 002"));
+
+        using var harness = NewHarness();
+        var view = (await harness.RefreshAsync()).Project("repo");
+
+        var edges = view.Conflicts.Where(c => c.Field == ConflictField.Blockers).ToList();
+        Assert.AreEqual(2, edges.Count, "Two finished edges are two disagreements, not one summary of both.");
+
+        CollectionAssert.AreEquivalent(
+            new[] { "'Decide the shape' is resolved", "'Prepare the way' is done" },
+            edges.Select(e => e.Second.Value).ToArray());
+
+        foreach (var edge in edges)
+        {
+            var subject = edge.Second.Value.Split('\'')[1];
+            var file = subject == "Decide the shape" ? "001.md" : "002.md";
+
+            StringAssert.Contains(
+                edge.Second.Provenance.Origin,
+                file,
+                "Each side has to point at the one file it was read from.",
+                StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// A producer that could not run says so. `git status` can fail on its own — a corrupt index is
+    /// enough — while the probe and the history read both succeed, and evidence that is quietly
+    /// missing a producer must never be presented as complete.
+    /// </summary>
+    [TestMethod]
+    public async Task A_working_tree_git_could_not_report_is_named_rather_than_passed_over()
+    {
+        var project = _workspace.NewProject("repo");
+        var effort = _workspace.NewEffort(project, "feature");
+
+        _workspace.WriteTicket(effort, "001.md", Fixtures.Ticket("Draw the grip", "ready"));
+        _workspace.InitGitRepository(project);
+        _workspace.Commit(project, "add planning");
+
+        File.WriteAllText(Path.Combine(effort, "issues", "001.md"), Fixtures.Ticket("Draw a solid grip", "in progress"));
+
+        // Only the working-tree read fails; the probe and the history read are the real ones.
+        var runner = new FakeProcessRunner()
+            .When(
+                (name, args) => name == "git" && args.Contains("status"),
+                () => new Vantage.Infrastructure.Processes.ProcessResult(
+                    128, string.Empty, "fatal: index file corrupt", false, false));
+
+        using var harness = new RefreshHarness(_workspace, runner, DateTimeOffset.UtcNow).WithRealGit();
+        var view = (await harness.RefreshAsync()).Project("repo");
+
+        Assert.AreEqual(
+            0,
+            view.Conflicts.Count,
+            "Precondition: the comparison cannot be made, so there is nothing for it to report.");
+
+        Assert.IsTrue(
+            view.Diagnostics.Any(d => d.Code == DiagnosticCode.GitUnavailable
+                && d.Message.Contains("uncommitted", StringComparison.OrdinalIgnoreCase)),
+            $"The outage has to be visible: {string.Join(" | ", view.Diagnostics.Select(d => d.Code + " " + d.Message))}");
+    }
+
+    /// <summary>
+    /// The file cap bounds how many processes start; it does not bound how many bytes one hands
+    /// back. A ticket that is small now can have a very large blob at HEAD, and reading it whole
+    /// would exhaust memory on a repository that satisfies every other limit.
+    /// </summary>
+    [TestMethod]
+    public async Task A_committed_copy_too_large_to_read_is_skipped_and_reported()
+    {
+        var project = _workspace.NewProject("repo");
+        var effort = _workspace.NewEffort(project, "feature");
+        var ticket = Path.Combine(effort, "issues", "001.md");
+
+        // Committed large, edited small: the working copy passes the indexer's own size limit.
+        var padding = new string('x', 1_200_000);
+        _workspace.WriteTicket(effort, "001.md", Fixtures.Ticket("Draw the grip", "ready") + "\n" + padding + "\n");
+        _workspace.InitGitRepository(project);
+        _workspace.Commit(project, "add planning");
+
+        File.WriteAllText(ticket, Fixtures.Ticket("Draw a solid grip", "in progress"));
+
+        using var harness = NewHarness();
+        var view = (await harness.RefreshAsync()).Project("repo");
+
+        Assert.AreEqual(0, view.Conflicts.Count, "The committed side was never read, so nothing can be claimed about it.");
+
+        Assert.IsTrue(
+            view.HasDiagnostic(DiagnosticCode.ConflictScanTruncated),
+            $"A skipped comparison has to be said out loud: {string.Join(" | ", view.Diagnostics.Select(d => d.Code))}");
     }
 
     /// <summary>
@@ -301,7 +420,10 @@ public sealed class ConflictProducerTests
         var project = _workspace.NewProject("repo");
         var effort = _workspace.NewEffort(project, "feature");
 
-        _workspace.WriteTicket(effort, "001.md", Fixtures.Ticket("Decide the shape", "resolved") + "\n- [x] Done\n");
+        _workspace.WriteTicket(
+            effort,
+            "001.md",
+            Fixtures.Ticket("Decide the shape", "resolved") + "\n## Acceptance\n\n- [x] Done\n");
         _workspace.WriteTicket(effort, "002.md", Fixtures.Ticket("Build it", "blocked", blockedBy: "003"));
         _workspace.WriteTicket(effort, "003.md", Fixtures.Ticket("Prepare the way", "in progress"));
 

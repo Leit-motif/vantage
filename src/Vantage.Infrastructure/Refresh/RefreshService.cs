@@ -299,7 +299,6 @@ public sealed class RefreshService(
             ? await _workingTree.CompareAsync(
                 project.CanonicalPath,
                 index.Efforts.SelectMany(e => e.Tickets).ToList(),
-                git.FileFacts,
                 refreshId,
                 cancellationToken).ConfigureAwait(false)
             : WorkingTreeComparison.None;

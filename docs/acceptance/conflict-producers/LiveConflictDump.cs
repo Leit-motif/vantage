@@ -18,9 +18,16 @@ namespace Vantage.Tests.RefreshSeam;
 /// fixtures cannot: what the badge actually says on a real tracker, where the failure mode is not
 /// a missing conflict but a hundred useless ones.
 ///
-/// Point <c>LIVE_ROOT</c> at the directory holding the repository and <c>LIVE_DUMP</c> at the file
-/// to write. Nothing is written inside the observed repository: settings and cache go to a
+/// Point <c>LIVE_ROOT</c> at the directory holding the repositories and <c>LIVE_DUMP</c> at the
+/// file to write. Nothing is written inside an observed repository: settings and cache go to a
 /// temporary directory of their own.
+/// <para>
+/// What it writes is committed, and this directory is published, so the output carries no absolute
+/// path — not the root, not a project's, not a ticket's. A project is named only when
+/// <c>LIVE_DETAIL</c> matches it, and every other one is an index and its counts. The owner's own
+/// workspaces are the reason: their project names are theirs, and a run over them still has to be
+/// able to say how many of them reported nothing.
+/// </para>
 /// </summary>
 [TestClass]
 public sealed class LiveConflictDump
@@ -44,23 +51,37 @@ public sealed class LiveConflictDump
         var service = new RefreshService(settings, runner, cache, TimeProvider.System, store);
         var snapshot = await service.RefreshAsync(CancellationToken.None);
 
-        var text = new StringBuilder();
-        text.Append("root ").Append(root.Replace('\\', '/')).Append('\n');
-        text.Append("projects ").Append(snapshot.Projects.Count).Append('\n');
+        var detail = Environment.GetEnvironmentVariable("LIVE_DETAIL");
 
+        var text = new StringBuilder();
+        text.Append("projects ").Append(snapshot.Projects.Count).Append('\n');
+        text.Append("projectsReportingNoConflict ").Append(snapshot.Projects.Count(p => p.Conflicts.Count == 0)).Append('\n');
+        text.Append("conflicts ").Append(snapshot.Projects.Sum(p => p.Conflicts.Count)).Append('\n');
+
+        var index = 0;
         foreach (var project in snapshot.Projects.OrderBy(p => p.Identity.Name, StringComparer.Ordinal))
         {
+            index++;
             var tickets = project.Efforts.SelectMany(e => e.Tickets).ToList();
 
-            text.Append("\nPROJECT ").Append(project.Identity.Name).Append('\n');
+            var named = detail is not null
+                && project.Identity.Name.Contains(detail, StringComparison.OrdinalIgnoreCase);
+
+            text.Append("\nPROJECT ").Append(named ? project.Identity.Name : $"project-{index:00}").Append('\n');
             text.Append("  tickets ").Append(tickets.Count)
                 .Append(" | diagnostics ").Append(project.Diagnostics.Count)
                 .Append(" | conflicts ").Append(project.Conflicts.Count).Append('\n');
             text.Append("  itemsCarryingAConflict ").Append(tickets.Count(t => t.Conflicts.Count > 0)).Append('\n');
 
+            if (!named)
+            {
+                continue;
+            }
+
             foreach (var conflict in project.Conflicts
                 .OrderBy(c => c.TicketId, StringComparer.Ordinal)
-                .ThenBy(c => c.Field.ToString(), StringComparer.Ordinal))
+                .ThenBy(c => c.Field.ToString(), StringComparer.Ordinal)
+                .ThenBy(c => c.First.Value, StringComparer.Ordinal))
             {
                 text.Append("  CONFLICT ").Append(conflict.Field).Append(" on ").Append(conflict.TicketId).Append('\n');
                 text.Append("    ").Append(conflict.First.Provenance.Origin).Append(" :: ").Append(conflict.First.Value).Append('\n');

@@ -23,12 +23,11 @@ public sealed record WorkingTreeComparison(
 /// to a ticket's prose is work in progress, not a disagreement.
 /// </para>
 /// </summary>
-public sealed class WorkingTreeAdapter(IProcessRunner runner, int maxFiles = 50)
+public sealed class WorkingTreeAdapter(IProcessRunner runner, int maxFiles = 50, int maxBlobBytes = 1_048_576)
 {
     public async Task<WorkingTreeComparison> CompareAsync(
         string projectPath,
         IReadOnlyList<WorkflowTicket> tickets,
-        GitFileFacts facts,
         string refreshId,
         CancellationToken cancellationToken)
     {
@@ -52,10 +51,18 @@ public sealed class WorkingTreeAdapter(IProcessRunner runner, int maxFiles = 50)
 
         if (!status.Succeeded)
         {
-            // A repository that cannot answer this question still has everything else to say, so
-            // the comparison is simply not made. `git status` failing is already reported by the
-            // history read that runs alongside it when it is a real outage.
-            return WorkingTreeComparison.None;
+            // Reported rather than swallowed. The history read can succeed while this one fails —
+            // a corrupt index is enough — and silently dropping the comparison would present
+            // evidence that is missing a producer as though it were complete.
+            return new WorkingTreeComparison(
+                [],
+                [
+                    Diagnostic.Warning(
+                        DiagnosticCode.GitUnavailable,
+                        "git could not report the working tree here, so uncommitted planning edits "
+                        + $"are not compared against the last commit: {Summarize(status)}",
+                        projectPath),
+                ]);
         }
 
         var modified = ModifiedPaths(status.StandardOutput)
@@ -81,14 +88,39 @@ public sealed class WorkingTreeAdapter(IProcessRunner runner, int maxFiles = 50)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            // The file count bounds how many processes start; it does not bound how many bytes
+            // one of them hands back. A ticket that is small now can have a very large blob at
+            // HEAD, and `cat-file -p` would stream all of it into memory, so the size is asked
+            // for first — the same limit the indexer applies to the file on disk.
+            var size = await runner.RunAsync(
+                "git",
+                ["-C", projectPath, "cat-file", "-s", $"HEAD:{relative}"],
+                projectPath,
+                cancellationToken).ConfigureAwait(false);
+
+            // A file added but not yet committed has no other side to disagree with, and an
+            // unborn HEAD fails the same way. Neither is an error worth reporting.
+            if (!size.Succeeded || !long.TryParse(size.StandardOutput.Trim(), out var bytes))
+            {
+                continue;
+            }
+
+            if (bytes > maxBlobBytes)
+            {
+                diagnostics.Add(Diagnostic.Info(
+                    DiagnosticCode.ConflictScanTruncated,
+                    $"The committed copy of '{relative}' is larger than the {maxBlobBytes / 1024} KB "
+                    + "read limit and was not compared against the working tree.",
+                    Path.Combine(projectPath, relative)));
+                continue;
+            }
+
             var committed = await runner.RunAsync(
                 "git",
                 ["-C", projectPath, "cat-file", "-p", $"HEAD:{relative}"],
                 projectPath,
                 cancellationToken).ConfigureAwait(false);
 
-            // A file added but not yet committed has no other side to disagree with, and an
-            // unborn HEAD fails the same way. Neither is an error worth reporting.
             if (!committed.Succeeded)
             {
                 continue;
@@ -98,11 +130,21 @@ public sealed class WorkingTreeAdapter(IProcessRunner runner, int maxFiles = 50)
                 byRelativePath[relative],
                 relative,
                 committed.StandardOutput,
-                facts.LastCommitByPath.TryGetValue(relative, out var at) ? at : null,
                 refreshId));
         }
 
         return new WorkingTreeComparison(conflicts, diagnostics);
+    }
+
+    private static string Summarize(ProcessResult result)
+    {
+        if (result.TimedOut)
+        {
+            return "the command timed out";
+        }
+
+        var error = result.StandardError.Trim();
+        return error.Length == 0 ? $"exit code {result.ExitCode}" : error.Split('\n')[0].Trim();
     }
 
     /// <summary>
@@ -155,7 +197,6 @@ public sealed class WorkingTreeAdapter(IProcessRunner runner, int maxFiles = 50)
         WorkflowTicket ticket,
         string relative,
         string committedContent,
-        DateTimeOffset? committedAt,
         string refreshId)
     {
         var (heading, fields) = MetadataGrammar.Parse(committedContent);
@@ -163,12 +204,16 @@ public sealed class WorkingTreeAdapter(IProcessRunner runner, int maxFiles = 50)
         ObservedValue Working(string value) =>
             new(value, Provenance.File(ticket.SourcePath, refreshId));
 
+        // No timestamp is claimed for this side. The obvious one to hand — the last commit that
+        // touched this path — is computed across every local branch, and the content here was read
+        // from HEAD specifically, so on a repository with more than one branch the two can be
+        // about different commits. A locator naming the revision is honest; a borrowed time is not.
         ObservedValue Committed(string value) =>
             new(value, new Provenance(
                 EvidenceSource.LocalGit,
                 $"{relative}@HEAD",
-                committedAt is null ? TimestampProvenance.Unknown : TimestampProvenance.GitCommit,
-                committedAt,
+                TimestampProvenance.Unknown,
+                null,
                 refreshId));
 
         const string Kept =

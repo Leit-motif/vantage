@@ -185,7 +185,7 @@ public sealed partial class WorkflowIndexer(int maxFileBytes = 1_048_576, int ma
             kind,
             heading,
             fields,
-            MetadataGrammar.Checklist(content),
+            MetadataGrammar.AcceptanceChecklist(content),
             SemanticHash.Compute(content),
             tracked,
             provenance);
@@ -255,7 +255,7 @@ public sealed partial class WorkflowIndexer(int maxFileBytes = 1_048_576, int ma
             Title = title,
             Status = status,
             StatusLine = statusField.LineNumber,
-            Checklist = artifact.Checklist,
+            Acceptance = artifact.Acceptance,
             Kind = kind,
             Stage = artifact.Field(MetadataGrammar.Keys.Stage)?.RawValue,
             Blockers = blockers,

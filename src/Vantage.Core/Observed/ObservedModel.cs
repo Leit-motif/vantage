@@ -13,8 +13,8 @@ public enum EffortArtifactKind
 }
 
 /// <summary>
-/// The markdown checkboxes a file states about itself. Counted, never interpreted: what a box
-/// means is the file's business, and only the disagreement between a completed status and an
+/// The markdown checkboxes under a file's acceptance heading. Counted, never interpreted: what a
+/// box means is the file's business, and only the disagreement between a completed status and an
 /// unticked box is the dashboard's.
 /// </summary>
 public sealed record ChecklistTally(int Ticked, int Unticked)
@@ -31,7 +31,7 @@ public sealed record ObservedArtifact(
     EffortArtifactKind Kind,
     string? HeadingTitle,
     IReadOnlyList<ObservedMetadataField> Fields,
-    ChecklistTally Checklist,
+    ChecklistTally Acceptance,
     string SemanticHash,
     bool TrackedInGit,
     Provenance Provenance)

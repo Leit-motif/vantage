@@ -12,8 +12,8 @@ namespace Vantage.Core.Projection;
 /// as stuck and is free, so the frontier the owner is working from is wrong by one item.
 /// </item>
 /// <item>
-/// A ticket that calls itself finished over its own unticked checkboxes. Progress counts it as
-/// done; the file's own evidence says part of it is not.
+/// A ticket that calls itself finished over its own unticked acceptance boxes. Progress counts it
+/// as done; the file's own evidence says part of it is not.
 /// </item>
 /// </list>
 /// <para>
@@ -36,8 +36,7 @@ public static class ConflictDetection
                 ? found
                 : new BlockerResolution(ticket.Id, [], false, false);
 
-            var satisfied = SatisfiedEdge(ticket, resolution, byId);
-            if (satisfied is not null)
+            foreach (var satisfied in SatisfiedEdges(ticket, resolution, byId))
             {
                 yield return satisfied;
             }
@@ -52,9 +51,14 @@ public static class ConflictDetection
 
     /// <summary>
     /// A stated edge against the thing it names. The ticket's status line says it is waiting; the
-    /// tickets it names each say they are finished, and those are two observations of one subject.
+    /// ticket it names says it is finished, and those are two observations of one subject.
+    /// <para>
+    /// One row per edge, not one per ticket. Both sides of a row have to be attributable to
+    /// somewhere a reader can go and look, and a value assembled from three files cannot be —
+    /// which would make the aggregate exactly the kind of warning this project refuses to ship.
+    /// </para>
     /// </summary>
-    private static ConflictReport? SatisfiedEdge(
+    private static IEnumerable<ConflictReport> SatisfiedEdges(
         WorkflowTicket ticket,
         BlockerResolution resolution,
         IReadOnlyDictionary<string, WorkflowTicket> byId)
@@ -65,33 +69,34 @@ public static class ConflictDetection
             || ticket.Blockers.Count == 0
             || !resolution.CanMove)
         {
-            return null;
+            yield break;
         }
 
-        var named = resolution.ResolvedBlockerIds
-            .Select(id => byId.TryGetValue(id, out var blocker) ? blocker : null)
-            .Where(b => b is not null)
-            .Select(b => b!)
-            .ToList();
+        // Every edge resolved cleanly — that is what CanMove means — so the resolved ids stand in
+        // the order the file declared them, and each keeps the wording it was written with.
+        var stated = ticket.Blockers.Count == resolution.ResolvedBlockerIds.Count;
 
-        if (named.Count == 0)
+        for (var i = 0; i < resolution.ResolvedBlockerIds.Count; i++)
         {
-            return null;
+            if (!byId.TryGetValue(resolution.ResolvedBlockerIds[i], out var named))
+            {
+                continue;
+            }
+
+            var raw = stated ? ticket.Blockers[i].RawValue : named.LocalKey;
+
+            yield return new ConflictReport(
+                ticket.Id,
+                ConflictField.Blockers,
+                new ObservedValue(
+                    $"{ticket.Status.RawValue}, waiting on {raw}",
+                    AsRead(ticket, $"L{ticket.StatusLine}")),
+                new ObservedValue(
+                    $"'{named.Title}' is {named.Status.RawValue}",
+                    AsRead(named, named.StatusLine > 0 ? $"L{named.StatusLine}" : null)),
+                "The named work was kept: it is finished, so this edge cannot be holding anything "
+                + "up. This ticket's own status line is what is out of date.");
         }
-
-        var stated = string.Join(", ", ticket.Blockers.Select(b => b.RawValue));
-
-        return new ConflictReport(
-            ticket.Id,
-            ConflictField.Blockers,
-            new ObservedValue(
-                $"{ticket.Status.RawValue}, waiting on {stated}",
-                AsRead(ticket, $"L{ticket.StatusLine}")),
-            new ObservedValue(
-                string.Join("; ", named.Select(b => $"'{b.Title}' is {b.Status.RawValue}")),
-                AsRead(named[0])),
-            "The named work was kept: every edge this ticket declares is finished, so it can move. "
-            + "Its own status line is what is out of date.");
     }
 
     /// <summary>
@@ -101,22 +106,22 @@ public static class ConflictDetection
     /// </summary>
     private static ConflictReport? OverstatedCompletion(WorkflowTicket ticket)
     {
-        if (!ticket.IsComplete || ticket.Checklist.Unticked == 0)
+        if (!ticket.IsComplete || ticket.Acceptance.Unticked == 0)
         {
             return null;
         }
 
-        var boxes = ticket.Checklist;
+        var boxes = ticket.Acceptance;
 
         return new ConflictReport(
             ticket.Id,
             ConflictField.WorkflowStatus,
             new ObservedValue(ticket.Status.RawValue, AsRead(ticket, $"L{ticket.StatusLine}")),
             new ObservedValue(
-                $"{boxes.Unticked} of {boxes.Total} checklist item(s) still unticked",
-                AsRead(ticket, "checklist")),
+                $"{boxes.Unticked} of {boxes.Total} acceptance item(s) still unticked",
+                AsRead(ticket, "acceptance")),
             "The status line was kept, so this ticket counts as complete everywhere. Its own "
-            + "checklist says part of it is not.");
+            + "acceptance list says part of it is not.");
     }
 
     /// <summary>

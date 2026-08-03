@@ -62,10 +62,10 @@ public sealed record WorkflowTicket
     public int StatusLine { get; init; }
 
     /// <summary>
-    /// The checkboxes the file states about itself. A ticket that calls itself finished over
-    /// unticked boxes is disagreeing with its own evidence, which is the only use this has.
+    /// The checkboxes under the file's own acceptance heading. A ticket that calls itself finished
+    /// over unticked ones is disagreeing with its own evidence, which is the only use this has.
     /// </summary>
-    public ChecklistTally Checklist { get; init; } = ChecklistTally.None;
+    public ChecklistTally Acceptance { get; init; } = ChecklistTally.None;
 
     public required WorkUnitKind Kind { get; init; }
 

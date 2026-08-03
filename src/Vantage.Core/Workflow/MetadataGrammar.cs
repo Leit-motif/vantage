@@ -89,14 +89,21 @@ public static class MetadataGrammar
     }
 
     /// <summary>
-    /// Counts the checkbox items a document states about itself. Fenced code is skipped, because a
-    /// checklist quoted inside an example is not something the file claims about its own work.
+    /// Counts the checkboxes under a document's acceptance heading, and only those.
+    /// <para>
+    /// The whole document is the wrong scope: a finished ticket routinely carries an unticked list
+    /// of deferred work, out-of-scope notes, or an example, and none of those contradict its
+    /// status. A file with no acceptance heading states no acceptance list, so it tallies nothing
+    /// rather than having every box it happens to contain read as one. Fenced code is skipped for
+    /// the same reason — a checklist quoted inside an example is not a claim about this work.
+    /// </para>
     /// </summary>
-    public static ChecklistTally Checklist(string content)
+    public static ChecklistTally AcceptanceChecklist(string content)
     {
         var ticked = 0;
         var unticked = 0;
         var inFence = false;
+        var depth = 0;
 
         foreach (var raw in content.Split('\n'))
         {
@@ -108,7 +115,31 @@ public static class MetadataGrammar
                 continue;
             }
 
-            if (inFence
+            if (inFence)
+            {
+                continue;
+            }
+
+            if (line.StartsWith('#'))
+            {
+                var level = line.TakeWhile(c => c == '#').Count();
+                var heading = line[level..].Trim();
+
+                if (heading.StartsWith("acceptance", StringComparison.OrdinalIgnoreCase))
+                {
+                    depth = level;
+                }
+                else if (depth > 0 && level <= depth)
+                {
+                    // The acceptance section ends where the next sibling or parent heading begins;
+                    // a subheading beneath it is still part of it.
+                    depth = 0;
+                }
+
+                continue;
+            }
+
+            if (depth == 0
                 || !(line.StartsWith("- [", StringComparison.Ordinal) || line.StartsWith("* [", StringComparison.Ordinal))
                 || line.Length < 5
                 || line[4] != ']')
