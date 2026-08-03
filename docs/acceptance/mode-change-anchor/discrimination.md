@@ -53,8 +53,21 @@ Two further before-observations, both from the previous ticket rather than manuf
 across two of them; and the cold review of that ticket hit `Collapsing_at_the_bottom_…` on its own
 independent full-suite run.
 
-After, at the whole-solution level: six consecutive clean runs on `a4ac182` at 143/143 and 87/87, and
-the suite green on `c5c3041` at 143/143 and 88/88.
+After, at the whole-solution level, on the final code (`c5c3041`; `git diff --name-only c5c3041..HEAD
+-- src tests` is empty): **twelve full-solution runs, and the four geometry tests passed in all
+twelve.** Eleven of the twelve were clean outright at 143/143 and 88/88.
+
+The twelfth failed one test — `Persisting_registry_intent_writes_only_under_the_dashboard_s_own_app_data`,
+in the portable suite. It is not this change and cannot be: `Vantage.Tests` targets `net10.0` and so
+cannot reference the `net10.0-windows` project this change edits, which is the property
+`docs/testing.md` says the split exists to give. It did not recur in 12 runs of that test alone, 6
+runs of the whole portable suite, or the 6 further full-solution runs after it, so no rate is claimed
+for it beyond "seen once, under the full-solution run, where both assemblies run at once". Reported
+separately rather than absorbed here.
+
+An earlier six consecutive clean full-solution runs were taken on `a4ac182`, before the layout pass
+was removed. They are superseded by the twelve above and not relied on — the cold review was right
+that runs on the previous implementation cannot close a cell about this one.
 
 ## Three tests that ran, and one filter that measures nothing
 
