@@ -347,6 +347,19 @@ unaffected by a header string, and re-shooting would replace a record the owner 
 frame with one taken to make a caption tidy. The current interface is in `docs/images/`, rendered
 from the same fixture by `--capture`, which is a different artifact for a different purpose.
 
+## `07-before/` and `07-after/`
+
+These two are `--capture` renders, not cut out of the composited screen, and they are the exception
+the distinction above allows for. `07-detail-pane-scrollbar.md` is a claim about **layout** — how
+wide the scrollbar is and how much room the content beside it gets — and layout is entirely inside
+the window's own visual tree. Nothing about it depends on what shows through the surface, which is
+the only thing a screen cut adds and the only thing `--capture` cannot show.
+
+Both were rendered from the same sanitized fixture, at expanded and 720, on the commits named in
+the ticket: `3880efc` before, `1411877` after. What changed between them is the bar — 16.8 units
+with arrow buttons, against 8 with none — and the room that gives back to the status labels and
+conflict controls beside it.
+
 ---
 
 # After the adapter went

@@ -127,9 +127,111 @@
     <Setter Property="Padding" Value="6,3" />
   </Style>
 
+  <!--
+    The bar the surface asks for. A Width setter alone never produced one: the stock ScrollBar
+    template carries a MinWidth taken from SystemParameters.VerticalScrollBarWidth, and a minimum
+    beats a width, so every ScrollViewer in the app arranged its bar at the system metric — 16.8
+    here, at 125% — complete with the arrow buttons this surface has no use for. The Width property
+    read 8 the whole time, which is why the setter looked like it was working.
+
+    So the thickness lives in one place and the template is what makes it real.
+  -->
+  <sys:Double x:Key="ScrollBarThickness">8</sys:Double>
+
+  <!-- The paging halves of the track: hit targets, and nothing to look at. -->
+  <Style TargetType="RepeatButton" x:Key="ScrollPageButton">
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="IsTabStop" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="RepeatButton">
+          <Border Background="Transparent" />
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style TargetType="Thumb" x:Key="ScrollThumb">
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="IsTabStop" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Thumb">
+          <Border x:Name="Bar" Margin="1" CornerRadius="3"
+                  Background="{DynamicResource TextTertiaryBrush}" />
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="Bar" Property="Background" Value="{DynamicResource TextSecondaryBrush}" />
+            </Trigger>
+            <Trigger Property="IsDragging" Value="True">
+              <Setter TargetName="Bar" Property="Background" Value="{DynamicResource TextSecondaryBrush}" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <Style TargetType="ScrollBar">
-    <Setter Property="Width" Value="8" />
     <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Width" Value="{StaticResource ScrollBarThickness}" />
+    <Setter Property="MinWidth" Value="{StaticResource ScrollBarThickness}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ScrollBar">
+          <Border Background="{TemplateBinding Background}">
+            <!--
+              A reserved gutter is only worth having if it stays reserved, so the track is hidden
+              rather than collapsed when there is nothing to scroll: the bar keeps its width and
+              the content beside it keeps the same one at every content height.
+            -->
+            <Track x:Name="PART_Track"
+                   Orientation="{TemplateBinding Orientation}"
+                   IsDirectionReversed="True">
+              <Track.Thumb>
+                <Thumb x:Name="Grip" Style="{StaticResource ScrollThumb}" MinHeight="24" />
+              </Track.Thumb>
+              <Track.DecreaseRepeatButton>
+                <RepeatButton x:Name="PageBack" Style="{StaticResource ScrollPageButton}"
+                              Command="ScrollBar.PageUpCommand" />
+              </Track.DecreaseRepeatButton>
+              <Track.IncreaseRepeatButton>
+                <RepeatButton x:Name="PageOn" Style="{StaticResource ScrollPageButton}"
+                              Command="ScrollBar.PageDownCommand" />
+              </Track.IncreaseRepeatButton>
+            </Track>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="Maximum" Value="0">
+              <Setter TargetName="PART_Track" Property="Visibility" Value="Hidden" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter TargetName="PART_Track" Property="Visibility" Value="Hidden" />
+            </Trigger>
+            <!--
+              A horizontal bar pages sideways. The commands are part of the swap and not merely
+              the geometry: PageUp and PageDown move a vertical offset, so a horizontal track left
+              bound to them looks right and does nothing when either half is clicked.
+            -->
+            <Trigger Property="Orientation" Value="Horizontal">
+              <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+              <Setter TargetName="Grip" Property="MinHeight" Value="0" />
+              <Setter TargetName="Grip" Property="MinWidth" Value="24" />
+              <Setter TargetName="PageBack" Property="Command" Value="ScrollBar.PageLeftCommand" />
+              <Setter TargetName="PageOn" Property="Command" Value="ScrollBar.PageRightCommand" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+    <Style.Triggers>
+      <Trigger Property="Orientation" Value="Horizontal">
+        <Setter Property="Width" Value="{x:Static sys:Double.NaN}" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="Height" Value="{StaticResource ScrollBarThickness}" />
+        <Setter Property="MinHeight" Value="{StaticResource ScrollBarThickness}" />
+      </Trigger>
+    </Style.Triggers>
   </Style>
 
 </ResourceDictionary>
