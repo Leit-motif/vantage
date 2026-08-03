@@ -1,14 +1,14 @@
 # Runtime acceptance
 
-Six records, each answering a question the fixtures cannot: whether the dashboard stays read-only
+Seven records, each answering a question the fixtures cannot: whether the dashboard stays read-only
 against the owner's real workspaces, whether that stayed true with GitHub enrichment off by default,
 whether it stays true now that there is no enrichment to turn off, whether the test suite stays off
-the owner's keyboard, what the running shell does when Windows itself moves underneath it, and what
-the overlay actually looks like on a real desktop. All are made on the live machine, and all record
-their evidence here.
+the owner's keyboard, what the running shell does when Windows itself moves underneath it, what the
+overlay actually looks like on a real desktop, and how many disagreements the conflict model reports
+on a real tracker. All are made on the live machine, and all record their evidence here.
 
-`local-only-removal.json` is described last, and is the only one made *after* the adapter was
-removed.
+`local-only-removal.json` and `conflict-producers/` are described last, and are the only two made
+*after* the adapter was removed.
 
 **Every other record below predates the removal of the GitHub adapter**
 (`.scratch/local-only/issues/01-remove-the-github-adapter.md`). They are kept as evidence of what
@@ -413,3 +413,18 @@ comparison in which nothing at all differed would have been the suspicious resul
 
 The deterministic version of the same question — over a fixture covering every local shape rather
 than over whatever happens to be on the machine — is in `local-only-removal/`.
+
+---
+
+# The conflict producers
+
+`conflict-producers/` is the seventh record, and the second made after the GitHub adapter was
+removed. It answers what the conflict model reports now that it has producers again
+(`.scratch/local-only/issues/03-conflicts-between-any-two-observations.md`), and specifically how
+many it reports on a real tracker — the failure mode there is not a missing disagreement but a
+badge that is always lit.
+
+Two runs of the product's own refresh boundary over this repository, on `1c24f98`: four conflicts
+across 20 tickets with the tree clean, seven with one real ticket edited and left uncommitted. The
+directory holds both dumps, the one-off program that produced them, and the mutation table showing
+that each fixture test fails when the behaviour it asserts is broken.

@@ -1,0 +1,34 @@
+root C:/Users/Rando/.worktrees
+projects 1
+
+PROJECT idle-desktop-tests
+  tickets 20 | diagnostics 6 | conflicts 7
+  itemsCarryingAConflict 5
+  CONFLICT WorkflowStatus on dashboard-fast-follow/01-minimal-ribbon
+    working tree · 01-minimal-ribbon.md#L3 :: resolved
+    working tree · 01-minimal-ribbon.md#checklist :: 5 of 5 checklist item(s) still unticked
+    kept The status line was kept, so this ticket counts as complete everywhere. Its own checklist says part of it is not.
+  CONFLICT WorkflowStatus on dashboard-fast-follow/02-full-screen
+    working tree · 02-full-screen.md#L3 :: resolved
+    working tree · 02-full-screen.md#checklist :: 5 of 5 checklist item(s) still unticked
+    kept The status line was kept, so this ticket counts as complete everywhere. Its own checklist says part of it is not.
+  CONFLICT WorkflowStatus on dashboard-fast-follow/03-edge-anchor
+    working tree · 03-edge-anchor.md#L3 :: resolved
+    working tree · 03-edge-anchor.md#checklist :: 5 of 5 checklist item(s) still unticked
+    kept The status line was kept, so this ticket counts as complete everywhere. Its own checklist says part of it is not.
+  CONFLICT WorkflowStatus on evidence-integrity/01-checkout-is-not-a-project
+    working tree · 01-checkout-is-not-a-project.md#L3 :: resolved
+    working tree · 01-checkout-is-not-a-project.md#checklist :: 1 of 4 checklist item(s) still unticked
+    kept The status line was kept, so this ticket counts as complete everywhere. Its own checklist says part of it is not.
+  CONFLICT Blockers on local-only/04-a-project-is-its-worktrees
+    working tree · 04-a-project-is-its-worktrees.md :: 01
+    last commit · 04-a-project-is-its-worktrees.md@HEAD :: 03
+    kept The working tree was kept: it is what the file says now. The last commit still records the other value, which is what every other checkout reads.
+  CONFLICT Blockers on local-only/04-a-project-is-its-worktrees
+    working tree · 04-a-project-is-its-worktrees.md#L3 :: blocked, waiting on 01
+    working tree · 01-remove-the-github-adapter.md :: 'Remove the GitHub adapter and everything that exists to serve it' is resolved
+    kept The named work was kept: every edge this ticket declares is finished, so it can move. Its own status line is what is out of date.
+  CONFLICT WorkflowStatus on local-only/04-a-project-is-its-worktrees
+    working tree · 04-a-project-is-its-worktrees.md :: blocked
+    last commit · 04-a-project-is-its-worktrees.md@HEAD :: needs-triage
+    kept The working tree was kept: it is what the file says now. The last commit still records the other value, which is what every other checkout reads.
