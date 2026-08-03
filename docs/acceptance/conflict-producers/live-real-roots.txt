@@ -1,0 +1,91 @@
+# Two runs, one per configured root. Names withheld: these are the owner's own projects.
+
+## root one
+projects 7
+projectsReportingNoConflict 6
+conflicts 4
+
+PROJECT project-01
+  tickets 4 | diagnostics 1 | conflicts 0
+  itemsCarryingAConflict 0
+
+PROJECT project-02
+  tickets 21 | diagnostics 8 | conflicts 0
+  itemsCarryingAConflict 0
+
+PROJECT project-03
+  tickets 0 | diagnostics 0 | conflicts 0
+  itemsCarryingAConflict 0
+
+PROJECT project-04
+  tickets 0 | diagnostics 0 | conflicts 0
+  itemsCarryingAConflict 0
+
+PROJECT project-05
+  tickets 20 | diagnostics 7 | conflicts 4
+  itemsCarryingAConflict 4
+
+PROJECT project-06
+  tickets 0 | diagnostics 0 | conflicts 0
+  itemsCarryingAConflict 0
+
+PROJECT project-07
+  tickets 12 | diagnostics 5 | conflicts 0
+  itemsCarryingAConflict 0
+
+## root two
+projects 13
+projectsReportingNoConflict 11
+conflicts 2
+
+PROJECT project-01
+  tickets 0 | diagnostics 0 | conflicts 0
+  itemsCarryingAConflict 0
+
+PROJECT project-02
+  tickets 0 | diagnostics 0 | conflicts 0
+  itemsCarryingAConflict 0
+
+PROJECT project-03
+  tickets 29 | diagnostics 12 | conflicts 0
+  itemsCarryingAConflict 0
+
+PROJECT project-04
+  tickets 4 | diagnostics 1 | conflicts 0
+  itemsCarryingAConflict 0
+
+PROJECT project-05
+  tickets 24 | diagnostics 22 | conflicts 0
+  itemsCarryingAConflict 0
+
+PROJECT project-06
+  tickets 40 | diagnostics 44 | conflicts 0
+  itemsCarryingAConflict 0
+
+PROJECT project-07
+  tickets 73 | diagnostics 22 | conflicts 1
+  itemsCarryingAConflict 1
+
+PROJECT project-08
+  tickets 0 | diagnostics 0 | conflicts 0
+  itemsCarryingAConflict 0
+
+PROJECT project-09
+  tickets 4 | diagnostics 1 | conflicts 0
+  itemsCarryingAConflict 0
+
+PROJECT project-10
+  tickets 2 | diagnostics 2 | conflicts 0
+  itemsCarryingAConflict 0
+
+PROJECT project-11
+  tickets 7 | diagnostics 3 | conflicts 0
+  itemsCarryingAConflict 0
+
+PROJECT project-12
+  tickets 8 | diagnostics 14 | conflicts 0
+  itemsCarryingAConflict 0
+
+PROJECT project-13
+  tickets 14 | diagnostics 17 | conflicts 1
+  itemsCarryingAConflict 1

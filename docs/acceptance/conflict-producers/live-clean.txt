@@ -1,22 +1,23 @@
-root C:/Users/Rando/.worktrees
 projects 1
+projectsReportingNoConflict 0
+conflicts 4
 
 PROJECT idle-desktop-tests
-  tickets 20 | diagnostics 7 | conflicts 4
+  tickets 21 | diagnostics 8 | conflicts 4
   itemsCarryingAConflict 4
   CONFLICT WorkflowStatus on dashboard-fast-follow/01-minimal-ribbon
     working tree · 01-minimal-ribbon.md#L3 :: resolved
-    working tree · 01-minimal-ribbon.md#checklist :: 5 of 5 checklist item(s) still unticked
-    kept The status line was kept, so this ticket counts as complete everywhere. Its own checklist says part of it is not.
+    working tree · 01-minimal-ribbon.md#acceptance :: 5 of 5 acceptance item(s) still unticked
+    kept The status line was kept, so this ticket counts as complete everywhere. Its own acceptance list says part of it is not.
   CONFLICT WorkflowStatus on dashboard-fast-follow/02-full-screen
     working tree · 02-full-screen.md#L3 :: resolved
-    working tree · 02-full-screen.md#checklist :: 5 of 5 checklist item(s) still unticked
-    kept The status line was kept, so this ticket counts as complete everywhere. Its own checklist says part of it is not.
+    working tree · 02-full-screen.md#acceptance :: 5 of 5 acceptance item(s) still unticked
+    kept The status line was kept, so this ticket counts as complete everywhere. Its own acceptance list says part of it is not.
   CONFLICT WorkflowStatus on dashboard-fast-follow/03-edge-anchor
     working tree · 03-edge-anchor.md#L3 :: resolved
-    working tree · 03-edge-anchor.md#checklist :: 5 of 5 checklist item(s) still unticked
-    kept The status line was kept, so this ticket counts as complete everywhere. Its own checklist says part of it is not.
+    working tree · 03-edge-anchor.md#acceptance :: 5 of 5 acceptance item(s) still unticked
+    kept The status line was kept, so this ticket counts as complete everywhere. Its own acceptance list says part of it is not.
   CONFLICT WorkflowStatus on evidence-integrity/01-checkout-is-not-a-project
     working tree · 01-checkout-is-not-a-project.md#L3 :: resolved
-    working tree · 01-checkout-is-not-a-project.md#checklist :: 1 of 4 checklist item(s) still unticked
-    kept The status line was kept, so this ticket counts as complete everywhere. Its own checklist says part of it is not.
+    working tree · 01-checkout-is-not-a-project.md#acceptance :: 1 of 4 acceptance item(s) still unticked
+    kept The status line was kept, so this ticket counts as complete everywhere. Its own acceptance list says part of it is not.
