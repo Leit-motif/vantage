@@ -162,16 +162,27 @@ public sealed class DetailPaneLayoutTests
     [TestMethod]
     public void No_label_is_pushed_past_the_edge_of_what_is_shown()
     {
-        foreach (var tickets in new[] { 12, 1 })
+        // Both states, and each says which one it is meant to be. The arms drifted into being the
+        // same state once the fixture grew a conflicts section, and a pair of arms that silently
+        // became one arm is how a cell gets ticked for a case nothing ran.
+        foreach (var (tickets, height, scrolls) in
+                 new[] { (12, ShellHeight, true), (1, 1000d, false) })
         {
             TearDown();
             SetUp();
 
-            var pane = PaneShowing(tickets);
+            var pane = PaneShowing(tickets, height);
 
             WpfTestHost.Run(() =>
             {
                 var scroller = Scroller(pane);
+
+                Assert.AreEqual(
+                    scrolls,
+                    scroller.ScrollableHeight > 0,
+                    $"The {tickets}-ticket arm was meant to be the "
+                        + $"{(scrolls ? "overflowing" : "fitting")} state and is not, so this run "
+                        + "does not cover the state it was written for.");
 
                 foreach (var text in WpfTestHost.Descendants<TextBlock>(scroller)
                              .Where(t => WpfTestHost.IsRendered(t) && t.Text.Length > 0))
@@ -186,6 +197,58 @@ public sealed class DetailPaneLayoutTests
                 }
             });
         }
+    }
+
+    /// <summary>
+    /// A horizontal bar pages sideways. The orientation arm swaps the track's commands as well as
+    /// its geometry, and a bar that looked right while scrolling nothing is exactly the defect the
+    /// review caught, so it is worth a test of its own rather than an inspection of the XAML.
+    /// </summary>
+    [TestMethod]
+    public void A_horizontal_bar_pages_sideways()
+    {
+        WpfTestHost.Run(() =>
+        {
+            var scroller = new ScrollViewer
+            {
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Visible,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = new Border { Width = 2000, Height = 40 },
+            };
+
+            WpfTestHost.LayOut(new Border { Child = scroller }, 300, 120);
+
+            var bar = scroller.Template.FindName("PART_HorizontalScrollBar", scroller) as ScrollBar
+                ?? throw new InvalidOperationException("The scroller has no horizontal bar.");
+
+            Assert.AreEqual(Orientation.Horizontal, bar.Orientation);
+            Assert.AreEqual(
+                ThemeThickness(),
+                bar.ActualHeight,
+                0.01,
+                $"The horizontal bar is {bar.ActualHeight} tall, not the theme's thickness.");
+
+            var track = bar.Template.FindName("PART_Track", bar) as Track
+                ?? throw new InvalidOperationException("The bar has no track.");
+
+            Page(track.IncreaseRepeatButton);
+            Assert.IsTrue(
+                scroller.HorizontalOffset > 0,
+                "Paging the far half of a horizontal track moved nothing.");
+
+            var reached = scroller.HorizontalOffset;
+            Page(track.DecreaseRepeatButton);
+            Assert.IsTrue(
+                scroller.HorizontalOffset < reached,
+                "Paging the near half of a horizontal track did not come back.");
+
+            void Page(ButtonBase? half)
+            {
+                var button = half ?? throw new InvalidOperationException("The track has no halves.");
+                ((RoutedCommand)button.Command).Execute(button.CommandParameter, button);
+                scroller.UpdateLayout();
+            }
+        });
     }
 
     /// <summary>
