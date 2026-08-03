@@ -4,9 +4,11 @@ A test pointed at a subject that cannot fail passes exactly as loudly as one tha
 behaviour claimed by `.scratch/evidence-integrity/issues/02-single-instance-mutex.md` was therefore
 checked by breaking it and requiring the named test to notice.
 
-Each mutation was applied **alone** on `3d07aeb`, `SingleInstanceTests` run, and the file restored
-from that commit before the next one. **Ten mutations, ten failures, no passes.** The suite is green
-on the unmutated commit — `Vantage.Tests` 143/143 and `Vantage.Tests.Shell` 86/86.
+Each mutation was applied **alone**, the named test run, and the file restored from its commit
+before the next one. Rows 1 to 10 were run on `3d07aeb`; row 11 holds a behaviour added in response
+to the cold review and was run on `e1eb69b`, which is the commit that added it. **Eleven mutations,
+eleven failures, no passes.** The suite is green on both unmutated commits — `Vantage.Tests` 143/143,
+and `Vantage.Tests.Shell` 86/86 on `3d07aeb` and 87/87 on `e1eb69b`.
 
 | # | What was broken | Test required to fail | Result |
 | --- | --- | --- | --- |
@@ -20,6 +22,7 @@ on the unmutated commit — `Vantage.Tests` 143/143 and `Vantage.Tests.Shell` 86
 | 8 | `TestSession` hands out the dashboard's own session | `The_names_this_suite_claims_are_its_own_and_never_repeat` | failed |
 | 9 | A test constructs the guard without going through `TestSession` | `Nothing_in_this_suite_claims_a_session_except_through_the_name_it_owns` | failed |
 | 10 | `TestSession` stops varying the name between claims | `The_names_this_suite_claims_are_its_own_and_never_repeat` | failed |
+| 11 | `TestSession.Claim` stops requiring that the name is one it issued | `A_session_this_suite_did_not_issue_itself_cannot_be_claimed_through_it_either` | failed |
 
 Rows 1 and 2 are the pair the ticket's second acceptance cell asks for, and they are recorded as a
 pair because the cell's own wording does not survive contact with the subject. A guard that has
@@ -29,9 +32,12 @@ allowed to start, so it cannot fail on that mutation and should not. Row 2 break
 other direction and all three fail. Between them every one of the three is held, in the direction it
 is actually about.
 
-Rows 8, 9 and 10 are the third cell. Row 9 is the load-bearing one: it is what makes the claim about
-the *suite* rather than about the three tests someone happened to look at, because it reads the
-compiled assembly and fails on a construction of the guard anywhere but `TestSession`.
+Rows 8 to 11 are the third cell, and rows 9 and 11 are the pair that makes it hold. Row 9 makes the
+claim about the *suite* rather than about the three tests someone happened to look at, because it
+reads the compiled assembly and fails on a construction of the guard anywhere but `TestSession`.
+Row 11 is what the cold review's third finding forced: checking *where* a claim is written is not
+checking *what* it claims, and `Claim` would have carried the dashboard's own session as happily as
+any other string. It now claims only names it issued itself.
 
 ## Three mutations had to be rewritten, and that is recorded rather than quietly corrected
 
@@ -54,13 +60,19 @@ mutation that silently failed to apply reports exactly what a well-tested behavi
 
 ## The runs behind the first acceptance cell
 
-The dashboard holding the session throughout was this branch's own build, launched with
-`--state <scratch>` so that it claims the real, session-wide `Local\Vantage.SingleInstance` while
-writing its settings, cache and logs somewhere disposable. The owner chose this over their installed
-copy. It is the same executable and the same name, which is all the collision depends on.
+Two dashboards held the session over the course of this work, and the cell is closed on the second.
+
+The first was this branch's own build launched with `--state <scratch>`, so that it claimed the
+real, session-wide `Local\Vantage.SingleInstance` while writing its settings, cache and logs
+somewhere disposable. The cold review's first finding was that this supports an inference about the
+collision rather than an observation of the artifact the cell names, and it was right: the cell says
+*installed*. So the gate was re-run against the installed copy at
+`%LOCALAPPDATA%\Programs\Vantage\Vantage.exe` — product version `1.0.0+b7863d26`, a different binary
+from this branch — and that is what the cell now rests on. The scratch-build runs are kept below
+because the reproduction was made against them.
 
 **The defect, reproduced first.** On `d14fb0d`, whose `src/` and `tests/` are identical to the review
-baseline `ba5e495`, with that dashboard running:
+baseline `ba5e495`, with the scratch-state build running:
 
 ```
 Failed The_application_starts_normally_when_nothing_else_is_running
@@ -72,26 +84,40 @@ Failed The_session_is_released_when_the_dashboard_exits
 Stopping the dashboard and re-running the same three, unchanged: 3 passed, 0 failed. Both halves of
 the report hold.
 
-**After the change.** On `3d07aeb`, the full solution — both projects, nothing filtered — run three
-times with the dashboard up:
+**After the change, against the installed dashboard.** On `e1eb69b`, the full solution — both
+projects, nothing filtered — run six times while the installed copy held the session:
 
 | run | `Vantage.Tests` | `Vantage.Tests.Shell` |
 | --- | --- | --- |
-| 1 | 143/143 | 86/86 |
-| 2 | 143/143 | 85/86 — `Folding_away_from_full_screen_lands_small_against_the_edge_it_was_against` |
-| 3 | 143/143 | 86/86 |
+| 1 | 143/143 | 85/87 — `Folding_away_from_full_screen_…` and `Leaving_full_screen_returns_to_the_edge_…` |
+| 2 | 143/143 | 86/87 — `Folding_away_from_full_screen_…` |
+| 3 | 143/143 | **87/87** |
+| 4 | 143/143 | **87/87** |
+| 5 | 143/143 | **87/87** |
+| 6 | 143/143 | **87/87** |
 
-**The contrast.** The same full solution on the baseline `ba5e495`, with the same dashboard still
-running, in the same session: 143/143 and 79/82, failing exactly the three tests above. So what
-changed the outcome is this branch and not the machine.
+Four consecutive clean runs of the whole solution with the installed dashboard up, which is the cell
+as written. The three failures in runs 1 and 2 are all `RunningShellTests` geometry, all in the
+pre-existing flake family measured below, and none is a single-instance test — those were 8 of 8 in
+every run.
 
-**Nothing in the suite took the dashboard's session.** The holder process was still running and
-still holding `Local\Vantage.SingleInstance` after all four full runs above, on the process id it
-started with.
+**The contrast.** The same full solution on the baseline `ba5e495`, with the same installed
+dashboard still running, in the same session: 143/143 and 79/82, failing exactly the three tests
+this ticket names. So what changed the outcome is this branch and not the machine.
+
+**Nothing in the suite took the dashboard's session.** The installed dashboard was still running and
+still holding `Local\Vantage.SingleInstance` after all seven full runs above, on the process id it
+started with. It was started for these runs and stopped afterwards; no Vantage process was running
+before or after.
+
+**The earlier runs, against the scratch-state build.** On `3d07aeb`, three full runs: 143/143 and
+86/86 twice, and once 85/86 on `Folding_away_from_full_screen_lands_small_against_the_edge_it_was_against`.
+The baseline contrast under that dashboard was the same 79/82 on the same three tests. Superseded by
+the installed-dashboard runs above rather than relied on.
 
 ## A pre-existing flake, which is not this ticket's and is not fixed here
 
-`RunningShellTests`'s geometry tests fail intermittently, and run 2 above is one instance. It is
+`RunningShellTests`'s geometry tests fail intermittently, and runs 1 and 2 above are instances. It is
 unrelated to the dashboard running and unrelated to this change:
 
 | | `Collapsing_at_the_bottom_of_the_screen_keeps_the_ribbon_at_the_bottom`, alone, ten runs |
@@ -100,6 +126,11 @@ unrelated to the dashboard running and unrelated to this change:
 | baseline `ba5e495`, nothing running | 9 passed, 1 failed |
 
 It fails on the assertion that a folded ribbon keeps its bottom edge, and on the matching one for
-unfolding, by the same distance in opposite directions. Two tests in the family have been seen to do
-it. Reported separately rather than absorbed here: this ticket is about a name collision, and a
-suite that flakes for a second reason is a second ticket's subject.
+unfolding, by the same distance in opposite directions. Three tests in the family have now been seen
+to do it: `Collapsing_at_the_bottom_of_the_screen_keeps_the_ribbon_at_the_bottom`,
+`Folding_away_from_full_screen_lands_small_against_the_edge_it_was_against` and
+`Leaving_full_screen_returns_to_the_edge_the_window_was_against`. The cold review's own full-suite
+run hit the first of them independently.
+
+Reported separately rather than absorbed here: this ticket is about a name collision, and a suite
+that flakes for a second reason is a second ticket's subject.
