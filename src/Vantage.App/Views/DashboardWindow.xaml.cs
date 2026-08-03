@@ -377,15 +377,17 @@ public partial class DashboardWindow : Window
             _applyingMode = false;
         }
 
-        // After layout, because in the ribbon the new height is the content's and the content has
-        // not been measured yet: anchoring before that holds an edge against the height of the view
-        // being left rather than the one being entered.
+        // Here rather than on a later dispatcher callback. Deferring it leaves the window at its
+        // new size against its old edge until that callback runs, and the gap is real: the resize
+        // and the move are two separate trips to Windows, so a frame can be composed between them
+        // and the ribbon is seen to jump up the screen before it settles.
         //
-        // Measured here rather than waited for. Deferring the move to a later dispatcher callback
-        // leaves the window at its new size against its old edge until that callback runs, and the
-        // gap is real: the resize and the move are two separate trips to Windows, so a frame can be
-        // composed between them and the ribbon is seen to jump up the screen before it settles.
-        UpdateLayout();
+        // This needs the height of the view being entered, which in the ribbon is the content's. By
+        // here that height is already the window's — the sizes above are applied as they are set,
+        // including the ribbon's own. That is the one assumption in this line, and it is not taken
+        // on trust: Folding_the_ribbon_moves_the_window_in_the_same_step_that_resizes_it reads the
+        // window inside the operation that changes it and requires the fold to have happened, so if
+        // it ever stops being true a test fails rather than the owner seeing the jump.
         Reanchor(anchor);
     }
 
