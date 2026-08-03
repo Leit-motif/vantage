@@ -79,11 +79,10 @@ public sealed class SingleInstanceTests
             SingleInstanceGuard.DashboardSession,
             "A second launch finds the first by this name, so changing it silently allows two.");
 
-        Assert.AreEqual(
-            1,
-            typeof(SingleInstanceGuard).GetConstructors().Single().GetParameters().Length,
-            "The name has to stay required: a caller that omits it claims the dashboard's session "
-            + "by accident, which is the whole failure this ticket is about.");
+        Assert.IsFalse(
+            typeof(SingleInstanceGuard).GetConstructors().Single().GetParameters().Single().IsOptional,
+            "The name has to stay required: a caller allowed to omit it claims the dashboard's "
+            + "session by accident, which is the whole failure this ticket is about.");
     }
 
     /// <summary>
