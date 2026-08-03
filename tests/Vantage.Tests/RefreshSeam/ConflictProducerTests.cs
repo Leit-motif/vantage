@@ -274,6 +274,53 @@ public sealed class ConflictProducerTests
     }
 
     /// <summary>
+    /// The committed side claims no time it cannot stand behind. The obvious timestamp to hand is
+    /// the last commit that touched the path, and git computes that across every local branch —
+    /// while the content compared here is read from HEAD. This fixture is the case where those are
+    /// different commits: another branch touched the ticket after HEAD did, so a borrowed time
+    /// would date HEAD's content by a commit whose content was never read.
+    /// </summary>
+    [TestMethod]
+    public async Task The_committed_side_carries_no_timestamp_borrowed_from_another_branch()
+    {
+        var project = _workspace.NewProject("repo");
+        var effort = _workspace.NewEffort(project, "feature");
+        var ticket = Path.Combine(effort, "issues", "001.md");
+
+        _workspace.WriteTicket(effort, "001.md", Fixtures.Ticket("Draw the grip", "ready"));
+        _workspace.InitGitRepository(project);
+        _workspace.Commit(project, "add planning");
+
+        // A later commit on another branch touches the same file, so the newest commit for this
+        // path is not the one HEAD holds.
+        _workspace.Git(project, "checkout", "-b", "sidetrack");
+        File.WriteAllText(ticket, Fixtures.Ticket("Draw the grip", "blocked"));
+        _workspace.Commit(project, "sidetrack edit");
+        _workspace.Git(project, "checkout", "main");
+
+        File.WriteAllText(ticket, Fixtures.Ticket("Draw the grip", "in progress"));
+
+        using var harness = NewHarness();
+        var view = (await harness.RefreshAsync()).Project("repo");
+
+        var committed = Single(view, ConflictField.WorkflowStatus).Second;
+        Assert.AreEqual("ready", committed.Value, "Precondition: the value compared is the one HEAD holds.");
+
+        Assert.IsNull(
+            committed.Provenance.ObservedAt,
+            "A side whose time would come from a different commit than its content must claim none.");
+
+        Assert.IsFalse(
+            committed.Provenance.IsActivityGradeTimestamp,
+            "An unclaimed time must not read as evidence that something happened.");
+
+        StringAssert.Contains(
+            committed.Provenance.Locator,
+            "@HEAD",
+            "The revision the content was read from is what the locator has to name instead.");
+    }
+
+    /// <summary>
     /// A producer that could not run says so. `git status` can fail on its own — a corrupt index is
     /// enough — while the probe and the history read both succeed, and evidence that is quietly
     /// missing a producer must never be presented as complete.
