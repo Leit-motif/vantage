@@ -4,11 +4,16 @@ A test pointed at a subject that cannot fail passes exactly as loudly as one tha
 behaviour claimed by `.scratch/evidence-integrity/issues/02-single-instance-mutex.md` was therefore
 checked by breaking it and requiring the named test to notice.
 
-Each mutation was applied **alone**, the named test run, and the file restored from its commit
-before the next one. Rows 1 to 10 were run on `3d07aeb`; row 11 holds a behaviour added in response
-to the cold review and was run on `e1eb69b`, which is the commit that added it. **Eleven mutations,
-eleven failures, no passes.** The suite is green on both unmutated commits — `Vantage.Tests` 143/143,
-and `Vantage.Tests.Shell` 86/86 on `3d07aeb` and 87/87 on `e1eb69b`.
+Each mutation was applied **alone** on `e1eb69b`, the named test run, and the file restored before
+the next one. **Eleven mutations, eleven failures, no passes.** The suite is green on the unmutated
+commit — `Vantage.Tests` 143/143 and `Vantage.Tests.Shell` 87/87.
+
+Rows 1 to 10 were first run on `3d07aeb` and every one of them was re-run on `e1eb69b`, because
+`e1eb69b` changed `TestSession` and `SingleInstanceTests` — the files that produce these
+measurements — in response to the cold review. An earlier observation of a mutation whose subject a
+later commit edited is a claim about code that is no longer there, so none of the first-pass results
+is relied on here. `git diff --name-only e1eb69b..HEAD -- src tests` is empty, so the code these
+eleven runs measured is the code at `HEAD`.
 
 | # | What was broken | Test required to fail | Result |
 | --- | --- | --- | --- |
@@ -19,7 +24,7 @@ and `Vantage.Tests.Shell` 86/86 on `3d07aeb` and 87/87 on `e1eb69b`.
 | 5 | The product claims a session other than the one this repository records | `The_session_the_dashboard_claims_is_the_one_named_for_the_dashboard` | failed |
 | 6 | An ordinary launch honours `--instance-name` too | `Only_the_probe_may_decide_about_a_session_other_than_the_dashboard_s` | failed |
 | 7 | The probe ignores the session it is given and decides about the dashboard's | `Only_the_probe_may_decide_about_a_session_other_than_the_dashboard_s`, and both tests that hold a session | failed, all three |
-| 8 | `TestSession` hands out the dashboard's own session | `The_names_this_suite_claims_are_its_own_and_never_repeat` | failed |
+| 8 | `TestSession` hands out the dashboard's own session | `The_names_this_suite_claims_are_its_own_and_never_repeat` | failed, and `A_session_this_suite_did_not_issue_itself_…` with it |
 | 9 | A test constructs the guard without going through `TestSession` | `Nothing_in_this_suite_claims_a_session_except_through_the_name_it_owns` | failed |
 | 10 | `TestSession` stops varying the name between claims | `The_names_this_suite_claims_are_its_own_and_never_repeat` | failed |
 | 11 | `TestSession.Claim` stops requiring that the name is one it issued | `A_session_this_suite_did_not_issue_itself_cannot_be_claimed_through_it_either` | failed |
