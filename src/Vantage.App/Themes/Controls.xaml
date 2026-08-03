@@ -192,11 +192,11 @@
                 <Thumb x:Name="Grip" Style="{StaticResource ScrollThumb}" MinHeight="24" />
               </Track.Thumb>
               <Track.DecreaseRepeatButton>
-                <RepeatButton Style="{StaticResource ScrollPageButton}"
+                <RepeatButton x:Name="PageBack" Style="{StaticResource ScrollPageButton}"
                               Command="ScrollBar.PageUpCommand" />
               </Track.DecreaseRepeatButton>
               <Track.IncreaseRepeatButton>
-                <RepeatButton Style="{StaticResource ScrollPageButton}"
+                <RepeatButton x:Name="PageOn" Style="{StaticResource ScrollPageButton}"
                               Command="ScrollBar.PageDownCommand" />
               </Track.IncreaseRepeatButton>
             </Track>
@@ -208,10 +208,17 @@
             <Trigger Property="IsEnabled" Value="False">
               <Setter TargetName="PART_Track" Property="Visibility" Value="Hidden" />
             </Trigger>
+            <!--
+              A horizontal bar pages sideways. The commands are part of the swap and not merely
+              the geometry: PageUp and PageDown move a vertical offset, so a horizontal track left
+              bound to them looks right and does nothing when either half is clicked.
+            -->
             <Trigger Property="Orientation" Value="Horizontal">
               <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
               <Setter TargetName="Grip" Property="MinHeight" Value="0" />
               <Setter TargetName="Grip" Property="MinWidth" Value="24" />
+              <Setter TargetName="PageBack" Property="Command" Value="ScrollBar.PageLeftCommand" />
+              <Setter TargetName="PageOn" Property="Command" Value="ScrollBar.PageRightCommand" />
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>

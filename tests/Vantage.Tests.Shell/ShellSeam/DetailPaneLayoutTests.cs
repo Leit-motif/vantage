@@ -1,6 +1,8 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using Vantage.App.ViewModels;
 using Vantage.App.Views;
@@ -39,8 +41,13 @@ namespace Vantage.Tests.ShellSeam;
 [TestClass]
 public sealed class DetailPaneLayoutTests
 {
-    /// <summary>What the theme asks a scrollbar to be, and therefore what the gutter costs.</summary>
-    private const double Thickness = 8;
+    /// <summary>
+    /// What the theme is required to ask a scrollbar to be. Asserted against the resource itself
+    /// rather than used as the expected arranged width: a test that compared arranged widths to a
+    /// constant of its own would stay green if the template stopped reading the resource, which is
+    /// the whole of "from the theme".
+    /// </summary>
+    private const double RequiredThickness = 8;
 
     private const double ShellWidth = 720;
     private const double ShellHeight = 620;
@@ -80,13 +87,21 @@ public sealed class DetailPaneLayoutTests
 
         WpfTestHost.Run(() =>
         {
+            var themed = ThemeThickness();
             var bar = VerticalBar(pane);
 
             Assert.AreEqual(
-                Thickness,
+                RequiredThickness,
+                themed,
+                0.01,
+                $"The theme's ScrollBarThickness is {themed}, not the {RequiredThickness} the ticket "
+                    + "settled on.");
+
+            Assert.AreEqual(
+                themed,
                 bar.ActualWidth,
                 0.01,
-                $"The pane's bar arranged at {bar.ActualWidth}, not the {Thickness} the theme sets. "
+                $"The pane's bar arranged at {bar.ActualWidth}, not the {themed} the theme sets. "
                     + $"The system metric is {SystemParameters.VerticalScrollBarWidth}.");
         });
     }
@@ -108,7 +123,9 @@ public sealed class DetailPaneLayoutTests
         TearDown();
         SetUp();
 
-        var quiet = PaneShowing(tickets: 1);
+        // The same width, laid out tall enough that one ticket has nothing to scroll. Height is
+        // what is varied because bar-or-no-bar is the variable under test and width is the reading.
+        var quiet = PaneShowing(tickets: 1, height: 1000);
         var fitting = WpfTestHost.Run(() => Widths(quiet));
 
         Assert.AreEqual(
@@ -188,25 +205,54 @@ public sealed class DetailPaneLayoutTests
                 $"The title arranged at {title.ActualWidth} with {Natural(title)} to say, so nothing "
                     + "was trimmed and the fixture no longer tests trimming.");
 
+            // Narrower than the text needs is clipping; the cell asks for an ellipsis, which is a
+            // separate property and would go on passing the width check if it were dropped.
+            Assert.AreEqual(
+                TextTrimming.CharacterEllipsis,
+                title.TextTrimming,
+                "The title is constrained but not ellipsized, so the owner loses characters with "
+                    + "nothing to say they are gone.");
+
             var status = statuses[^1];
             Assert.IsTrue(
                 status.ActualWidth >= Natural(status) - 0.5,
                 $"The status label was trimmed: {status.ActualWidth} arranged against "
                     + $"{Natural(status)} needed.");
 
-            foreach (var control in WpfTestHost.Descendants<ButtonBase>(pane)
-                         .Where(b => b.Command is not null && WpfTestHost.IsRendered(b)))
+            // Named, not merely "a button with a command": the scrollbar's own paging halves are
+            // ButtonBase with a command too, and their template is empty, so a broad query would
+            // measure nothing and pass.
+            var controls = WpfTestHost.Descendants<ButtonBase>(pane)
+                .Where(b => AutomationProperties.GetName(b).StartsWith(
+                    "Inspect", StringComparison.Ordinal))
+                .ToList();
+
+            Assert.IsTrue(
+                controls.Count > 0,
+                "No conflict control was found, so this cell would have been ticked on nothing.");
+
+            foreach (var control in controls)
             {
                 Assert.IsTrue(
-                    control.ActualWidth >= control.DesiredSize.Width - 0.5,
-                    "A conflict control was squeezed out of its own column.");
+                    WpfTestHost.IsRendered(control),
+                    "A conflict control is not on screen at all.");
+
+                // DesiredSize carries the margin and ActualWidth does not, so the margin comes back
+                // off before the two are comparable.
+                var wanted = control.DesiredSize.Width - control.Margin.Left - control.Margin.Right;
+                Assert.IsTrue(
+                    control.ActualWidth >= wanted - 0.5,
+                    $"A conflict control was squeezed out of its own column: {control.ActualWidth} "
+                        + $"arranged against {wanted} wanted.");
             }
         });
     }
 
     /// <summary>
-    /// The settings window scrolls through the same style. It is not what the ticket is about, so
-    /// what it owes is only that the shared change did not cost it its bar.
+    /// The settings window scrolls through the same style. Replacing a stock template replaces the
+    /// parts that do the scrolling, so what this owes is not that a bar is present and the right
+    /// size but that clicking it still moves the content — which is why the paging half of the
+    /// track is invoked here rather than the scroller being told to scroll itself.
     /// </summary>
     [TestMethod]
     public void The_settings_window_scrolls_through_the_same_bar()
@@ -226,9 +272,32 @@ public sealed class DetailPaneLayoutTests
 
             var bar = OwnBar(scroller);
 
-            Assert.AreEqual(Thickness, bar.ActualWidth, 0.01, "The settings bar is not the theme's.");
+            Assert.AreEqual(
+                ThemeThickness(),
+                bar.ActualWidth,
+                0.01,
+                "The settings bar is not the theme's.");
+
+            Assert.AreEqual(0d, scroller.VerticalOffset, 0.01, "The window did not start at the top.");
+
+            var track = bar.Template.FindName("PART_Track", bar) as Track
+                ?? throw new InvalidOperationException("The bar has no track.");
+            var pageOn = track.IncreaseRepeatButton
+                ?? throw new InvalidOperationException("The track has no paging half to click.");
+
+            ((RoutedCommand)pageOn.Command).Execute(pageOn.CommandParameter, pageOn);
+            root.UpdateLayout();
+
+            Assert.IsTrue(
+                scroller.VerticalOffset > 0,
+                "Paging the settings window's own scrollbar moved nothing, so the replacement "
+                    + "template kept the bar and lost the scrolling.");
         });
     }
+
+    /// <summary>The thickness the running theme actually publishes, not a copy of it.</summary>
+    private static double ThemeThickness() =>
+        (double)System.Windows.Application.Current.FindResource("ScrollBarThickness");
 
     /// <summary>
     /// What the text would take if nothing constrained it. Read from the glyphs rather than from
@@ -268,12 +337,12 @@ public sealed class DetailPaneLayoutTests
         scroller.Template.FindName("PART_VerticalScrollBar", scroller) as ScrollBar
             ?? throw new InvalidOperationException("The scroller has no vertical bar in its template.");
 
-    private FrameworkElement PaneShowing(int tickets)
+    private FrameworkElement PaneShowing(int tickets, double height = ShellHeight)
     {
         BusyProject(tickets);
         Refresh();
 
-        var root = Shell();
+        var root = Shell(height);
 
         return WpfTestHost.Run(() => WpfTestHost.Region(root, "Project details"))
             ?? throw new InvalidOperationException("The detail pane was not found.");
@@ -290,10 +359,26 @@ public sealed class DetailPaneLayoutTests
 
         var canonical = ProjectDiscovery.CanonicalizeFully(project);
         var tickets = new List<WorkflowTicket>();
+        var conflicts = new List<ConflictReport>();
 
         for (var index = 1; index <= count; index++)
         {
             var source = Path.Combine(project, ".scratch", "feature", "issues", $"{index:000}.md");
+            var working = new Provenance(
+                EvidenceSource.LocalFile, source, TimestampProvenance.WatcherEvent, DateTimeOffset.UtcNow, "r1");
+            var committed = new Provenance(
+                EvidenceSource.LocalGit, $"{source}@HEAD", TimestampProvenance.GitCommit, DateTimeOffset.UtcNow, "r1");
+
+            // Every ticket disagrees with itself, so every row carries the conflict control that
+            // sits closest to the gutter this ticket changes. A row without one would let the
+            // control's cell be ticked on a button that was never on screen.
+            conflicts.Add(new ConflictReport(
+                $"feature/{index:000}",
+                ConflictField.Title,
+                new ObservedValue($"A ticket title long enough to need the whole column it was given, number {index}", working),
+                new ObservedValue($"An older title for {index}", committed),
+                "Working-tree value kept: it is the more recent observation."));
+
             tickets.Add(new WorkflowTicket
             {
                 Id = $"feature/{index:000}",
@@ -328,7 +413,7 @@ public sealed class DetailPaneLayoutTests
                     },
                 ],
             },
-            new ProjectionOptions { Now = DateTimeOffset.UtcNow });
+            new ProjectionOptions { Now = DateTimeOffset.UtcNow, Conflicts = conflicts });
 
         _cache.SaveProjectSnapshot(view, DateTimeOffset.UtcNow);
     }
@@ -341,13 +426,13 @@ public sealed class DetailPaneLayoutTests
         _viewModel.SelectedProject = _viewModel.AllProjects.Single(p => p.Name == "widget");
     }
 
-    private FrameworkElement Shell()
+    private FrameworkElement Shell(double height)
     {
         _viewModel.IsExpanded = true;
 
         return WpfTestHost.Run(() => WpfTestHost.HostContent(
             new DashboardWindow(_viewModel, _settings, () => { }),
             ShellWidth,
-            ShellHeight));
+            height));
     }
 }
