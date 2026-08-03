@@ -263,6 +263,25 @@ public partial class App : Application
         Frame("expanded.png", DashboardViewMode.Expanded, width: 720);
         Frame("narrow.png", DashboardViewMode.Compact, width: 320);
 
+        // The conflicts region, reached the way the owner reaches it rather than by scrolling the
+        // pane here: the aggregate badge's own command runs, which selects the project, opens the
+        // expanded view and asks the region to be brought into view. What the frame shows is
+        // therefore the result of the navigation, not a pane arranged for the photograph.
+        if (_viewModel.AllProjects.FirstOrDefault(p => p.HasConflicts) is { } disagreeing)
+        {
+            _viewModel.Mode = DashboardViewMode.Expanded;
+            _window.Width = 720;
+            disagreeing.InspectConflictsCommand.Execute(null);
+            _window.UpdateLayout();
+
+            // The bring-into-view runs on the dispatcher after layout has settled, exactly as it
+            // does for the owner; the second pass lets that scroll take effect.
+            await Dispatcher.Yield(DispatcherPriority.ContextIdle);
+            _window.UpdateLayout();
+
+            FrameCapture.Save(_window, Path.Combine(directory, "conflicts.png"), backdrop);
+        }
+
         _window.ExitForReal();
         Shutdown();
     }

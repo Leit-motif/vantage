@@ -206,6 +206,9 @@ public sealed class ConflictInspectionTests
         Assert.AreEqual(1, project.View.Conflicts.Count, "The fixture must carry exactly one disagreement.");
         var conflict = project.View.Conflicts.Single();
 
+        // Every part of one disagreement on screen at once. Each side is a label above its value
+        // now rather than beside it, so a single conflict is taller than the default shell.
+        _shellHeight = 900;
         _viewModel.SelectedProject = project;
         var shell = Shell(expanded: true);
 

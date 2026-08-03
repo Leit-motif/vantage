@@ -40,7 +40,8 @@ function New-Ticket {
         [string] $Stage,
         [string] $Type = 'feature',
         [string] $BlockedBy,
-        [string] $Labels
+        [string] $Labels,
+        [string[]] $Acceptance
     )
 
     $lines = @("# $Title", '', "Status: $Status", "Type: $Type")
@@ -48,6 +49,7 @@ function New-Ticket {
     if ($BlockedBy) { $lines += "Blocked by: $BlockedBy" }
     if ($Labels) { $lines += "Labels: $Labels" }
     $lines += @('', 'Body text the dashboard treats purely as data.')
+    if ($Acceptance) { $lines += @('', '## Acceptance', '') + $Acceptance }
 
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
     Set-Content -Path $Path -Value ($lines -join "`n") -Encoding utf8
@@ -128,6 +130,22 @@ New-FixtureProject -Name 'tin-whistle-registry' -Effort 'whistle-catalogue' -Tic
     @{ Title = 'Collect the whistle makers';   Status = 'Idle';        Type = 'research';  Stage = 'Research' }
     @{ Title = 'Catalogue the bore sizes';     Status = 'Idle';        Type = 'feature';   Stage = 'Build' }
 )
+
+# A project that disagrees with itself, so the conflicts region has something real to render. Each
+# of the three producers is represented, and the blocking edge is written as the numeric reference
+# the grammar resolves — a title is not an identifier, and naming one would only dangle.
+New-FixtureProject -Name 'glass-orrery' -Effort 'orrery-assembly' -Tickets @(
+    @{ Title = 'Settle the gear ratios';       Status = 'Complete';    Type = 'research';  Stage = 'Research'
+       Acceptance = @('- [x] Ratios chosen', '- [ ] Checked against the almanac', '- [ ] Signed off') }
+    @{ Title = 'Cut the brass rings';          Status = 'Blocked';     Type = 'feature';   Stage = 'Build'; BlockedBy = '01' }
+    @{ Title = 'Mount the outer planets';      Status = 'Ready';       Type = 'feature';   Stage = 'Build' }
+)
+
+# One ticket edited after the commit and left that way: the working tree says something the last
+# commit does not, which is the only producer that needs git to see it.
+$uncommitted = Join-Path $Root 'glass-orrery\.scratch\orrery-assembly\issues\03-mount-the-outer-planets.md'
+(Get-Content $uncommitted -Raw).Replace('Status: Ready', 'Status: In progress') |
+    Set-Content -Path $uncommitted -Encoding utf8 -NoNewline
 
 # The state directory the app is pointed at. Roots names only the fixture tree, so the only thing
 # on screen while frames are being taken is the fixture.

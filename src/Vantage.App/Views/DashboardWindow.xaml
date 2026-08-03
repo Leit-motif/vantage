@@ -510,24 +510,22 @@
                             <StackPanel Margin="0,0,0,8" AutomationProperties.Name="{Binding AccessibleSummary}">
                               <TextBlock Style="{StaticResource SecondaryText}" Foreground="{DynamicResource ConflictBrush}"
                                          Text="{Binding Headline}" TextWrapping="Wrap" />
-                              <Grid Margin="0,2,0,0">
-                                <Grid.ColumnDefinitions>
-                                  <ColumnDefinition Width="Auto" />
-                                  <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                  <RowDefinition Height="Auto" />
-                                  <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource TertiaryText}"
-                                           Margin="0,0,6,0" Text="{Binding FirstLabel}" />
-                                <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource SecondaryText}"
+                              <!--
+                                Each side is a label above its value rather than beside it. A side
+                                is named by its own provenance now, and that name is as long as a
+                                file name: in two columns an auto-sized label takes the width and
+                                leaves the value a character wide.
+                              -->
+                              <StackPanel Margin="0,2,0,0">
+                                <TextBlock Style="{StaticResource TertiaryText}" Text="{Binding FirstLabel}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Style="{StaticResource SecondaryText}" Margin="8,0,0,4"
                                            Text="{Binding FirstValue}" TextWrapping="Wrap" />
-                                <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource TertiaryText}"
-                                           Margin="0,0,6,0" Text="{Binding SecondLabel}" />
-                                <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource SecondaryText}"
+                                <TextBlock Style="{StaticResource TertiaryText}" Text="{Binding SecondLabel}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Style="{StaticResource SecondaryText}" Margin="8,0,0,0"
                                            Text="{Binding SecondValue}" TextWrapping="Wrap" />
-                              </Grid>
+                              </StackPanel>
                               <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap" Margin="0,2,0,0"
                                          Text="{Binding Resolution}" />
                               <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap"
