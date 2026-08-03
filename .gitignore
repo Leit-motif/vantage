@@ -1,7 +1,10 @@
 # Build output
 bin/
 obj/
-publish/
+# Anchored: an unanchored `publish/` matches a directory of that name at any depth, and on
+# Windows case-insensitively — which silently swallowed `tools/Publish/`, the script
+# `docs/publishing.md` documents as the runbook, leaving it untracked on one disk.
+/publish/
 artifacts/
 TestResults/
 
