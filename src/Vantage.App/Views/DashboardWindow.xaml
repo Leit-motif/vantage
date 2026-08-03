@@ -401,7 +401,14 @@
               <Border Background="{DynamicResource SurfaceRaisedBrush}"
                       BorderBrush="{DynamicResource BorderStrongBrush}"
                       BorderThickness="1" CornerRadius="7" Padding="10">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <!--
+                  Visible, not Auto: the gutter is reserved at every content height, so the pane
+                  does not reflow when the bar arrives and does not trim its ticket titles against
+                  a width that moves underneath them. The bar's own track hides itself when there
+                  is nothing to scroll, so what a reserved gutter costs when it is not needed is
+                  eight units of nothing.
+                -->
+                <ScrollViewer VerticalScrollBarVisibility="Visible">
                   <StackPanel>
                     <TextBlock Style="{StaticResource TitleText}" Text="{Binding Name}" />
                     <TextBlock Style="{StaticResource TertiaryText}" Text="{Binding Path}" TextWrapping="Wrap" />
