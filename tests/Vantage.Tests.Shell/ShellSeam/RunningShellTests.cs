@@ -4,6 +4,7 @@ using System.Windows.Automation.Peers;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using Vantage.App.Shell;
 using Vantage.App.ViewModels;
 using Vantage.App.Views;
@@ -364,6 +365,51 @@ public sealed class RunningShellTests
         RunningShell.PumpUntil(() => Edges(shell).Height > 400, TimeSpan.FromSeconds(2));
 
         Assert.AreEqual(bottomEdge, Edges(shell).Bottom, 2d, "And coming back out unfolds upward from the same place.");
+    }
+
+    /// <summary>
+    /// The mode change is one step, not two. Resizing the window and moving it are separate trips
+    /// to Windows, so a mode change that resizes now and moves on a later dispatcher callback
+    /// leaves the window at its new size against its old edge in between — and a frame composed in
+    /// that gap is a ribbon seen to jump up the screen before it settles.
+    /// <para>
+    /// Read inside the same dispatcher operation that makes the change, which is the only way to
+    /// ask this question deterministically: while that operation is running, nothing the window
+    /// queued for later can run, so what it reads is what the mode change itself finished. Waiting
+    /// and then looking cannot ask it — the dispatcher usually drains the queued move before a test
+    /// on another thread gets to look, and "usually" is exactly the intermittent failure that
+    /// brought this here.
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    public void Folding_the_ribbon_moves_the_window_in_the_same_step_that_resizes_it()
+    {
+        _settings.Ui.Geometry.Height = 520;
+        _viewModel.Mode = DashboardViewMode.Compact;
+
+        using var shell = Start();
+        var area = WorkArea(shell);
+
+        shell.MoveTo(area.Left + 40, area.Bottom - 520 - 8);
+        shell.LetGeometrySettle();
+        var bottomEdge = Edges(shell).Bottom;
+
+        var folded = WpfTestHost.Run(() =>
+        {
+            _viewModel.ToggleRibbon();
+            return new Rect(shell.Window.Left, shell.Window.Top, shell.Window.ActualWidth, shell.Window.ActualHeight);
+        });
+
+        Assert.IsTrue(
+            folded.Height < 100,
+            "The fold has to be finished by the time the change returns, not queued behind it; the "
+            + $"window is still {folded.Height} tall.");
+        Assert.AreEqual(
+            bottomEdge,
+            folded.Bottom,
+            2d,
+            "And it has to already be against the edge it was against. A move still queued is a "
+            + "frame the owner can see, and a frame this suite cannot reliably catch.");
     }
 
     /// <summary>

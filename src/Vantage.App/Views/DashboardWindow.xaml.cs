@@ -377,10 +377,16 @@ public partial class DashboardWindow : Window
             _applyingMode = false;
         }
 
-        // After layout rather than now: in the ribbon the new height is the content's, and the
-        // content has not been measured yet. Applied here, the anchor would be holding an edge
-        // against the height of the view being left rather than the one being entered.
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => Reanchor(anchor));
+        // After layout, because in the ribbon the new height is the content's and the content has
+        // not been measured yet: anchoring before that holds an edge against the height of the view
+        // being left rather than the one being entered.
+        //
+        // Measured here rather than waited for. Deferring the move to a later dispatcher callback
+        // leaves the window at its new size against its old edge until that callback runs, and the
+        // gap is real: the resize and the move are two separate trips to Windows, so a frame can be
+        // composed between them and the ribbon is seen to jump up the screen before it settles.
+        UpdateLayout();
+        Reanchor(anchor);
     }
 
 
