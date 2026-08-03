@@ -30,6 +30,18 @@ public partial class App : Application
     /// </summary>
     private const string SingleInstanceProbeArgument = "--single-instance-probe";
 
+    /// <summary>
+    /// Which session the probe decides about. Honoured only alongside the probe, so no argument
+    /// can talk an ordinary launch into running beside a dashboard that is already up.
+    /// <para>
+    /// It exists because the suite has to ask the shipped executable what it decided, and the
+    /// product's own session belongs to the dashboard the owner is running. Without this the tests
+    /// could only be run on a machine with the dashboard closed, and a failure there would be
+    /// indistinguishable from the regression they exist to catch.
+    /// </para>
+    /// </summary>
+    private const string InstanceNameArgument = "--instance-name";
+
     private const int ExitCodeAlreadyRunning = 2;
 
     /// <summary>Something the run was supposed to leave alone did not survive it.</summary>
@@ -74,9 +86,12 @@ public partial class App : Application
         }
 
         // One overlay, one indexer: a second instance would compete for the same cache.
-        _instance = new SingleInstanceGuard();
+        var probing = Array.Exists(e.Args, a => a.Equals(SingleInstanceProbeArgument, StringComparison.OrdinalIgnoreCase));
 
-        if (Array.Exists(e.Args, a => a.Equals(SingleInstanceProbeArgument, StringComparison.OrdinalIgnoreCase)))
+        _instance = new SingleInstanceGuard(
+            (probing ? Argument(e.Args, InstanceNameArgument) : null) ?? SingleInstanceGuard.DashboardSession);
+
+        if (probing)
         {
             Shutdown(_instance.IsOnlyInstance ? 0 : ExitCodeAlreadyRunning);
             return;

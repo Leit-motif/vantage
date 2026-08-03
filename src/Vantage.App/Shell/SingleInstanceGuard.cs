@@ -6,13 +6,21 @@ namespace Vantage.App.Shell;
 /// </summary>
 public sealed class SingleInstanceGuard : IDisposable
 {
-    public const string DefaultName = @"Local\Vantage.SingleInstance";
+    /// <summary>The session the dashboard itself claims, and the only one it ever claims.</summary>
+    public const string DashboardSession = @"Local\Vantage.SingleInstance";
 
     private Mutex? _held;
 
-    public SingleInstanceGuard(string? name = null)
+    /// <summary>
+    /// The name is required rather than defaulted. A caller that does not say which session it
+    /// means takes the running dashboard's, which is a reasonable thing for the dashboard to do
+    /// and never for anything else — and the suite is full of callers.
+    /// </summary>
+    public SingleInstanceGuard(string name)
     {
-        var mutex = new Mutex(initiallyOwned: true, name ?? DefaultName, out var isOnlyInstance);
+        ArgumentException.ThrowIfNullOrEmpty(name);
+
+        var mutex = new Mutex(initiallyOwned: true, name, out var isOnlyInstance);
         IsOnlyInstance = isOnlyInstance;
 
         if (isOnlyInstance)
