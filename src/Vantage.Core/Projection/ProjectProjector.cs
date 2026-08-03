@@ -29,7 +29,11 @@ public static class ProjectProjector
     {
         var diagnostics = new List<Diagnostic>(project.Diagnostics);
         var effortViews = new List<EffortView>();
-        var conflictsByTicket = ConflictsByTicket(options.Conflicts);
+
+        // Disagreements observed outside the projection — the working tree against the last
+        // commit — arrive with the options; the ones a project's own files hold are found here,
+        // where the dependency graph has already been resolved.
+        var conflicts = new List<ConflictReport>(options.Conflicts);
 
         var resolutions = new Dictionary<string, BlockerResolution>(StringComparer.OrdinalIgnoreCase);
         var actionable = new List<(WorkflowEffort Effort, WorkflowTicket Ticket, NextActionSource Source, string Reason)>();
@@ -37,6 +41,8 @@ public static class ProjectProjector
         foreach (var effort in project.Efforts)
         {
             var effortResolutions = BlockerGraph.Resolve(effort, diagnostics);
+            conflicts.AddRange(ConflictDetection.InEffort(effort, effortResolutions));
+
             var ticketViews = new List<TicketView>();
 
             foreach (var ticket in effort.Tickets)
@@ -63,10 +69,7 @@ public static class ProjectProjector
                     ticket.Link,
                     ticket.SourcePath,
                     ticket.Provenance,
-                    ticket.EnrichmentProvenance)
-                {
-                    Conflicts = conflictsByTicket.TryGetValue(ticket.Id, out var reports) ? reports : [],
-                });
+                    ticket.EnrichmentProvenance));
             }
 
             effortViews.Add(new EffortView(
@@ -90,7 +93,9 @@ public static class ProjectProjector
             .OrderByDescending(e => e.At)
             .ToList();
 
-        return new ProjectView
+        // The last effort's disagreements are only known once every effort has been walked, so the
+        // attachment onto items is made here rather than inside the loop.
+        return AttachConflictsToItems(new ProjectView
         {
             Identity = project.Identity,
             State = state,
@@ -101,12 +106,12 @@ public static class ProjectProjector
             LastActivityAt = activity.Count == 0 ? null : activity.Max(e => e.At),
             RecentActivity = recent,
             Efforts = effortViews,
-            Conflicts = options.Conflicts,
+            Conflicts = conflicts,
             Diagnostics = diagnostics,
             IsPinned = options.IsPinned,
             IsStale = options.IsStale,
             GitAvailable = project.GitAvailable,
-        };
+        });
     }
 
     /// <summary>

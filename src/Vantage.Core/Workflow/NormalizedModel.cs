@@ -58,6 +58,15 @@ public sealed record WorkflowTicket
 
     public required StatusReading Status { get; init; }
 
+    /// <summary>Which line the status was read from, so a disagreement can point at it. 0 when unstated.</summary>
+    public int StatusLine { get; init; }
+
+    /// <summary>
+    /// The checkboxes the file states about itself. A ticket that calls itself finished over
+    /// unticked boxes is disagreeing with its own evidence, which is the only use this has.
+    /// </summary>
+    public ChecklistTally Checklist { get; init; } = ChecklistTally.None;
+
     public required WorkUnitKind Kind { get; init; }
 
     /// <summary>The internal stage of the ticket, projected separately from completion.</summary>

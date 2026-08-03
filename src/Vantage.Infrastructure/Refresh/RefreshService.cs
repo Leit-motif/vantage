@@ -26,6 +26,7 @@ public sealed class RefreshService(
 {
     private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
     private readonly GitAdapter _git = new(processRunner);
+    private readonly WorkingTreeAdapter _workingTree = new(processRunner);
     private readonly WorkflowIndexer _indexer = new();
 
     /// <summary>
@@ -291,6 +292,20 @@ public sealed class RefreshService(
         var index = _indexer.Index(project.CanonicalPath, git.FileFacts, refreshId, cancellationToken);
         diagnostics.AddRange(index.Diagnostics);
 
+        // What the working tree says against what the last commit recorded. Only git can answer
+        // it, so it is observed here and handed to the projection; the disagreements a project's
+        // own files hold are found by the projector itself.
+        var workingTree = git.Available
+            ? await _workingTree.CompareAsync(
+                project.CanonicalPath,
+                index.Efforts.SelectMany(e => e.Tickets).ToList(),
+                git.FileFacts,
+                refreshId,
+                cancellationToken).ConfigureAwait(false)
+            : WorkingTreeComparison.None;
+
+        diagnostics.AddRange(workingTree.Diagnostics);
+
         var normalized = new NormalizedProject
         {
             Identity = new ProjectIdentity(project.CanonicalPath, project.Name),
@@ -322,6 +337,7 @@ public sealed class RefreshService(
             Now = now,
             RecentWindow = TimeSpan.FromHours(settings.RecentWindowHours),
             PersistedActivity = persisted,
+            Conflicts = workingTree.Conflicts,
             IsPinned = entry.Pinned,
         });
 

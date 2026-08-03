@@ -12,6 +12,18 @@ public enum EffortArtifactKind
     Other,
 }
 
+/// <summary>
+/// The markdown checkboxes a file states about itself. Counted, never interpreted: what a box
+/// means is the file's business, and only the disagreement between a completed status and an
+/// unticked box is the dashboard's.
+/// </summary>
+public sealed record ChecklistTally(int Ticked, int Unticked)
+{
+    public static readonly ChecklistTally None = new(0, 0);
+
+    public int Total => Ticked + Unticked;
+}
+
 /// <summary>A markdown artifact inside an effort directory, read but not interpreted.</summary>
 public sealed record ObservedArtifact(
     string AbsolutePath,
@@ -19,6 +31,7 @@ public sealed record ObservedArtifact(
     EffortArtifactKind Kind,
     string? HeadingTitle,
     IReadOnlyList<ObservedMetadataField> Fields,
+    ChecklistTally Checklist,
     string SemanticHash,
     bool TrackedInGit,
     Provenance Provenance)

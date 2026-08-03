@@ -109,11 +109,11 @@ public sealed class ResilienceTests
         var conflict = new ConflictReport(
             "feature/001",
             ConflictField.Title,
-            "Working tree title",
-            "Committed title",
-            "Working-tree value kept.",
-            provenance,
-            new Provenance(EvidenceSource.LocalGit, "001.md@HEAD", TimestampProvenance.GitCommit, null, "r1"));
+            new ObservedValue("Working tree title", provenance),
+            new ObservedValue(
+                "Committed title",
+                new Provenance(EvidenceSource.LocalGit, "001.md@HEAD", TimestampProvenance.GitCommit, null, "r1")),
+            "Working-tree value kept.");
 
         var ticket = new TicketView(
             "feature/001",
@@ -150,7 +150,7 @@ public sealed class ResilienceTests
         Assert.IsNotNull(loaded);
         Assert.AreEqual(
             "Committed title",
-            loaded.Efforts.Single().Tickets.Single().Conflicts.Single().RemoteValue,
+            loaded.Efforts.Single().Tickets.Single().Conflicts.Single().Second.Value,
             "A stale item must still offer the disagreement it is the subject of.");
     }
 

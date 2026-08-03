@@ -195,6 +195,8 @@ public sealed class ReadOnlyAcceptanceTests
             ["-C", "repo", "rev-parse", "HEAD"],
             ["-C", "repo", "log", "--branches", "--no-color", "-n2000", "--name-only"],
             ["-C", "repo", "status", "--porcelain"],
+            ["-C", "repo", "status", "--porcelain", "--untracked-files=no", "--", ".scratch"],
+            ["-C", "repo", "cat-file", "-p", "HEAD:.scratch/feature/issues/001.md"],
             ["-C", "repo", "config", "--list", "--local"],
             ["-C", "repo", "show-ref"],
         ];

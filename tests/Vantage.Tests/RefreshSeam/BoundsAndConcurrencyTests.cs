@@ -109,8 +109,9 @@ public sealed class BoundsAndConcurrencyTests
 
     /// <summary>
     /// Overlapping refreshes must not interleave for one project: a snapshot assembled from two
-    /// half-finished passes is internally inconsistent. Each pass is two git calls, so
-    /// interleaving is visible as those calls arriving out of their per-project order.
+    /// half-finished passes is internally inconsistent. Each pass is three git calls — the
+    /// repository probe, the history read, and the working-tree comparison — so interleaving is
+    /// visible as those calls arriving out of their per-project order.
     /// </summary>
     [TestMethod]
     public async Task One_project_is_never_indexed_by_two_refreshes_at_once()
@@ -142,18 +143,22 @@ public sealed class BoundsAndConcurrencyTests
                 .ToList();
 
             Assert.AreEqual(
-                4,
+                6,
                 verbs.Count,
-                $"Each of the two passes over '{Path.GetFileName(project.Key)}' makes two calls.");
+                $"Each of the two passes over '{Path.GetFileName(project.Key)}' makes three calls.");
 
             CollectionAssert.AreEqual(
-                new[] { "probe", "log", "probe", "log" },
+                new[] { "probe", "log", "status", "probe", "log", "status" },
                 verbs,
                 $"The two passes over '{Path.GetFileName(project.Key)}' interleaved: {string.Join(", ", verbs)}");
         }
 
-        static string Verb(ProcessInvocation invocation) =>
-            invocation.Arguments.Contains("--is-inside-work-tree") ? "probe" : "log";
+        static string Verb(ProcessInvocation invocation) => invocation.Arguments switch
+        {
+            var a when a.Contains("--is-inside-work-tree") => "probe",
+            var a when a.Contains("status") => "status",
+            _ => "log",
+        };
     }
 
     [TestMethod]

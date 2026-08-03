@@ -96,11 +96,9 @@ public sealed class ConflictInspectionTests
             conflicts.Add(new ConflictReport(
                 id,
                 ConflictField.Title,
-                ticket.First,
-                ticket.Second,
-                "Working-tree value kept: it is the more recent observation.",
-                working,
-                committed));
+                new ObservedValue(ticket.First, working),
+                new ObservedValue(ticket.Second, committed),
+                "Working-tree value kept: it is the more recent observation."));
 
             workflowTickets.Add(new WorkflowTicket
             {
@@ -221,8 +219,13 @@ public sealed class ConflictInspectionTests
         StringAssert.Contains(shown, "Working tree title", "The first side must be readable, not only implied.");
         StringAssert.Contains(shown, "Committed title", "A disagreement whose other side is invisible is not evidence.");
         StringAssert.Contains(shown, conflict.Resolution);
-        StringAssert.Contains(shown, conflict.LocalProvenance.Description);
-        StringAssert.Contains(shown, conflict.RemoteProvenance.Description);
+        StringAssert.Contains(shown, conflict.First.Provenance.Description);
+        StringAssert.Contains(shown, conflict.Second.Provenance.Description);
+
+        // Neither side is named by a role the model assigns it: each is named by its own evidence,
+        // which is the only thing that still tells them apart once there is no privileged source.
+        StringAssert.Contains(shown, conflict.First.Provenance.Origin, "The first side must be named by where it was read.");
+        StringAssert.Contains(shown, conflict.Second.Provenance.Origin, "The second side must be named by where it was read.");
     }
 
     [TestMethod]

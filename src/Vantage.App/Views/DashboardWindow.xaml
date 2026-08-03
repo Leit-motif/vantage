@@ -519,19 +519,21 @@
                                   <RowDefinition Height="Auto" />
                                   <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource TertiaryText}" Text="local " />
+                                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource TertiaryText}"
+                                           Margin="0,0,6,0" Text="{Binding FirstLabel}" />
                                 <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource SecondaryText}"
-                                           Text="{Binding LocalValue}" TextWrapping="Wrap" />
-                                <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource TertiaryText}" Text="remote " />
+                                           Text="{Binding FirstValue}" TextWrapping="Wrap" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource TertiaryText}"
+                                           Margin="0,0,6,0" Text="{Binding SecondLabel}" />
                                 <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource SecondaryText}"
-                                           Text="{Binding RemoteValue}" TextWrapping="Wrap" />
+                                           Text="{Binding SecondValue}" TextWrapping="Wrap" />
                               </Grid>
                               <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap" Margin="0,2,0,0"
                                          Text="{Binding Resolution}" />
                               <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap"
-                                         Text="{Binding LocalProvenance}" />
+                                         Text="{Binding FirstProvenance}" />
                               <TextBlock Style="{StaticResource TertiaryText}" TextWrapping="Wrap"
-                                         Text="{Binding RemoteProvenance}" />
+                                         Text="{Binding SecondProvenance}" />
                             </StackPanel>
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>

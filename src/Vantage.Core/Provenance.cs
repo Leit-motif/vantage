@@ -75,6 +75,40 @@ public sealed record Provenance(
             or TimestampProvenance.ObservedChange;
 
     /// <summary>
+    /// A short name for this observation, for the places something has to be named by where it
+    /// came from rather than by a fixed role — a side of a disagreement being the case that
+    /// motivated it. The subject is carried too, because two sides can share a kind and differ
+    /// only in what was read.
+    /// </summary>
+    public string Origin
+    {
+        get
+        {
+            var kind = Source switch
+            {
+                EvidenceSource.LocalGit => "last commit",
+                EvidenceSource.LocalFile => "working tree",
+                EvidenceSource.Cache => "last known good",
+                _ => Source.ToString(),
+            };
+
+            var subject = Subject(Locator);
+            return subject.Length == 0 ? kind : $"{kind} · {subject}";
+        }
+    }
+
+    /// <summary>
+    /// The tail of a locator: the file and whatever anchors the observation inside it, without the
+    /// directories above it. A side label names what was read; the full trail is in
+    /// <see cref="Description"/> beside it.
+    /// </summary>
+    private static string Subject(string locator)
+    {
+        var cut = locator.LastIndexOfAny(['/', '\\']);
+        return cut < 0 ? locator : locator[(cut + 1)..];
+    }
+
+    /// <summary>
     /// The whole trail in one line: source, locator, what kind of timestamp it is, when, and the
     /// refresh that produced it. This is what makes a displayed conclusion challengeable.
     /// </summary>

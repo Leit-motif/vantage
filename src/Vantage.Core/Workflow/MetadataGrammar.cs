@@ -89,6 +89,49 @@ public static class MetadataGrammar
     }
 
     /// <summary>
+    /// Counts the checkbox items a document states about itself. Fenced code is skipped, because a
+    /// checklist quoted inside an example is not something the file claims about its own work.
+    /// </summary>
+    public static ChecklistTally Checklist(string content)
+    {
+        var ticked = 0;
+        var unticked = 0;
+        var inFence = false;
+
+        foreach (var raw in content.Split('\n'))
+        {
+            var line = raw.TrimEnd('\r').Trim();
+
+            if (line.StartsWith("```", StringComparison.Ordinal))
+            {
+                inFence = !inFence;
+                continue;
+            }
+
+            if (inFence
+                || !(line.StartsWith("- [", StringComparison.Ordinal) || line.StartsWith("* [", StringComparison.Ordinal))
+                || line.Length < 5
+                || line[4] != ']')
+            {
+                continue;
+            }
+
+            switch (line[3])
+            {
+                case ' ':
+                    unticked++;
+                    break;
+                case 'x':
+                case 'X':
+                    ticked++;
+                    break;
+            }
+        }
+
+        return ticked == 0 && unticked == 0 ? ChecklistTally.None : new ChecklistTally(ticked, unticked);
+    }
+
+    /// <summary>
     /// Accepts <c>Key: value</c>, <c>**Key:** value</c>, <c>**Key**: value</c>, and the same forms
     /// behind a list bullet.
     /// </summary>

@@ -29,7 +29,7 @@ public sealed record ArtifactSnapshot(string Path, string Kind, string SemanticH
 /// </summary>
 public sealed class DashboardCache : IDisposable
 {
-    private const int SchemaVersion = 3;
+    private const int SchemaVersion = 4;
 
     private static readonly JsonSerializerOptions SnapshotOptions = new()
     {
@@ -177,6 +177,16 @@ public sealed class DashboardCache : IDisposable
             // read as movement on the next refresh — an upgrade is not something that happened to
             // the owner's work.
             Recanonicalize(connection);
+        }
+
+        if (version is > 0 and < 4)
+        {
+            // The two sides of a disagreement were renamed, so a stored projection's conflicts no
+            // longer read back — the old names would deserialize to nothing and put a blank side
+            // on screen. A projection is the one thing in here that is rebuilt in full by the next
+            // refresh, so it is dropped rather than translated; activity, which cannot be
+            // rederived, is untouched.
+            Execute(connection, "DELETE FROM project_snapshot;");
         }
 
         if (version < SchemaVersion)

@@ -62,35 +62,39 @@ public sealed record ActivityEvent(
     string? TicketId,
     Provenance Provenance);
 
+/// <summary>What two observations disagree about. Only what a producer can actually report.</summary>
 public enum ConflictField
 {
     Title,
-    State,
     WorkflowStatus,
     Blockers,
-    Effort,
 }
+
+/// <summary>
+/// One side of a disagreement: a value as it was observed, and where it was observed. Neither side
+/// of a <see cref="ConflictReport"/> is privileged, so a side is named by its own provenance rather
+/// than by a role the model assigns it.
+/// </summary>
+public sealed record ObservedValue(string Value, Provenance Provenance);
 
 /// <summary>
 /// A disagreement between two observations of one subject, each carrying where it was seen, plus
 /// which side was kept and why. Missing information and timestamp differences are enrichment, not
 /// conflict.
 /// <para>
-/// The remote reconciliation that used to produce these is gone; the model is not, because
-/// local-versus-remote was the instance and not the purpose. The producers that replace it — a
-/// working tree against the last commit, a stated edge against the ticket it names, two agents
-/// writing one file — are `03-conflicts-between-any-two-observations.md`, which also renames the
-/// two sides. Until then nothing produces one, and the field names still say local and remote.
+/// The sides used to be called local and remote, which described the one producer the model
+/// happened to be built for rather than what it is. Removing the remote source removed a producer;
+/// the shape — two values for one subject, provenance on each, a resolution — is unchanged, and
+/// the producers that replace it are a working tree against the last commit, a stated edge against
+/// the ticket it names, and a stated status against the ticket's own checklist.
 /// </para>
 /// </summary>
 public sealed record ConflictReport(
     string TicketId,
     ConflictField Field,
-    string LocalValue,
-    string RemoteValue,
-    string Resolution,
-    Provenance LocalProvenance,
-    Provenance RemoteProvenance);
+    ObservedValue First,
+    ObservedValue Second,
+    string Resolution);
 
 /// <summary>Equal-weight work-unit totals. A ticket counts once, at completion.</summary>
 public sealed record ProgressSummary(int Completed, int Total, int Excluded)

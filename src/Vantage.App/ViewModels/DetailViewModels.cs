@@ -19,29 +19,35 @@ public sealed class ConflictItemViewModel(ConflictReport report, string ticketTi
     public string FieldLabel => report.Field switch
     {
         ConflictField.Title => "Title",
-        ConflictField.State => "Open or closed",
         ConflictField.WorkflowStatus => "Workflow status",
         ConflictField.Blockers => "Blockers",
-        ConflictField.Effort => "Effort",
         _ => report.Field.ToString(),
     };
 
     public string Headline => $"{FieldLabel} · {TicketTitle}";
 
-    public string LocalValue => report.LocalValue;
+    /// <summary>
+    /// What each side is called. Neither side has a role the model assigns it, so the name comes
+    /// from the side's own provenance — what was read, and where.
+    /// </summary>
+    public string FirstLabel => report.First.Provenance.Origin;
 
-    public string RemoteValue => report.RemoteValue;
+    public string SecondLabel => report.Second.Provenance.Origin;
+
+    public string FirstValue => report.First.Value;
+
+    public string SecondValue => report.Second.Value;
 
     public string Resolution => report.Resolution;
 
-    /// <summary>Where the local side was observed: source, locator, timestamp kind, and refresh.</summary>
-    public string LocalProvenance => report.LocalProvenance.Description;
+    /// <summary>The first side's whole trail: source, locator, timestamp kind, and refresh.</summary>
+    public string FirstProvenance => report.First.Provenance.Description;
 
-    public string RemoteProvenance => report.RemoteProvenance.Description;
+    public string SecondProvenance => report.Second.Provenance.Description;
 
     public string AccessibleSummary =>
-        $"{FieldLabel} conflict on {TicketTitle}. Local: {LocalValue}. Remote: {RemoteValue}. " +
-        $"{Resolution} Local evidence {LocalProvenance}. Remote evidence {RemoteProvenance}.";
+        $"{FieldLabel} conflict on {TicketTitle}. {FirstLabel}: {FirstValue}. {SecondLabel}: {SecondValue}. " +
+        $"{Resolution} {FirstLabel} evidence {FirstProvenance}. {SecondLabel} evidence {SecondProvenance}.";
 }
 
 /// <summary>
