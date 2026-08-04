@@ -1,7 +1,11 @@
 # Public release checklist
 
-The audit performed before making this repository public: what was checked, what it found, what was
+The audit performed before making this work public: what was checked, what it found, what was
 decided, and what is left. Recorded so the decision is reviewable rather than remembered.
+
+**Closed on 2026-08-03.** Every box below is ticked. The plan it was written against was replaced a
+day after it was written — see [how this was superseded](#how-this-was-superseded-2026-08-01) before
+acting on anything here.
 
 Audited on 2026-07-31 at `2e46811`, against 71 commits across all branches, and against all 11
 issues and 3 pull requests — 45 thread bodies, comments and reviews, roughly 185,000 characters.
@@ -180,7 +184,23 @@ to a repository nobody had cloned — which is exactly why this was the last che
 
 ---
 
-## Before flipping visibility
+## How this was superseded, 2026-08-01
+
+**This checklist was written for a plan that was replaced the next day.** It assumes one repository
+whose visibility gets flipped from private to public. What actually happened is the two-repository
+split in `.scratch/publication/spec.md`: development stays in the private `vantage-internal`, and
+the public `vantage` is *produced* from it by `tools/Publish/Publish-Public.ps1`, with the planning
+tree filtered out of the published history entirely.
+
+So "flip visibility" was never performed and never will be — there is no single repository to flip.
+Everything the checklist audited still holds, because the same commits reach the public repo; what
+changed is the mechanism, and that the private repo keeps `.scratch` rather than the public one
+inheriting it.
+
+Read the audit above as the record of what was checked before anything went public. Read
+`docs/publishing.md` for how publishing works now.
+
+## Closing out
 
 - [x] Audit the working tree and full history for secrets and personal data
 - [x] Audit all issue and pull-request threads
@@ -188,11 +208,20 @@ to a repository nobody had cloned — which is exactly why this was the last che
 - [x] Remove unreferenced concept art
 - [x] State the copyright posture (`LICENSE`)
 - [x] Set this repository's commit email to the GitHub noreply address
-- [ ] Enable *Block command line pushes that expose my email* in GitHub email settings
+- [x] Enable *Block command line pushes that expose my email* in GitHub email settings —
+      confirmed set by the owner, 2026-08-03
 - [x] Land all branches into `main`
 - [x] Run the history rewrite and re-stamp the acceptance records
-- [ ] Confirm `LICENSE` reads the way the owner wants. It is a plain-language statement of terms,
-      not legal advice, and nobody qualified has reviewed it.
-- [ ] Flip visibility
-- [ ] Enable **secret scanning** and **push protection** — free on public repositories, off today
-- [ ] Confirm the README's issue links resolve and the old repository slug still redirects
+- [x] Confirm `LICENSE` reads the way the owner wants. Reworded on 2026-08-03 into external-facing
+      language: it had described the work as published "for portfolio review, technical evaluation,
+      and educational inspection", which framed it as a submission rather than as software with
+      terms. The terms are unchanged. It remains a plain-language statement, not legal advice, and
+      nobody qualified has reviewed it — that caveat stands.
+- [x] ~~Flip visibility~~ — superseded by the two-repository split; see above
+- [x] Enable **secret scanning** and **push protection** on the public repository — confirmed on by
+      the owner, 2026-08-03. The line above once read "off today"; that was true of the *private*
+      repository before the split, and it misled a reader on 2026-08-03 into asking the owner to
+      enable something already enabled.
+- [x] Confirm the README's issue links resolve and the old repository slug still redirects. The
+      README carries no GitHub links at all — the tracker moved into `.scratch/`, which is filtered
+      out of the public history, so there is nothing left to redirect.
